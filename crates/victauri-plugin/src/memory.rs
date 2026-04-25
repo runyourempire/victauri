@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::sync::atomic::{AtomicI64, Ordering};
 
 static ALLOCATED_BYTES: AtomicI64 = AtomicI64::new(0);

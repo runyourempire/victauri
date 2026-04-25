@@ -80,9 +80,9 @@ fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
         if let Some(eq_pos) = attr_str[desc_start..].find('=') {
             let after_eq = &attr_str[desc_start + eq_pos + 1..];
             let trimmed = after_eq.trim();
-            if trimmed.starts_with('"') {
-                if let Some(end) = trimmed[1..].find('"') {
-                    description = Some(trimmed[1..end + 1].to_string());
+            if let Some(stripped) = trimmed.strip_prefix('"') {
+                if let Some(end) = stripped.find('"') {
+                    description = Some(stripped[..end].to_string());
                 }
             }
         }
@@ -102,7 +102,8 @@ fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
                 };
 
                 // Skip tauri framework types
-                let type_str = quote!(#pat_type.ty).to_string();
+                let ty = &*pat_type.ty;
+                let type_str = quote!(#ty).to_string();
                 if type_str.contains("AppHandle")
                     || type_str.contains("State")
                     || type_str.contains("Window")
@@ -112,7 +113,7 @@ fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
                 }
 
                 let is_option = type_str.contains("Option");
-                let type_name = format!("{}", quote!(#(pat_type.ty)));
+                let type_name = type_str;
 
                 Some((name, type_name, !is_option))
             } else {

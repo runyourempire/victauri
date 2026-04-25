@@ -1,34 +1,111 @@
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{Manager, Runtime, State};
-use victauri_core::{EventLog, IpcCall, WindowState};
+use victauri_core::{IpcCall, WindowState};
 
 use crate::VictauriState;
+
+const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tauri::command]
 pub async fn victauri_eval_js<R: Runtime>(
     webview: tauri::WebviewWindow<R>,
+    state: State<'_, Arc<VictauriState>>,
     code: String,
 ) -> Result<String, String> {
-    webview.eval(&format!(
+    let id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    state.pending_evals.lock().await.insert(id.clone(), tx);
+
+    let inject = format!(
         r#"
         (async () => {{
             try {{
                 const __result = await (async () => {{ {code} }})();
                 await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    id: '{id}',
                     result: JSON.stringify(__result)
                 }});
             }} catch (e) {{
                 await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    id: '{id}',
                     result: JSON.stringify({{ __error: e.message }})
                 }});
             }}
         }})();
         "#
-    )).map_err(|e| format!("eval failed: {e}"))?;
+    );
 
-    // TODO: Wire up oneshot channel for eval result callback
-    // For now, fire-and-forget with acknowledgment
-    Ok("eval dispatched".to_string())
+    if let Err(e) = webview.eval(&inject) {
+        state.pending_evals.lock().await.remove(&id);
+        return Err(format!("eval failed: {e}"));
+    }
+
+    match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(_)) => Err("eval callback channel closed".to_string()),
+        Err(_) => {
+            state.pending_evals.lock().await.remove(&id);
+            Err("eval timed out after 10s".to_string())
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn victauri_eval_callback(
+    state: State<'_, Arc<VictauriState>>,
+    id: String,
+    result: String,
+) -> Result<(), String> {
+    if let Some(tx) = state.pending_evals.lock().await.remove(&id) {
+        let _ = tx.send(result);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn victauri_dom_snapshot<R: Runtime>(
+    webview: tauri::WebviewWindow<R>,
+    state: State<'_, Arc<VictauriState>>,
+) -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    state.pending_evals.lock().await.insert(id.clone(), tx);
+
+    let inject = format!(
+        r#"
+        (async () => {{
+            try {{
+                const snapshot = window.__VICTAURI__?.snapshot();
+                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    id: '{id}',
+                    result: JSON.stringify(snapshot)
+                }});
+            }} catch (e) {{
+                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    id: '{id}',
+                    result: JSON.stringify({{ __error: e.message }})
+                }});
+            }}
+        }})();
+        "#
+    );
+
+    if let Err(e) = webview.eval(&inject) {
+        state.pending_evals.lock().await.remove(&id);
+        return Err(format!("snapshot eval failed: {e}"));
+    }
+
+    match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(_)) => Err("snapshot callback channel closed".to_string()),
+        Err(_) => {
+            state.pending_evals.lock().await.remove(&id);
+            Err("snapshot timed out after 10s".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -101,16 +178,4 @@ pub async fn victauri_get_registry(
 #[tauri::command]
 pub async fn victauri_get_memory_stats() -> Result<serde_json::Value, String> {
     Ok(crate::memory::current_stats())
-}
-
-#[tauri::command]
-pub async fn victauri_dom_snapshot<R: Runtime>(
-    webview: tauri::WebviewWindow<R>,
-) -> Result<String, String> {
-    webview
-        .eval("window.__VICTAURI__?.snapshot()")
-        .map_err(|e| format!("snapshot eval failed: {e}"))?;
-
-    // TODO: Wire up callback to receive snapshot result
-    Ok("snapshot dispatched".to_string())
 }

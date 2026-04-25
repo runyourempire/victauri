@@ -39,6 +39,7 @@ quote = "1"
 proc-macro2 = "1"
 
 # Utilities
+schemars = { version = "1", features = ["chrono04"] }
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"

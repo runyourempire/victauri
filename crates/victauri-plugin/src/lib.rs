@@ -1,12 +1,15 @@
+mod bridge;
 mod js_bridge;
 mod mcp;
 mod memory;
 mod screenshot;
 mod tools;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
+use tokio::sync::{oneshot, Mutex};
 use victauri_core::{CommandRegistry, EventLog};
 
 pub use victauri_macros::inspectable;
@@ -14,10 +17,13 @@ pub use victauri_macros::inspectable;
 const DEFAULT_PORT: u16 = 7373;
 const DEFAULT_EVENT_CAPACITY: usize = 10_000;
 
+pub type PendingCallbacks = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
+
 pub struct VictauriState {
     pub event_log: EventLog,
     pub registry: CommandRegistry,
     pub port: u16,
+    pub pending_evals: PendingCallbacks,
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -30,6 +36,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 event_log,
                 registry,
                 port: DEFAULT_PORT,
+                pending_evals: Arc::new(Mutex::new(HashMap::new())),
             });
 
             app.manage(state.clone());
@@ -54,6 +61,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         })
         .invoke_handler(tauri::generate_handler![
             tools::victauri_eval_js,
+            tools::victauri_eval_callback,
             tools::victauri_get_window_state,
             tools::victauri_list_windows,
             tools::victauri_get_ipc_log,
