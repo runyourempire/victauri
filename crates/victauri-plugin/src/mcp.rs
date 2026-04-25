@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use crate::VictauriState;
 use crate::bridge::WebviewBridge;
 
-const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
+const EVAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 // ── Parameter structs ────────────────────────────────────────────────────────
 
@@ -76,6 +76,8 @@ pub struct WindowStateParams {
 pub struct IpcLogParams {
     /// Maximum number of most recent entries to return.
     pub limit: Option<usize>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -104,6 +106,8 @@ pub struct GhostCommandParams {
 pub struct IpcIntegrityParams {
     /// Age in milliseconds after which a pending IPC call is considered stale. Default: 5000.
     pub stale_threshold_ms: Option<i64>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -164,6 +168,214 @@ pub struct SemanticAssertParams {
     pub expected: serde_json::Value,
     /// Target webview label.
     pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InvokeCommandParams {
+    /// The Tauri command name to invoke (e.g. "greet", "save_settings").
+    pub command: String,
+    /// Arguments as a JSON object. Keys are parameter names. Omit for commands with no arguments.
+    pub args: Option<serde_json::Value>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScreenshotParams {
+    /// Target window label. If omitted, captures the main/first visible window.
+    pub window_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PressKeyParams {
+    /// Key to press (e.g. "Enter", "Escape", "Tab", "ArrowDown").
+    pub key: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetConsoleLogsParams {
+    /// Only return logs after this Unix timestamp (milliseconds). If omitted, returns all captured logs.
+    pub since: Option<f64>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DoubleClickParams {
+    /// Ref handle ID from a DOM snapshot.
+    pub ref_id: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct HoverParams {
+    /// Ref handle ID from a DOM snapshot.
+    pub ref_id: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SelectOptionParams {
+    /// Ref handle ID of the <select> element.
+    pub ref_id: String,
+    /// Values to select.
+    pub values: Vec<String>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScrollToParams {
+    /// Ref handle ID to scroll into view. If null, scrolls to absolute coordinates.
+    pub ref_id: Option<String>,
+    /// Horizontal scroll position (pixels). Used when ref_id is null.
+    pub x: Option<f64>,
+    /// Vertical scroll position (pixels). Used when ref_id is null.
+    pub y: Option<f64>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FocusElementParams {
+    /// Ref handle ID of the element to focus.
+    pub ref_id: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NetworkLogParams {
+    /// Filter by URL substring.
+    pub filter: Option<String>,
+    /// Maximum number of entries to return.
+    pub limit: Option<usize>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetStorageParams {
+    /// Storage type: "local" or "session".
+    pub storage_type: String,
+    /// Specific key to read. If omitted, returns all entries.
+    pub key: Option<String>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetStorageParams {
+    /// Storage type: "local" or "session".
+    pub storage_type: String,
+    /// Key to set.
+    pub key: String,
+    /// Value to store (will be JSON-serialized if not a string).
+    pub value: serde_json::Value,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteStorageParams {
+    /// Storage type: "local" or "session".
+    pub storage_type: String,
+    /// Key to delete.
+    pub key: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetCookiesParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NavigationLogParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NavigateParams {
+    /// URL to navigate to.
+    pub url: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DialogLogParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetDialogResponseParams {
+    /// Dialog type: "alert", "confirm", or "prompt".
+    pub dialog_type: String,
+    /// Action: "accept" or "dismiss".
+    pub action: String,
+    /// Response text for prompt dialogs.
+    pub text: Option<String>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct WaitForParams {
+    /// Condition to wait for: text, text_gone, selector, selector_gone, url, ipc_idle, network_idle.
+    pub condition: String,
+    /// Value for the condition (text to find, CSS selector, URL substring).
+    pub value: Option<String>,
+    /// Maximum time to wait in milliseconds. Default: 10000.
+    pub timeout_ms: Option<u64>,
+    /// Polling interval in milliseconds. Default: 200.
+    pub poll_ms: Option<u64>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ManageWindowParams {
+    /// Action: minimize, unminimize, maximize, unmaximize, close, focus, show, hide, fullscreen, unfullscreen, always_on_top, not_always_on_top.
+    pub action: String,
+    /// Target window label.
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ResizeWindowParams {
+    /// Width in logical pixels.
+    pub width: u32,
+    /// Height in logical pixels.
+    pub height: u32,
+    /// Target window label.
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveWindowParams {
+    /// X position in logical pixels.
+    pub x: i32,
+    /// Y position in logical pixels.
+    pub y: i32,
+    /// Target window label.
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetWindowTitleParams {
+    /// New window title.
+    pub title: String,
+    /// Target window label.
+    pub label: Option<String>,
 }
 
 // ── MCP Handler ──────────────────────────────────────────────────────────────
@@ -284,16 +496,22 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get recent IPC calls intercepted by Victauri's invoke handler wrapper.")]
+    #[tool(
+        description = "Get recent IPC calls intercepted by the JS bridge. Returns command names, arguments, results, durations, and status (ok/error/pending)."
+    )]
     async fn get_ipc_log(&self, Parameters(params): Parameters<IpcLogParams>) -> CallToolResult {
-        let mut calls = self.state.event_log.ipc_calls();
-        if let Some(limit) = params.limit {
-            let start = calls.len().saturating_sub(limit);
-            calls = calls[start..].to_vec();
-        }
-        match serde_json::to_string_pretty(&calls) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
+        let limit_arg = params.limit.map(|l| format!("{l}")).unwrap_or_default();
+        let code = if limit_arg.is_empty() {
+            "return window.__VICTAURI__?.getIpcLog()".to_string()
+        } else {
+            format!("return window.__VICTAURI__?.getIpcLog({limit_arg})")
+        };
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
         }
     }
 
@@ -312,7 +530,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Get current memory allocation statistics (allocated bytes, allocation count, deallocation count)."
+        description = "Get real-time process memory statistics from the OS (working set, page file usage). On Windows returns detailed metrics; on Linux returns virtual/resident size."
     )]
     async fn get_memory_stats(&self) -> CallToolResult {
         let stats = crate::memory::current_stats();
@@ -355,22 +573,25 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called from the frontend. Scans the IPC log for frontend command names."
+        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads from the JS-side IPC interception log."
     )]
     async fn detect_ghost_commands(
         &self,
         Parameters(params): Parameters<GhostCommandParams>,
     ) -> CallToolResult {
-        let ipc_calls = self.state.event_log.ipc_calls();
+        let code = "return window.__VICTAURI__?.getIpcLog()";
+        let ipc_json = match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return tool_error(format!("failed to read IPC log: {e}")),
+        };
+
+        let ipc_calls: Vec<serde_json::Value> = serde_json::from_str(&ipc_json).unwrap_or_default();
         let frontend_commands: Vec<String> = ipc_calls
             .iter()
-            .filter(|c| {
-                params
-                    .webview_label
-                    .as_ref()
-                    .is_none_or(|label| c.webview_label == *label)
-            })
-            .map(|c| c.command.clone())
+            .filter_map(|c| c.get("command").and_then(|v| v.as_str()).map(String::from))
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
             .collect();
@@ -390,10 +611,31 @@ impl VictauriMcpHandler {
         Parameters(params): Parameters<IpcIntegrityParams>,
     ) -> CallToolResult {
         let threshold = params.stale_threshold_ms.unwrap_or(5000);
-        let report = victauri_core::check_ipc_integrity(&self.state.event_log, threshold);
-        match serde_json::to_string_pretty(&report) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
+        let code = format!(
+            r#"return (function() {{
+                var log = window.__VICTAURI__?.getIpcLog() || [];
+                var now = Date.now();
+                var threshold = {threshold};
+                var pending = log.filter(function(c) {{ return c.status === 'pending'; }});
+                var stale = pending.filter(function(c) {{ return (now - c.timestamp) > threshold; }});
+                var errored = log.filter(function(c) {{ return c.status === 'error'; }});
+                return {{
+                    healthy: stale.length === 0 && errored.length === 0,
+                    total_calls: log.length,
+                    pending_count: pending.length,
+                    stale_count: stale.length,
+                    error_count: errored.length,
+                    stale_calls: stale.slice(0, 20),
+                    errored_calls: errored.slice(0, 20)
+                }};
+            }})()"#
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
         }
     }
 
@@ -574,6 +816,488 @@ impl VictauriMcpHandler {
             None => tool_error("one or both checkpoint IDs not found"),
         }
     }
+
+    #[tool(
+        description = "Invoke a registered Tauri command via IPC, just like the frontend would. Goes through the real IPC pipeline so calls are logged and verifiable. Returns the command's result."
+    )]
+    async fn invoke_command(
+        &self,
+        Parameters(params): Parameters<InvokeCommandParams>,
+    ) -> CallToolResult {
+        let args_json = params.args.unwrap_or(serde_json::json!({}));
+        let args_str = serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
+        let escaped_cmd = params.command.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!("return window.__TAURI__.core.invoke('{escaped_cmd}', {args_str})");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(format!("invoke_command failed: {e}")),
+        }
+    }
+
+    #[tool(
+        description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error."
+    )]
+    async fn screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> CallToolResult {
+        match self
+            .bridge
+            .get_native_handle(params.window_label.as_deref())
+        {
+            Ok(hwnd) => match crate::screenshot::capture_window(hwnd).await {
+                Ok(png_bytes) => {
+                    use base64::Engine;
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
+                    CallToolResult::success(vec![Content::image(b64, "image/png")])
+                }
+                Err(e) => tool_error(format!("screenshot capture failed: {e}")),
+            },
+            Err(e) => tool_error(format!("cannot get window handle: {e}")),
+        }
+    }
+
+    #[tool(
+        description = "Press a keyboard key on the currently focused element. Useful for triggering keyboard shortcuts, submitting forms (Enter), closing dialogs (Escape), or navigating (Tab, ArrowDown)."
+    )]
+    async fn press_key(&self, Parameters(params): Parameters<PressKeyParams>) -> CallToolResult {
+        let escaped_key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!("return window.__VICTAURI__?.pressKey('{escaped_key}')");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Get captured console logs (log, warn, error, info) from the webview. Useful for debugging and monitoring application behavior."
+    )]
+    async fn get_console_logs(
+        &self,
+        Parameters(params): Parameters<GetConsoleLogsParams>,
+    ) -> CallToolResult {
+        let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
+        let code = if since_arg.is_empty() {
+            "return window.__VICTAURI__?.getConsoleLogs()".to_string()
+        } else {
+            format!("return window.__VICTAURI__?.getConsoleLogs({since_arg})")
+        };
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Extended Interactions ────────────────────────────────────────────────
+
+    #[tool(description = "Double-click an element by its ref handle ID from a DOM snapshot.")]
+    async fn double_click(
+        &self,
+        Parameters(params): Parameters<DoubleClickParams>,
+    ) -> CallToolResult {
+        let code = format!(
+            "return window.__VICTAURI__?.doubleClick('{}')",
+            params.ref_id.replace('\'', "\\'")
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Hover over an element by its ref handle ID. Dispatches mouseenter and mouseover events."
+    )]
+    async fn hover(&self, Parameters(params): Parameters<HoverParams>) -> CallToolResult {
+        let code = format!(
+            "return window.__VICTAURI__?.hover('{}')",
+            params.ref_id.replace('\'', "\\'")
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Select one or more options in a <select> element by their option values."
+    )]
+    async fn select_option(
+        &self,
+        Parameters(params): Parameters<SelectOptionParams>,
+    ) -> CallToolResult {
+        let values_json =
+            serde_json::to_string(&params.values).unwrap_or_else(|_| "[]".to_string());
+        let code = format!(
+            "return window.__VICTAURI__?.selectOption('{}', {})",
+            params.ref_id.replace('\'', "\\'"),
+            values_json
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Scroll to an element by ref handle ID (scrolls into view), or to absolute page coordinates if no ref given."
+    )]
+    async fn scroll_to(&self, Parameters(params): Parameters<ScrollToParams>) -> CallToolResult {
+        let ref_arg = params
+            .ref_id
+            .as_ref()
+            .map(|r| format!("'{}'", r.replace('\'', "\\'")))
+            .unwrap_or_else(|| "null".to_string());
+        let x = params.x.unwrap_or(0.0);
+        let y = params.y.unwrap_or(0.0);
+        let code = format!("return window.__VICTAURI__?.scrollTo({ref_arg}, {x}, {y})");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Focus an element by its ref handle ID.")]
+    async fn focus_element(
+        &self,
+        Parameters(params): Parameters<FocusElementParams>,
+    ) -> CallToolResult {
+        let code = format!(
+            "return window.__VICTAURI__?.focusElement('{}')",
+            params.ref_id.replace('\'', "\\'")
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Network Monitoring ──────────────────────────────────────────────────
+
+    #[tool(
+        description = "Get intercepted network requests (fetch and XMLHttpRequest). Filter by URL substring and limit the number of results."
+    )]
+    async fn get_network_log(
+        &self,
+        Parameters(params): Parameters<NetworkLogParams>,
+    ) -> CallToolResult {
+        let filter_arg = params
+            .filter
+            .as_ref()
+            .map(|f| format!("'{}'", f.replace('\'', "\\'")))
+            .unwrap_or_else(|| "null".to_string());
+        let limit_arg = params
+            .limit
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "null".to_string());
+        let code = format!("return window.__VICTAURI__?.getNetworkLog({filter_arg}, {limit_arg})");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Storage ─────────────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Read from localStorage or sessionStorage. Returns all entries if no key is specified, or the value for a specific key."
+    )]
+    async fn get_storage(
+        &self,
+        Parameters(params): Parameters<GetStorageParams>,
+    ) -> CallToolResult {
+        let method = match params.storage_type.as_str() {
+            "session" => "getSessionStorage",
+            _ => "getLocalStorage",
+        };
+        let key_arg = params
+            .key
+            .as_ref()
+            .map(|k| format!("'{}'", k.replace('\'', "\\'")))
+            .unwrap_or_default();
+        let code = format!("return window.__VICTAURI__?.{method}({key_arg})");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Set a value in localStorage or sessionStorage.")]
+    async fn set_storage(
+        &self,
+        Parameters(params): Parameters<SetStorageParams>,
+    ) -> CallToolResult {
+        let method = match params.storage_type.as_str() {
+            "session" => "setSessionStorage",
+            _ => "setLocalStorage",
+        };
+        let key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
+        let value_json =
+            serde_json::to_string(&params.value).unwrap_or_else(|_| "null".to_string());
+        let code = format!("return window.__VICTAURI__?.{method}('{key}', {value_json})");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Delete a key from localStorage or sessionStorage.")]
+    async fn delete_storage(
+        &self,
+        Parameters(params): Parameters<DeleteStorageParams>,
+    ) -> CallToolResult {
+        let method = match params.storage_type.as_str() {
+            "session" => "deleteSessionStorage",
+            _ => "deleteLocalStorage",
+        };
+        let key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!("return window.__VICTAURI__?.{method}('{key}')");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Get all cookies visible to the webview document.")]
+    async fn get_cookies(
+        &self,
+        Parameters(params): Parameters<GetCookiesParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.getCookies()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Navigation ──────────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Get the navigation history log — tracks pushState, replaceState, popstate, hashchange, and the initial page load."
+    )]
+    async fn get_navigation_log(
+        &self,
+        Parameters(params): Parameters<NavigationLogParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.getNavigationLog()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Navigate the webview to a URL.")]
+    async fn navigate(&self, Parameters(params): Parameters<NavigateParams>) -> CallToolResult {
+        let url = params.url.replace('\\', "\\\\").replace('\'', "\\'");
+        let code = format!("return window.__VICTAURI__?.navigate('{url}')");
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Navigate back in the webview's browser history.")]
+    async fn navigate_back(
+        &self,
+        Parameters(params): Parameters<NavigationLogParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.navigateBack()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Dialogs ─────────────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Get captured dialog events (alert, confirm, prompt). Dialogs are auto-handled: alert is accepted, confirm returns true, prompt returns default value."
+    )]
+    async fn get_dialog_log(
+        &self,
+        Parameters(params): Parameters<DialogLogParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.getDialogLog()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Configure automatic responses for browser dialogs. Types: alert, confirm, prompt. Actions: accept, dismiss. For prompt dialogs, optionally set the response text."
+    )]
+    async fn set_dialog_response(
+        &self,
+        Parameters(params): Parameters<SetDialogResponseParams>,
+    ) -> CallToolResult {
+        let dtype = params
+            .dialog_type
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'");
+        let action = params.action.replace('\\', "\\\\").replace('\'', "\\'");
+        let text_arg = params
+            .text
+            .as_ref()
+            .map(|t| format!("'{}'", t.replace('\\', "\\\\").replace('\'', "\\'")))
+            .unwrap_or_else(|| "undefined".to_string());
+        let code = format!(
+            "return window.__VICTAURI__?.setDialogAutoResponse('{dtype}', '{action}', {text_arg})"
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Wait ────────────────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Wait for a condition to be met. Polls at regular intervals until satisfied or timeout. Conditions: text (text appears), text_gone (text disappears), selector (CSS selector matches), selector_gone, url (URL contains value), ipc_idle (no pending IPC calls), network_idle (no pending network requests)."
+    )]
+    async fn wait_for(&self, Parameters(params): Parameters<WaitForParams>) -> CallToolResult {
+        let condition = params.condition.replace('\\', "\\\\").replace('\'', "\\'");
+        let value = params
+            .value
+            .as_ref()
+            .map(|v| format!("'{}'", v.replace('\\', "\\\\").replace('\'', "\\'")))
+            .unwrap_or_else(|| "null".to_string());
+        let timeout = params.timeout_ms.unwrap_or(10000);
+        let poll = params.poll_ms.unwrap_or(200);
+        let code = format!(
+            "return window.__VICTAURI__?.waitFor({{ condition: '{condition}', value: {value}, timeout_ms: {timeout}, poll_ms: {poll} }})"
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    // ── Window Management ───────────────────────────────────────────────────
+
+    #[tool(
+        description = "Manage a window: minimize, unminimize, maximize, unmaximize, close, focus, show, hide, fullscreen, unfullscreen, always_on_top, not_always_on_top."
+    )]
+    async fn manage_window(
+        &self,
+        Parameters(params): Parameters<ManageWindowParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .manage_window(params.label.as_deref(), &params.action)
+        {
+            Ok(msg) => CallToolResult::success(vec![Content::text(msg)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Resize a window to the specified width and height in logical pixels.")]
+    async fn resize_window(
+        &self,
+        Parameters(params): Parameters<ResizeWindowParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .resize_window(params.label.as_deref(), params.width, params.height)
+        {
+            Ok(()) => {
+                let result =
+                    serde_json::json!({"ok": true, "width": params.width, "height": params.height});
+                CallToolResult::success(vec![Content::text(result.to_string())])
+            }
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Move a window to the specified screen position (x, y) in logical pixels."
+    )]
+    async fn move_window(
+        &self,
+        Parameters(params): Parameters<MoveWindowParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .move_window(params.label.as_deref(), params.x, params.y)
+        {
+            Ok(()) => {
+                let result = serde_json::json!({"ok": true, "x": params.x, "y": params.y});
+                CallToolResult::success(vec![Content::text(result.to_string())])
+            }
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Set the title of a window.")]
+    async fn set_window_title(
+        &self,
+        Parameters(params): Parameters<SetWindowTitleParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .set_window_title(params.label.as_deref(), &params.title)
+        {
+            Ok(()) => {
+                let result = serde_json::json!({"ok": true, "title": params.title});
+                CallToolResult::success(vec![Content::text(result.to_string())])
+            }
+            Err(e) => tool_error(e),
+        }
+    }
 }
 
 impl VictauriMcpHandler {
@@ -657,10 +1381,13 @@ impl VictauriMcpHandler {
 }
 
 #[tool_handler(
-    instructions = "Victauri gives you X-ray vision into a running Tauri application. \
-                    You can evaluate JS, snapshot the DOM, click/fill/type UI elements, \
-                    inspect window state, view IPC traffic, search the command registry, \
-                    monitor memory usage, and subscribe to live resource streams — all through MCP."
+    instructions = "Victauri gives you X-ray vision and hands inside a running Tauri application. \
+                    You can evaluate JS, snapshot the DOM, interact with elements (click, double-click, \
+                    hover, fill, type, select, scroll, focus), press keys, invoke Tauri commands, \
+                    capture screenshots, manage windows (minimize, maximize, resize, move, close), \
+                    view IPC and network traffic, read/write browser storage, track navigation history, \
+                    handle dialogs, wait for conditions, search the command registry, monitor process memory, \
+                    record and replay sessions, and subscribe to live resource streams — all through MCP."
 )]
 impl ServerHandler for VictauriMcpHandler {
     fn get_info(&self) -> ServerInfo {
@@ -782,6 +1509,14 @@ fn tool_error(msg: impl Into<String>) -> CallToolResult {
 // ── Server startup ───────────────────────────────────────────────────────────
 
 pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> axum::Router {
+    build_app_with_options(state, bridge, None)
+}
+
+pub fn build_app_with_options(
+    state: Arc<VictauriState>,
+    bridge: Arc<dyn WebviewBridge>,
+    auth_token: Option<String>,
+) -> axum::Router {
     let handler = VictauriMcpHandler::new(state.clone(), bridge);
 
     let mcp_service = StreamableHttpService::new(
@@ -790,10 +1525,14 @@ pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> a
         StreamableHttpServerConfig::default(),
     );
 
+    let auth_state = Arc::new(crate::auth::AuthState {
+        token: auth_token.clone(),
+    });
     let info_state = state.clone();
-    axum::Router::new()
+    let info_auth = auth_token.is_some();
+
+    let mut router = axum::Router::new()
         .route_service("/mcp", mcp_service)
-        .route("/health", axum::routing::get(|| async { "ok" }))
         .route(
             "/info",
             axum::routing::get(move || {
@@ -806,10 +1545,26 @@ pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> a
                         "commands_registered": s.registry.count(),
                         "events_captured": s.event_log.len(),
                         "port": s.port,
+                        "auth_required": info_auth,
                     }))
                 }
             }),
-        )
+        );
+
+    if auth_token.is_some() {
+        router = router.layer(axum::middleware::from_fn_with_state(
+            auth_state,
+            crate::auth::require_auth,
+        ));
+    }
+
+    router.route("/health", axum::routing::get(|| async { "ok" }))
+}
+
+pub mod tests_support {
+    pub fn get_memory_stats() -> serde_json::Value {
+        crate::memory::current_stats()
+    }
 }
 
 pub async fn start_server<R: Runtime>(
@@ -817,8 +1572,18 @@ pub async fn start_server<R: Runtime>(
     state: Arc<VictauriState>,
     port: u16,
 ) -> anyhow::Result<()> {
+    start_server_with_options(app_handle, state, port, None, Vec::new()).await
+}
+
+pub async fn start_server_with_options<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    state: Arc<VictauriState>,
+    port: u16,
+    auth_token: Option<String>,
+    _disabled_tools: Vec<String>,
+) -> anyhow::Result<()> {
     let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
-    let app = build_app(state, bridge);
+    let app = build_app_with_options(state, bridge, auth_token);
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     tracing::info!("Victauri MCP server listening on 127.0.0.1:{port}");

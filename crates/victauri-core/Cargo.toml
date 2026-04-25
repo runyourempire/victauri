@@ -7,6 +7,8 @@ repository.workspace = true
 description = "Core types and protocol for Victauri — Verified Introspection & Control for Tauri"
 authors.workspace = true
 rust-version.workspace = true
+keywords = ["tauri", "mcp", "introspection", "testing", "desktop"]
+categories = ["development-tools::testing", "gui"]
 
 [dependencies]
 serde = { workspace = true }

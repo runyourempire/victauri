@@ -7,6 +7,8 @@ repository.workspace = true
 description = "Lightweight crash-recovery sidecar for Victauri MCP server"
 authors.workspace = true
 rust-version.workspace = true
+keywords = ["tauri", "mcp", "watchdog", "health-check", "monitoring"]
+categories = ["development-tools::testing"]
 
 [[bin]]
 name = "victauri-watchdog"

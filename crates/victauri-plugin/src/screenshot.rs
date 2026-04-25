@@ -80,7 +80,194 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
     .await?
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
+    tokio::task::spawn_blocking(move || unsafe {
+        // CoreGraphics FFI types and functions
+        #[allow(non_camel_case_types)]
+        type CGWindowID = u32;
+        #[allow(non_camel_case_types)]
+        type CGFloat = f64;
+        #[allow(non_camel_case_types)]
+        type CGWindowListOption = u32;
+        #[allow(non_camel_case_types)]
+        type CGWindowImageOption = u32;
+
+        type CFTypeRef = *const std::ffi::c_void;
+        type CGImageRef = *const std::ffi::c_void;
+        type CGColorSpaceRef = *const std::ffi::c_void;
+        type CGContextRef = *const std::ffi::c_void;
+        type CGDataProviderRef = *const std::ffi::c_void;
+        type CFDataRef = *const std::ffi::c_void;
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CGRect {
+            origin: CGPoint,
+            size: CGSize,
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CGPoint {
+            x: CGFloat,
+            y: CGFloat,
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CGSize {
+            width: CGFloat,
+            height: CGFloat,
+        }
+
+        // CGWindowListOption constants
+        const K_CG_WINDOW_LIST_OPTION_INCLUDING_WINDOW: CGWindowListOption = 1 << 3;
+
+        // CGWindowImageOption constants
+        #[allow(dead_code)]
+        const K_CG_WINDOW_IMAGE_DEFAULT: CGWindowImageOption = 0;
+        const K_CG_WINDOW_IMAGE_BOUNDS_IGNORE_FRAMING: CGWindowImageOption = 1 << 0;
+        const K_CG_WINDOW_IMAGE_SHOULD_BE_OPAQUE: CGWindowImageOption = 1 << 1;
+
+        // CGBitmapInfo constants
+        const K_CG_IMAGE_ALPHA_PREMULTIPLIED_LAST: u32 = 1;
+        const K_CG_BITMAP_BYTE_ORDER_32_BIG: u32 = 4 << 12;
+
+        // Null rect means "capture the minimum bounding rect for the window"
+        let cg_rect_null = CGRect {
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: CGSize {
+                width: 0.0,
+                height: 0.0,
+            },
+        };
+
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGWindowListCreateImage(
+                screenBounds: CGRect,
+                listOption: CGWindowListOption,
+                windowID: CGWindowID,
+                imageOption: CGWindowImageOption,
+            ) -> CGImageRef;
+            fn CGImageGetWidth(image: CGImageRef) -> usize;
+            fn CGImageGetHeight(image: CGImageRef) -> usize;
+            fn CGImageGetBitsPerComponent(image: CGImageRef) -> usize;
+            fn CGImageGetBitsPerPixel(image: CGImageRef) -> usize;
+            fn CGImageGetBytesPerRow(image: CGImageRef) -> usize;
+            fn CGImageGetDataProvider(image: CGImageRef) -> CGDataProviderRef;
+            fn CGColorSpaceCreateDeviceRGB() -> CGColorSpaceRef;
+            fn CGBitmapContextCreate(
+                data: *mut u8,
+                width: usize,
+                height: usize,
+                bitsPerComponent: usize,
+                bytesPerRow: usize,
+                space: CGColorSpaceRef,
+                bitmapInfo: u32,
+            ) -> CGContextRef;
+            fn CGContextDrawImage(c: CGContextRef, rect: CGRect, image: CGImageRef);
+            fn CGContextRelease(c: CGContextRef);
+            fn CGColorSpaceRelease(space: CGColorSpaceRef);
+            fn CGDataProviderCopyData(provider: CGDataProviderRef) -> CFDataRef;
+            fn CGImageGetAlphaInfo(image: CGImageRef) -> u32;
+        }
+
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            fn CFDataGetBytePtr(theData: CFDataRef) -> *const u8;
+            fn CFDataGetLength(theData: CFDataRef) -> isize;
+            fn CFRelease(cf: CFTypeRef);
+        }
+
+        let cg_window_id: CGWindowID = window_id as CGWindowID;
+
+        // Capture the window image
+        let image = CGWindowListCreateImage(
+            cg_rect_null,
+            K_CG_WINDOW_LIST_OPTION_INCLUDING_WINDOW,
+            cg_window_id,
+            K_CG_WINDOW_IMAGE_BOUNDS_IGNORE_FRAMING | K_CG_WINDOW_IMAGE_SHOULD_BE_OPAQUE,
+        );
+
+        if image.is_null() {
+            anyhow::bail!(
+                "CGWindowListCreateImage returned null for window ID {cg_window_id}. \
+                 The window may not exist or screen recording permission may be required."
+            );
+        }
+
+        let width = CGImageGetWidth(image);
+        let height = CGImageGetHeight(image);
+
+        if width == 0 || height == 0 {
+            CFRelease(image);
+            anyhow::bail!("captured image has zero area ({width}x{height})");
+        }
+
+        // Draw the CGImage into a known-format RGBA bitmap context.
+        // This normalizes any source pixel format (BGRA, premultiplied, etc.)
+        // into straight RGBA that our PNG encoder expects.
+        let bytes_per_row = width * 4;
+        let mut rgba_pixels = vec![0u8; bytes_per_row * height];
+
+        let color_space = CGColorSpaceCreateDeviceRGB();
+        if color_space.is_null() {
+            CFRelease(image);
+            anyhow::bail!("CGColorSpaceCreateDeviceRGB returned null");
+        }
+
+        let bitmap_info = K_CG_IMAGE_ALPHA_PREMULTIPLIED_LAST | K_CG_BITMAP_BYTE_ORDER_32_BIG;
+
+        let context = CGBitmapContextCreate(
+            rgba_pixels.as_mut_ptr(),
+            width,
+            height,
+            8, // bits per component
+            bytes_per_row,
+            color_space,
+            bitmap_info,
+        );
+
+        if context.is_null() {
+            CGColorSpaceRelease(color_space);
+            CFRelease(image);
+            anyhow::bail!("CGBitmapContextCreate returned null");
+        }
+
+        let draw_rect = CGRect {
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: CGSize {
+                width: width as CGFloat,
+                height: height as CGFloat,
+            },
+        };
+
+        CGContextDrawImage(context, draw_rect, image);
+        CGContextRelease(context);
+        CGColorSpaceRelease(color_space);
+        CFRelease(image);
+
+        // Un-premultiply alpha.
+        // CoreGraphics gives us premultiplied RGBA. The PNG spec requires
+        // straight (non-premultiplied) alpha, so we reverse the operation.
+        for chunk in rgba_pixels.chunks_exact_mut(4) {
+            let a = chunk[3] as u16;
+            if a > 0 && a < 255 {
+                chunk[0] = ((chunk[0] as u16 * 255 + a / 2) / a).min(255) as u8;
+                chunk[1] = ((chunk[1] as u16 * 255 + a / 2) / a).min(255) as u8;
+                chunk[2] = ((chunk[2] as u16 * 255 + a / 2) / a).min(255) as u8;
+            }
+        }
+
+        encode_png(width as u32, height as u32, &rgba_pixels)
+    })
+    .await?
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 #[allow(dead_code)]
 pub async fn capture_window(_window_id: isize) -> anyhow::Result<Vec<u8>> {
     anyhow::bail!("screenshot capture not yet implemented for this platform")

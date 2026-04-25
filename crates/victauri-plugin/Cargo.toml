@@ -8,6 +8,8 @@ description = "Tauri plugin for Victauri — embedded MCP server with full-stack
 authors.workspace = true
 rust-version.workspace = true
 links = "tauri-plugin-victauri"
+keywords = ["tauri", "mcp", "plugin", "testing", "ai-agent"]
+categories = ["development-tools::testing", "gui"]
 
 [dependencies]
 victauri-core = { workspace = true }
@@ -23,6 +25,8 @@ anyhow = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+raw-window-handle = "0.6"
+base64 = "0.22"
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
@@ -37,4 +41,6 @@ windows = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_Storage_Xps",
     "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
 ] }

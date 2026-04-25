@@ -7,6 +7,8 @@ repository.workspace = true
 description = "Proc macros for Victauri — auto-instrumentation of Tauri commands"
 authors.workspace = true
 rust-version.workspace = true
+keywords = ["tauri", "mcp", "proc-macro", "introspection", "instrumentation"]
+categories = ["development-tools::testing", "development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true

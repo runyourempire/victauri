@@ -568,6 +568,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "victauri-core",
  "victauri-plugin",
 ]
 
@@ -4503,7 +4504,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "chrono",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rmcp",
  "schemars 1.2.1",

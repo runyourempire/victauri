@@ -11,6 +11,7 @@ tauri-build = { workspace = true }
 
 [dependencies]
 victauri-plugin = { workspace = true }
+victauri-core = { workspace = true }
 tauri = { workspace = true, features = ["wry"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
