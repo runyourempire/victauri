@@ -23,6 +23,10 @@ schemars = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+uuid = { workspace = true }
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
     "Win32_Graphics_Gdi",

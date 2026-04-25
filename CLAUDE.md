@@ -136,18 +136,18 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-25)
 
-**All 5 phases complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 48 tests pass (44 core + 4 macro). Tauri 2.10.3 + rmcp 1.5.0.
+**All 5 phases complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). Tauri 2.10.3 + rmcp 1.5.0.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.
-- **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
-- **victauri-plugin**: Full MCP server with 24 tools + 3 resources. Tools: eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats (P1), verify_state, detect_ghost_commands, check_ipc_integrity (P2), get_event_stream (P3), resolve_command, assert_semantic (P4), start_recording, stop_recording, checkpoint, list_checkpoints, get_replay_sequence, get_recorded_events, events_between_checkpoints (P5). Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge includes MutationObserver + event stream. `EventRecorder` with 50,000 event capacity in `VictauriState`.
-- **victauri-watchdog**: Polls `/health` every 5s, logs after 3 consecutive failures.
+- **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Uses proper `syn::meta` parsing (not string matching). Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
+- **victauri-plugin**: Full MCP server with 24 tools + 3 resources. Tools: eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats (P1), verify_state, detect_ghost_commands, check_ipc_integrity (P2), get_event_stream (P3), resolve_command, assert_semantic (P4), start_recording, stop_recording, checkpoint, list_checkpoints, get_replay_sequence, get_recorded_events, events_between_checkpoints (P5). Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge includes MutationObserver + event stream. `EventRecorder` with 50,000 event capacity in `VictauriState`. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. 16 integration tests (mock bridge, HTTP endpoints, full MCP protocol handshake, tool/resource listing).
+- **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
 - **demo-app**: Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up. Greet command + counter with backend state.
 
 ### Architecture notes:
-- **bridge.rs** — `WebviewBridge` trait erases the Tauri `Runtime` generic, allowing the MCP handler (which can't be generic) to access webview windows via `Arc<dyn WebviewBridge>`. Impl provided for `AppHandle<R: Runtime>`.
-- **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation.
+- **bridge.rs** — `WebviewBridge` trait (public) erases the Tauri `Runtime` generic, allowing the MCP handler (which can't be generic) to access webview windows via `Arc<dyn WebviewBridge>`. Impl provided for `AppHandle<R: Runtime>`. Testable via mock implementations.
+- **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `build_app()` constructs the axum `Router` independently of Tauri (testable). `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation. `VictauriMcpHandler::new()` public constructor for testing.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. Zero external dependencies beyond the `windows` crate. PNG encoder: raw zlib stored blocks + CRC32 + Adler32.
 
@@ -155,11 +155,12 @@ Standalone binary. Monitors the MCP server health endpoint.
 - MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`
 - `rmcp` v1.5.0 is the MCP SDK, feature `transport-streamable-http-server`
 - JS bridge uses ref handles (Playwright pattern), not CSS selectors
-- All plugin code gated behind `#[cfg(debug_assertions)]`
+- All plugin code gated behind `#[cfg(debug_assertions)]` — `init()` returns no-op plugin in release builds
 - `GlobalAlloc` wrapper pattern for memory tracking (atomics, zero-dep)
 - Event log is a `VecDeque` ring buffer with 10,000 capacity
 - WebviewBridge trait object pattern for runtime-erased AppHandle access
 - `tokio::sync::Mutex` for pending_evals (async lock needed across eval timeout awaits)
+- `build_app()` separated from `start_server()` — router construction is testable without Tauri runtime
 
 ### Relationship to 4DA:
 Victauri is a standalone open-source project. 4DA will eventually add `victauri-plugin` as a dev dependency. They share no code. The 4DA repo is at `D:\4DA`, this repo is at `D:\runyourempire\victauri`.

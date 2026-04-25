@@ -552,6 +552,14 @@ impl VictauriMcpHandler {
 }
 
 impl VictauriMcpHandler {
+    pub fn new(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> Self {
+        Self {
+            state,
+            bridge,
+            subscriptions: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
     async fn eval_with_return(
         &self,
         code: &str,
@@ -713,17 +721,8 @@ fn tool_error(msg: impl Into<String>) -> CallToolResult {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-pub async fn start_server<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    state: Arc<VictauriState>,
-    port: u16,
-) -> anyhow::Result<()> {
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
-    let handler = VictauriMcpHandler {
-        state: state.clone(),
-        bridge,
-        subscriptions: Arc::new(Mutex::new(HashSet::new())),
-    };
+pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> axum::Router {
+    let handler = VictauriMcpHandler::new(state.clone(), bridge);
 
     let mcp_service = StreamableHttpService::new(
         move || Ok(handler.clone()),
@@ -732,7 +731,7 @@ pub async fn start_server<R: Runtime>(
     );
 
     let info_state = state.clone();
-    let app = axum::Router::new()
+    axum::Router::new()
         .route_service("/mcp", mcp_service)
         .route("/health", axum::routing::get(|| async { "ok" }))
         .route(
@@ -750,7 +749,16 @@ pub async fn start_server<R: Runtime>(
                     }))
                 }
             }),
-        );
+        )
+}
+
+pub async fn start_server<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    state: Arc<VictauriState>,
+    port: u16,
+) -> anyhow::Result<()> {
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
+    let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     tracing::info!("Victauri MCP server listening on 127.0.0.1:{port}");

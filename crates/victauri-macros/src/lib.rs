@@ -95,58 +95,31 @@ struct InspectableAttrs {
 }
 
 fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
-    let attr_str = attr.to_string();
+    let mut attrs = InspectableAttrs {
+        description: None,
+        intent: None,
+        category: None,
+        examples: Vec::new(),
+    };
 
-    let description = extract_string_attr(&attr_str, "description");
-    let intent = extract_string_attr(&attr_str, "intent");
-    let category = extract_string_attr(&attr_str, "category");
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("description") {
+            attrs.description = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+        } else if meta.path.is_ident("intent") {
+            attrs.intent = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+        } else if meta.path.is_ident("category") {
+            attrs.category = Some(meta.value()?.parse::<syn::LitStr>()?.value());
+        } else if meta.path.is_ident("example") {
+            attrs.examples.push(meta.value()?.parse::<syn::LitStr>()?.value());
+        } else {
+            return Err(meta.error("unknown #[inspectable] attribute"));
+        }
+        Ok(())
+    });
 
-    let mut examples = Vec::new();
-    let mut search_from = 0;
-    while let Some(pos) = attr_str[search_from..].find("example") {
-        let abs_pos = search_from + pos;
-        let after_key = &attr_str[abs_pos + 7..];
-        if after_key.starts_with('s') {
-            search_from = abs_pos + 8;
-            continue;
-        }
-        if let Some(eq_pos) = after_key.find('=') {
-            let after_eq = &after_key[eq_pos + 1..];
-            let trimmed = after_eq.trim();
-            if let Some(stripped) = trimmed.strip_prefix('"') {
-                if let Some(end) = stripped.find('"') {
-                    examples.push(stripped[..end].to_string());
-                }
-            }
-        }
-        search_from = abs_pos + 8;
-    }
-
-    InspectableAttrs {
-        description,
-        intent,
-        category,
-        examples,
-    }
-}
-
-fn extract_string_attr(attr_str: &str, key: &str) -> Option<String> {
-    if let Some(start) = attr_str.find(key) {
-        let after_key = &attr_str[start + key.len()..];
-        if after_key.starts_with('s') || after_key.starts_with('_') {
-            return None;
-        }
-        if let Some(eq_pos) = after_key.find('=') {
-            let after_eq = &after_key[eq_pos + 1..];
-            let trimmed = after_eq.trim();
-            if let Some(stripped) = trimmed.strip_prefix('"') {
-                if let Some(end) = stripped.find('"') {
-                    return Some(stripped[..end].to_string());
-                }
-            }
-        }
-    }
-    None
+    syn::parse::Parser::parse(parser, attr)
+        .expect("failed to parse #[inspectable] attributes");
+    attrs
 }
 
 fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
