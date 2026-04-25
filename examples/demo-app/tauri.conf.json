@@ -1,0 +1,22 @@
+{
+  "productName": "victauri-demo",
+  "identifier": "ai.4da.victauri.demo",
+  "build": {
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Victauri Demo",
+        "width": 900,
+        "height": 600,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

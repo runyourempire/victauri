@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Victauri Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f13;
+      color: #e0e0e0;
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+    .container { max-width: 600px; width: 100%; }
+    h1 { color: #8b5cf6; margin-bottom: 8px; font-size: 1.8em; }
+    .subtitle { color: #888; margin-bottom: 32px; font-size: 0.95em; }
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card h2 { color: #a78bfa; font-size: 1.1em; margin-bottom: 16px; }
+    label { display: block; color: #aaa; font-size: 0.85em; margin-bottom: 6px; }
+    input {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0f0f13;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.95em;
+      margin-bottom: 12px;
+    }
+    input:focus { outline: none; border-color: #8b5cf6; }
+    button {
+      padding: 10px 20px;
+      background: #8b5cf6;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95em;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #7c3aed; }
+    button:active { background: #6d28d9; }
+    .result {
+      margin-top: 12px;
+      padding: 12px;
+      background: #0f0f13;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.9em;
+      color: #a78bfa;
+      min-height: 20px;
+    }
+    .counter-display {
+      font-size: 3em;
+      text-align: center;
+      color: #8b5cf6;
+      font-weight: bold;
+      margin: 16px 0;
+    }
+    .counter-buttons { display: flex; gap: 12px; justify-content: center; }
+    .status {
+      margin-top: 32px;
+      padding: 16px;
+      background: #0d1f0d;
+      border: 1px solid #1a3a1a;
+      border-radius: 12px;
+      font-size: 0.85em;
+      color: #4ade80;
+    }
+    .status .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Victauri Demo</h1>
+    <p class="subtitle">A minimal Tauri app with Victauri introspection</p>
+
+    <div class="card">
+      <h2>Greet</h2>
+      <label for="name-input">Your name</label>
+      <input id="name-input" type="text" placeholder="Enter your name..." />
+      <button id="greet-btn">Greet</button>
+      <div id="greet-result" class="result"></div>
+    </div>
+
+    <div class="card">
+      <h2>Counter</h2>
+      <div id="counter-value" class="counter-display">0</div>
+      <div class="counter-buttons">
+        <button id="increment-btn">Increment</button>
+        <button id="refresh-btn">Refresh from Backend</button>
+      </div>
+    </div>
+
+    <div class="status">
+      <span class="dot"></span>
+      Victauri MCP server running on <strong>127.0.0.1:7373</strong>
+    </div>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+
+    document.getElementById("greet-btn").addEventListener("click", async () => {
+      const name = document.getElementById("name-input").value || "World";
+      const result = await invoke("greet", { name });
+      document.getElementById("greet-result").textContent = result;
+    });
+
+    document.getElementById("name-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("greet-btn").click();
+    });
+
+    document.getElementById("increment-btn").addEventListener("click", async () => {
+      const count = await invoke("increment");
+      document.getElementById("counter-value").textContent = count;
+    });
+
+    document.getElementById("refresh-btn").addEventListener("click", async () => {
+      const count = await invoke("get_counter");
+      document.getElementById("counter-value").textContent = count;
+    });
+
+    invoke("get_counter").then((count) => {
+      document.getElementById("counter-value").textContent = count;
+    });
+  </script>
+</body>
+</html>

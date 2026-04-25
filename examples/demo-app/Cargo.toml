@@ -1,0 +1,16 @@
+[package]
+name = "demo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Minimal Tauri 2 app with Victauri wired up"
+publish = false
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+victauri-plugin = { workspace = true }
+tauri = { workspace = true, features = ["wry"] }
+serde = { workspace = true }
+serde_json = { workspace = true }

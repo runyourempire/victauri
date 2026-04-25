@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for the demo app",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

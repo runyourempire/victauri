@@ -5,6 +5,7 @@ members = [
     "crates/victauri-macros",
     "crates/victauri-core",
     "crates/victauri-watchdog",
+    "examples/demo-app",
 ]
 
 [workspace.package]
@@ -40,6 +41,7 @@ proc-macro2 = "1"
 
 # Utilities
 schemars = { version = "1", features = ["chrono04"] }
+tauri-build = "2"
 anyhow = "1"
 thiserror = "2"
 tracing = "0.1"

@@ -101,7 +101,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Phase Roadmap
 
-### Phase 1: Foundation (Current)
+### Phase 1: Foundation (Complete)
 - [x] Workspace structure
 - [x] Core types (events, registry, snapshots)
 - [x] Proc macro skeleton (#[inspectable])
@@ -112,9 +112,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Platform screenshot (Windows PrintWindow → PNG)
 - [x] Unit tests (10 core type tests, 3 proc macro tests)
 - [x] Fix proc macro bug (type extraction via quote)
-- [ ] Demo app (minimal Tauri 2 app proving end-to-end)
+- [x] Demo app (minimal Tauri 2 app in examples/demo-app)
 
-### Phase 2: Dual-Context Verification
+### Phase 2: Dual-Context Verification (Next)
 - [ ] Cross-boundary state verification tool
 - [ ] Ghost command detection
 - [ ] IPC round-trip integrity checking
@@ -136,22 +136,20 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-25)
 
-All 4 crates compile cleanly (`cargo clippy -- -D warnings` passes). 13 tests pass. Tauri 2.10.3 + rmcp 1.5.0.
+**Phase 1 is complete.** All 5 crates (4 library + 1 demo) compile cleanly (`cargo clippy -- -D warnings` passes). 13 tests pass. Tauri 2.10.3 + rmcp 1.5.0.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (append-only ring buffer), `CommandRegistry` (thread-safe BTreeMap with search), `DomSnapshot` with ref handles and accessible text output, `WindowState`, `VerificationResult`/`Divergence` types. Fully implemented. 10 unit tests.
 - **victauri-macros**: `#[inspectable]` attribute proc macro. Parses `description` attr, extracts args (skipping Tauri framework types), generates `<fn>__schema()` companion returning `CommandInfo`. 3 integration tests.
 - **victauri-plugin**: Full MCP server with 11 tools (eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats). Eval-with-return implemented via oneshot channel pattern (UUID callback through JS bridge → Tauri invoke → pending_evals map → tokio::sync::oneshot). WebviewBridge trait for type-erased AppHandle access from the MCP handler. Windows screenshot via PrintWindow Win32 API with zero-dep PNG encoding.
 - **victauri-watchdog**: Polls `/health` every 5s, logs after 3 consecutive failures.
+- **demo-app**: Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up. Greet command + counter with backend state — proves end-to-end plugin integration.
 
 ### Architecture notes:
 - **bridge.rs** — `WebviewBridge` trait erases the Tauri `Runtime` generic, allowing the MCP handler (which can't be generic) to access webview windows via `Arc<dyn WebviewBridge>`. Impl provided for `AppHandle<R: Runtime>`.
 - **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. Zero external dependencies beyond the `windows` crate. PNG encoder: raw zlib stored blocks + CRC32 + Adler32.
-
-### What needs to happen next (Phase 1 completion):
-1. **Demo app** — Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up, proving the plugin works end-to-end.
 
 ### Key technical decisions already made:
 - MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`

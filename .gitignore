@@ -15,5 +15,8 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Tauri generated
+**/gen/
+
 # Claude Code
 .claude/plans/
