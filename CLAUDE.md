@@ -132,6 +132,37 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [ ] State snapshot checkpointing
 - [ ] Rewind/replay tools
 
+## Current State (2026-04-25)
+
+All 4 crates compile cleanly against Tauri 2.10.3 and rmcp 1.5.0. Initial commit `827ce49`.
+
+### What exists and works:
+- **victauri-core**: `EventLog` (append-only ring buffer), `CommandRegistry` (thread-safe BTreeMap with search), `DomSnapshot` with ref handles and accessible text output, `WindowState`, `VerificationResult`/`Divergence` types. Fully implemented.
+- **victauri-macros**: `#[inspectable]` attribute proc macro. Parses `description` attr, extracts args (skipping Tauri framework types like AppHandle/State), generates `<fn>__schema()` companion returning `CommandInfo`. Skeleton — works but needs test coverage.
+- **victauri-plugin**: `init<R: Runtime>()` entry point. `setup()` manages `VictauriState` (event log + registry), spawns axum server on `:7373`. `on_webview_ready()` injects JS bridge. 7 Tauri commands registered. JS bridge (`INIT_SCRIPT`) does full DOM walking with ref map, role inference, console hooking, click/fill/type via DOM events.
+- **victauri-watchdog**: Polls `/health` every 5s, logs after 3 consecutive failures. Needs reqwest (added).
+
+### What needs to happen next (Phase 1 completion):
+1. **Wire up rmcp MCP server** — Replace the placeholder axum routes in `mcp.rs` with a full `rmcp` server using `#[tool]` macros. The server should expose tools matching what's in the Tauri commands (snapshot, screenshot, click, type, fill, invoke, eval, query_db, window state, memory). Use `transport-streamable-http-server` feature.
+2. **Eval-with-return** — `victauri_eval_js` currently fires JS and returns "eval dispatched" (fire-and-forget). Implement the oneshot channel pattern: generate a UUID, inject JS that calls `invoke('plugin:victauri|victauri_eval_callback', {id, result})` back, Rust side awaits on a `tokio::sync::oneshot` with 10s timeout. Same pattern for `victauri_dom_snapshot`.
+3. **Platform screenshot** — `screenshot.rs` has stubs. Implement Windows via `PrintWindow` Win32 API using the `windows` crate (already in deps). Return PNG bytes via `image` crate or raw bitmap → PNG encoding.
+4. **Tests** — Unit tests for core types, integration test for proc macro output, basic smoke test for plugin initialization.
+5. **Demo app** — Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up, proving the plugin works end-to-end.
+
+### Key technical decisions already made:
+- MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`
+- `rmcp` v1.5.0 is the MCP SDK, feature `transport-streamable-http-server`
+- JS bridge uses ref handles (Playwright pattern), not CSS selectors
+- All plugin code gated behind `#[cfg(debug_assertions)]`
+- `GlobalAlloc` wrapper pattern for memory tracking (atomics, zero-dep)
+- Event log is a `VecDeque` ring buffer with 10,000 capacity
+
+### Relationship to 4DA:
+Victauri is a standalone open-source project. 4DA will eventually add `victauri-plugin` as a dev dependency. They share no code. The 4DA repo is at `D:\4DA`, this repo is at `D:\runyourempire\victauri`.
+
+### Owner:
+4DA Systems Pty Ltd (ACN 696 078 841). Apache-2.0 license. Contact: hello@4da.ai.
+
 ## Never Commit
 - `target/` — build artifacts
 - Any API keys or credentials
