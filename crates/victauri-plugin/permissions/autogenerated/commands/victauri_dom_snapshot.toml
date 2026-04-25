@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-victauri-dom-snapshot"
+description = "Enables the victauri_dom_snapshot command without any pre-configured scope."
+commands.allow = ["victauri_dom_snapshot"]
+
+[[permission]]
+identifier = "deny-victauri-dom-snapshot"
+description = "Denies the victauri_dom_snapshot command without any pre-configured scope."
+commands.deny = ["victauri_dom_snapshot"]

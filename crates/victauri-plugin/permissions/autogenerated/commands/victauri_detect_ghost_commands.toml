@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-victauri-detect-ghost-commands"
+description = "Enables the victauri_detect_ghost_commands command without any pre-configured scope."
+commands.allow = ["victauri_detect_ghost_commands"]
+
+[[permission]]
+identifier = "deny-victauri-detect-ghost-commands"
+description = "Denies the victauri_detect_ghost_commands command without any pre-configured scope."
+commands.deny = ["victauri_detect_ghost_commands"]

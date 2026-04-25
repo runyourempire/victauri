@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-victauri-eval-js"
+description = "Enables the victauri_eval_js command without any pre-configured scope."
+commands.allow = ["victauri_eval_js"]
+
+[[permission]]
+identifier = "deny-victauri-eval-js"
+description = "Denies the victauri_eval_js command without any pre-configured scope."
+commands.deny = ["victauri_eval_js"]

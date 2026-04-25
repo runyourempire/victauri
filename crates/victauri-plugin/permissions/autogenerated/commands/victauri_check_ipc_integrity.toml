@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-victauri-check-ipc-integrity"
+description = "Enables the victauri_check_ipc_integrity command without any pre-configured scope."
+commands.allow = ["victauri_check_ipc_integrity"]
+
+[[permission]]
+identifier = "deny-victauri-check-ipc-integrity"
+description = "Denies the victauri_check_ipc_integrity command without any pre-configured scope."
+commands.deny = ["victauri_check_ipc_integrity"]

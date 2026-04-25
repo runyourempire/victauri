@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-victauri-eval-callback"
+description = "Enables the victauri_eval_callback command without any pre-configured scope."
+commands.allow = ["victauri_eval_callback"]
+
+[[permission]]
+identifier = "deny-victauri-eval-callback"
+description = "Denies the victauri_eval_callback command without any pre-configured scope."
+commands.deny = ["victauri_eval_callback"]
