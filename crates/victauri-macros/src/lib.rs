@@ -68,7 +68,7 @@ pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input
 
-        #[allow(dead_code)]
+        #[allow(dead_code, non_snake_case)]
         fn #schema_fn_name() -> victauri_core::registry::CommandInfo {
             victauri_core::registry::CommandInfo {
                 name: #fn_name_str.to_string(),
