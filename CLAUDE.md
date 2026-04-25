@@ -129,19 +129,19 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Natural language → command resolution
 - [x] Semantic test assertions
 
-### Phase 5: Time-Travel (Next)
-- [ ] IPC event recording
-- [ ] State snapshot checkpointing
-- [ ] Rewind/replay tools
+### Phase 5: Time-Travel (Complete)
+- [x] IPC event recording
+- [x] State snapshot checkpointing
+- [x] Rewind/replay tools
 
 ## Current State (2026-04-25)
 
-**Phase 4 is complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 41 tests pass (37 core + 4 macro). Tauri 2.10.3 + rmcp 1.5.0.
+**All 5 phases complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 48 tests pass (44 core + 4 macro). Tauri 2.10.3 + rmcp 1.5.0.
 
 ### What exists and works:
-- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`. 37 unit tests.
+- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.
 - **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
-- **victauri-plugin**: Full MCP server with 17 tools + 3 resources. Tools: eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats (P1), verify_state, detect_ghost_commands, check_ipc_integrity (P2), get_event_stream (P3), resolve_command, assert_semantic (P4). Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge includes MutationObserver + event stream.
+- **victauri-plugin**: Full MCP server with 24 tools + 3 resources. Tools: eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats (P1), verify_state, detect_ghost_commands, check_ipc_integrity (P2), get_event_stream (P3), resolve_command, assert_semantic (P4), start_recording, stop_recording, checkpoint, list_checkpoints, get_replay_sequence, get_recorded_events, events_between_checkpoints (P5). Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge includes MutationObserver + event stream. `EventRecorder` with 50,000 event capacity in `VictauriState`.
 - **victauri-watchdog**: Polls `/health` every 5s, logs after 3 consecutive failures.
 - **demo-app**: Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up. Greet command + counter with backend state.
 

@@ -115,6 +115,36 @@ pub struct EventStreamParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct StartRecordingParams {
+    /// Optional session ID. If omitted, a UUID is generated.
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CheckpointParams {
+    /// Unique ID for this checkpoint.
+    pub id: String,
+    /// Optional human-readable label for the checkpoint.
+    pub label: Option<String>,
+    /// State snapshot as JSON to associate with this checkpoint.
+    pub state: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReplayParams {
+    /// Only return events after this index.
+    pub since_index: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EventsBetweenCheckpointsParams {
+    /// Checkpoint ID to start from.
+    pub from_checkpoint: String,
+    /// Checkpoint ID to end at.
+    pub to_checkpoint: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ResolveCommandParams {
     /// Natural language query describing what you want to do (e.g. "save the user's settings").
     pub query: String,
@@ -418,6 +448,105 @@ impl VictauriMcpHandler {
         match serde_json::to_string_pretty(&result) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
             Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Start recording IPC events and state changes. Returns false if a recording is already active.")]
+    async fn start_recording(
+        &self,
+        Parameters(params): Parameters<StartRecordingParams>,
+    ) -> CallToolResult {
+        let session_id = params
+            .session_id
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let started = self.state.recorder.start(session_id.clone());
+        let result = serde_json::json!({
+            "started": started,
+            "session_id": session_id,
+        });
+        CallToolResult::success(vec![Content::text(result.to_string())])
+    }
+
+    #[tool(description = "Stop the current recording and return the full recorded session with all events and checkpoints.")]
+    async fn stop_recording(&self) -> CallToolResult {
+        match self.state.recorder.stop() {
+            Some(session) => match serde_json::to_string_pretty(&session) {
+                Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+                Err(e) => tool_error(e.to_string()),
+            },
+            None => tool_error("no recording is active"),
+        }
+    }
+
+    #[tool(description = "Create a state checkpoint during recording. Associates the current event index with a state snapshot for later comparison.")]
+    async fn checkpoint(
+        &self,
+        Parameters(params): Parameters<CheckpointParams>,
+    ) -> CallToolResult {
+        let created = self
+            .state
+            .recorder
+            .checkpoint(params.id.clone(), params.label, params.state);
+        if created {
+            let result = serde_json::json!({
+                "created": true,
+                "checkpoint_id": params.id,
+                "event_index": self.state.recorder.event_count(),
+            });
+            CallToolResult::success(vec![Content::text(result.to_string())])
+        } else {
+            tool_error("no recording is active — start one first")
+        }
+    }
+
+    #[tool(description = "Get all checkpoints from the current recording session.")]
+    async fn list_checkpoints(&self) -> CallToolResult {
+        let checkpoints = self.state.recorder.get_checkpoints();
+        match serde_json::to_string_pretty(&checkpoints) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Get the IPC replay sequence: all IPC calls recorded in order, suitable for replaying the session.")]
+    async fn get_replay_sequence(&self) -> CallToolResult {
+        let calls = self.state.recorder.ipc_replay_sequence();
+        match serde_json::to_string_pretty(&calls) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Get recorded events since a specific event index. Useful for incremental replay.")]
+    async fn get_recorded_events(
+        &self,
+        Parameters(params): Parameters<ReplayParams>,
+    ) -> CallToolResult {
+        let events = self
+            .state
+            .recorder
+            .events_since(params.since_index.unwrap_or(0));
+        match serde_json::to_string_pretty(&events) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Get all events that occurred between two checkpoints.")]
+    async fn events_between_checkpoints(
+        &self,
+        Parameters(params): Parameters<EventsBetweenCheckpointsParams>,
+    ) -> CallToolResult {
+        match self
+            .state
+            .recorder
+            .events_between_checkpoints(&params.from_checkpoint, &params.to_checkpoint)
+        {
+            Some(events) => match serde_json::to_string_pretty(&events) {
+                Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+                Err(e) => tool_error(e.to_string()),
+            },
+            None => tool_error("one or both checkpoint IDs not found"),
         }
     }
 }

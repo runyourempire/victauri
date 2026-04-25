@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
 use tokio::sync::{oneshot, Mutex};
-use victauri_core::{CommandRegistry, EventLog};
+use victauri_core::{CommandRegistry, EventLog, EventRecorder};
 
 pub use victauri_macros::inspectable;
 
@@ -24,6 +24,7 @@ pub struct VictauriState {
     pub registry: CommandRegistry,
     pub port: u16,
     pub pending_evals: PendingCallbacks,
+    pub recorder: EventRecorder,
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -37,6 +38,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 registry,
                 port: DEFAULT_PORT,
                 pending_evals: Arc::new(Mutex::new(HashMap::new())),
+                recorder: EventRecorder::new(50_000),
             });
 
             app.manage(state.clone());

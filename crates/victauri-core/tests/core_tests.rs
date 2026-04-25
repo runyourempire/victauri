@@ -893,3 +893,217 @@ fn semantic_assertion_exists() {
     assert!(victauri_core::evaluate_assertion(serde_json::json!("something"), &assertion).passed);
     assert!(!victauri_core::evaluate_assertion(serde_json::Value::Null, &assertion).passed);
 }
+
+// ── Phase 5: Time-Travel (recording, checkpoints, replay) ──────────────────
+
+#[test]
+fn recorder_start_stop() {
+    let recorder = EventRecorder::new(1000);
+    assert!(!recorder.is_recording());
+
+    assert!(recorder.start("session-1".to_string()));
+    assert!(recorder.is_recording());
+    assert!(!recorder.start("session-2".to_string()));
+
+    let session = recorder.stop().unwrap();
+    assert_eq!(session.id, "session-1");
+    assert!(session.events.is_empty());
+    assert!(!recorder.is_recording());
+}
+
+#[test]
+fn recorder_record_events() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "save".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(5),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 10,
+        webview_label: "main".to_string(),
+    }));
+
+    recorder.record_event(AppEvent::StateChange {
+        key: "user".to_string(),
+        timestamp: Utc::now(),
+        caused_by: Some("save".to_string()),
+    });
+
+    assert_eq!(recorder.event_count(), 2);
+
+    let session = recorder.stop().unwrap();
+    assert_eq!(session.events.len(), 2);
+    assert_eq!(session.events[0].index, 0);
+    assert_eq!(session.events[1].index, 1);
+}
+
+#[test]
+fn recorder_checkpoints() {
+    let recorder = EventRecorder::new(1000);
+    assert!(!recorder.checkpoint("cp1".to_string(), None, serde_json::json!({})));
+
+    recorder.start("s1".to_string());
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "load".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    assert!(recorder.checkpoint(
+        "before-save".to_string(),
+        Some("Before saving".to_string()),
+        serde_json::json!({"count": 0}),
+    ));
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "2".to_string(),
+        command: "save".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(5),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 10,
+        webview_label: "main".to_string(),
+    }));
+
+    assert!(recorder.checkpoint(
+        "after-save".to_string(),
+        Some("After saving".to_string()),
+        serde_json::json!({"count": 1}),
+    ));
+
+    assert_eq!(recorder.checkpoint_count(), 2);
+
+    let checkpoints = recorder.get_checkpoints();
+    assert_eq!(checkpoints.len(), 2);
+    assert_eq!(checkpoints[0].id, "before-save");
+    assert_eq!(checkpoints[1].id, "after-save");
+    assert_eq!(checkpoints[0].state, serde_json::json!({"count": 0}));
+    assert_eq!(checkpoints[1].state, serde_json::json!({"count": 1}));
+}
+
+#[test]
+fn recorder_events_since() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    for i in 0..5 {
+        recorder.record_event(AppEvent::Ipc(IpcCall {
+            id: i.to_string(),
+            command: format!("cmd_{i}"),
+            timestamp: Utc::now(),
+            duration_ms: None,
+            result: event::IpcResult::Pending,
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+    }
+
+    let since_3 = recorder.events_since(3);
+    assert_eq!(since_3.len(), 2);
+    assert_eq!(since_3[0].index, 3);
+    assert_eq!(since_3[1].index, 4);
+}
+
+#[test]
+fn recorder_events_between_checkpoints() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "0".to_string(),
+        command: "before".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    recorder.checkpoint("cp1".to_string(), None, serde_json::json!(null));
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "between".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "2".to_string(),
+        command: "between2".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    recorder.checkpoint("cp2".to_string(), None, serde_json::json!(null));
+
+    let between = recorder
+        .events_between_checkpoints("cp1", "cp2")
+        .unwrap();
+    assert_eq!(between.len(), 2);
+
+    assert!(recorder
+        .events_between_checkpoints("cp1", "nonexistent")
+        .is_none());
+}
+
+#[test]
+fn recorder_ipc_replay_sequence() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "save".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(5),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 10,
+        webview_label: "main".to_string(),
+    }));
+
+    recorder.record_event(AppEvent::StateChange {
+        key: "user".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+
+    recorder.record_event(AppEvent::Ipc(IpcCall {
+        id: "2".to_string(),
+        command: "load".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(3),
+        result: event::IpcResult::Ok(serde_json::json!("data")),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    let replay = recorder.ipc_replay_sequence();
+    assert_eq!(replay.len(), 2);
+    assert_eq!(replay[0].command, "save");
+    assert_eq!(replay[1].command, "load");
+}
+
+#[test]
+fn recorder_not_recording_returns_empty() {
+    let recorder = EventRecorder::new(1000);
+    assert_eq!(recorder.event_count(), 0);
+    assert_eq!(recorder.checkpoint_count(), 0);
+    assert!(recorder.events_since(0).is_empty());
+    assert!(recorder.ipc_replay_sequence().is_empty());
+    assert!(recorder.stop().is_none());
+}
