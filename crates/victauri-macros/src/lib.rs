@@ -49,6 +49,22 @@ pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let return_type = extract_return_type(&input.sig);
 
+    let intent_token = match &attrs.intent {
+        Some(i) => quote! { Some(#i.to_string()) },
+        None => quote! { None },
+    };
+
+    let category_token = match &attrs.category {
+        Some(c) => quote! { Some(#c.to_string()) },
+        None => quote! { None },
+    };
+
+    let example_tokens: Vec<_> = attrs
+        .examples
+        .iter()
+        .map(|e| quote! { #e.to_string() })
+        .collect();
+
     let expanded = quote! {
         #input
 
@@ -61,6 +77,9 @@ pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
                 args: vec![#(#arg_tokens),*],
                 return_type: Some(#return_type.to_string()),
                 is_async: #is_async,
+                intent: #intent_token,
+                category: #category_token,
+                examples: vec![#(#example_tokens),*],
             }
         }
     };
@@ -70,25 +89,64 @@ pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 struct InspectableAttrs {
     description: Option<String>,
+    intent: Option<String>,
+    category: Option<String>,
+    examples: Vec<String>,
 }
 
 fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
-    let mut description = None;
-
     let attr_str = attr.to_string();
-    if let Some(desc_start) = attr_str.find("description") {
-        if let Some(eq_pos) = attr_str[desc_start..].find('=') {
-            let after_eq = &attr_str[desc_start + eq_pos + 1..];
+
+    let description = extract_string_attr(&attr_str, "description");
+    let intent = extract_string_attr(&attr_str, "intent");
+    let category = extract_string_attr(&attr_str, "category");
+
+    let mut examples = Vec::new();
+    let mut search_from = 0;
+    while let Some(pos) = attr_str[search_from..].find("example") {
+        let abs_pos = search_from + pos;
+        let after_key = &attr_str[abs_pos + 7..];
+        if after_key.starts_with('s') {
+            search_from = abs_pos + 8;
+            continue;
+        }
+        if let Some(eq_pos) = after_key.find('=') {
+            let after_eq = &after_key[eq_pos + 1..];
             let trimmed = after_eq.trim();
             if let Some(stripped) = trimmed.strip_prefix('"') {
                 if let Some(end) = stripped.find('"') {
-                    description = Some(stripped[..end].to_string());
+                    examples.push(stripped[..end].to_string());
+                }
+            }
+        }
+        search_from = abs_pos + 8;
+    }
+
+    InspectableAttrs {
+        description,
+        intent,
+        category,
+        examples,
+    }
+}
+
+fn extract_string_attr(attr_str: &str, key: &str) -> Option<String> {
+    if let Some(start) = attr_str.find(key) {
+        let after_key = &attr_str[start + key.len()..];
+        if after_key.starts_with('s') || after_key.starts_with('_') {
+            return None;
+        }
+        if let Some(eq_pos) = after_key.find('=') {
+            let after_eq = &after_key[eq_pos + 1..];
+            let trimmed = after_eq.trim();
+            if let Some(stripped) = trimmed.strip_prefix('"') {
+                if let Some(end) = stripped.find('"') {
+                    return Some(stripped[..end].to_string());
                 }
             }
         }
     }
-
-    InspectableAttrs { description }
+    None
 }
 
 fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {

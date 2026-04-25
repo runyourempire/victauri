@@ -121,6 +121,9 @@ fn command_registry_register_and_list() {
         }],
         return_type: Some("Result<(), String>".to_string()),
         is_async: true,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     assert_eq!(registry.count(), 1);
@@ -141,6 +144,9 @@ fn command_registry_search() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     registry.register(CommandInfo {
@@ -150,6 +156,9 @@ fn command_registry_search() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     registry.register(CommandInfo {
@@ -159,6 +168,9 @@ fn command_registry_search() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     let results = registry.search("user");
@@ -392,6 +404,9 @@ fn ghost_commands_all_matched() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
     registry.register(CommandInfo {
         name: "load".to_string(),
@@ -400,6 +415,9 @@ fn ghost_commands_all_matched() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     let frontend = vec!["save".to_string(), "load".to_string()];
@@ -420,6 +438,9 @@ fn ghost_commands_frontend_only() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     let frontend = vec!["save".to_string(), "unknown_cmd".to_string()];
@@ -443,6 +464,9 @@ fn ghost_commands_registry_only() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
     registry.register(CommandInfo {
         name: "unused_cmd".to_string(),
@@ -451,6 +475,9 @@ fn ghost_commands_registry_only() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     let frontend = vec!["save".to_string()];
@@ -474,6 +501,9 @@ fn ghost_commands_bidirectional() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
     registry.register(CommandInfo {
         name: "backend_only".to_string(),
@@ -482,6 +512,9 @@ fn ghost_commands_bidirectional() {
         args: vec![],
         return_type: None,
         is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
     });
 
     let frontend = vec!["shared".to_string(), "frontend_only".to_string()];
@@ -630,4 +663,233 @@ fn ipc_integrity_mixed_status() {
     assert_eq!(report.errored, 1);
     assert_eq!(report.stale_calls.len(), 1);
     assert_eq!(report.error_calls.len(), 1);
+}
+
+// ── Phase 4: Intent annotations and NL resolution ──────────────────────────
+
+#[test]
+fn command_info_with_intent_fields() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save_settings".to_string(),
+        plugin: None,
+        description: Some("Persist user settings".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: true,
+        intent: Some("persist user preferences to storage".to_string()),
+        category: Some("settings".to_string()),
+        examples: vec![
+            "save my settings".to_string(),
+            "persist preferences".to_string(),
+        ],
+    });
+
+    let cmd = registry.get("save_settings").unwrap();
+    assert_eq!(cmd.intent.as_deref(), Some("persist user preferences to storage"));
+    assert_eq!(cmd.category.as_deref(), Some("settings"));
+    assert_eq!(cmd.examples.len(), 2);
+}
+
+#[test]
+fn resolve_command_by_name() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save_file".to_string(),
+        plugin: None,
+        description: Some("Save a file to disk".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
+    });
+    registry.register(CommandInfo {
+        name: "delete_file".to_string(),
+        plugin: None,
+        description: Some("Delete a file".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
+    });
+
+    let results = registry.resolve("save file");
+    assert!(!results.is_empty());
+    assert_eq!(results[0].command.name, "save_file");
+    assert!(results[0].score > results.get(1).map_or(0.0, |r| r.score));
+}
+
+#[test]
+fn resolve_command_by_intent() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "update_profile".to_string(),
+        plugin: None,
+        description: Some("Update user profile".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: Some("modify the current user's profile information".to_string()),
+        category: Some("user".to_string()),
+        examples: vec!["change my name".to_string()],
+    });
+    registry.register(CommandInfo {
+        name: "get_profile".to_string(),
+        plugin: None,
+        description: Some("Fetch user profile".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: Some("retrieve the current user's profile data".to_string()),
+        category: Some("user".to_string()),
+        examples: vec![],
+    });
+
+    let results = registry.resolve("modify profile");
+    assert!(!results.is_empty());
+    assert_eq!(results[0].command.name, "update_profile");
+}
+
+#[test]
+fn resolve_command_by_example() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "export_data".to_string(),
+        plugin: None,
+        description: Some("Export data to CSV".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: None,
+        category: None,
+        examples: vec!["download my data as csv".to_string()],
+    });
+
+    let results = registry.resolve("download my data as csv");
+    assert!(!results.is_empty());
+    assert_eq!(results[0].command.name, "export_data");
+}
+
+#[test]
+fn resolve_command_no_match() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save".to_string(),
+        plugin: None,
+        description: Some("Save data".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
+    });
+
+    let results = registry.resolve("zzz_nonexistent_zzz");
+    assert!(results.is_empty());
+}
+
+// ── Phase 4: Semantic assertions ────────────────────────────────────────────
+
+#[test]
+fn semantic_assertion_equals() {
+    let assertion = victauri_core::SemanticAssertion {
+        label: "count is 5".to_string(),
+        condition: "equals".to_string(),
+        expected: serde_json::json!(5),
+    };
+
+    let pass = victauri_core::evaluate_assertion(serde_json::json!(5), &assertion);
+    assert!(pass.passed);
+    assert!(pass.message.is_none());
+
+    let fail = victauri_core::evaluate_assertion(serde_json::json!(3), &assertion);
+    assert!(!fail.passed);
+    assert!(fail.message.is_some());
+}
+
+#[test]
+fn semantic_assertion_truthy_falsy() {
+    let truthy = victauri_core::SemanticAssertion {
+        label: "value is truthy".to_string(),
+        condition: "truthy".to_string(),
+        expected: serde_json::Value::Null,
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(true), &truthy).passed);
+    assert!(victauri_core::evaluate_assertion(serde_json::json!("hello"), &truthy).passed);
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(42), &truthy).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::Value::Null, &truthy).passed);
+
+    let falsy = victauri_core::SemanticAssertion {
+        label: "value is falsy".to_string(),
+        condition: "falsy".to_string(),
+        expected: serde_json::Value::Null,
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::Value::Null, &falsy).passed);
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(false), &falsy).passed);
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(0), &falsy).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::json!(1), &falsy).passed);
+}
+
+#[test]
+fn semantic_assertion_contains() {
+    let assertion = victauri_core::SemanticAssertion {
+        label: "string contains hello".to_string(),
+        condition: "contains".to_string(),
+        expected: serde_json::json!("hello"),
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!("say hello world"), &assertion).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::json!("goodbye"), &assertion).passed);
+}
+
+#[test]
+fn semantic_assertion_comparisons() {
+    let gt = victauri_core::SemanticAssertion {
+        label: "greater than 10".to_string(),
+        condition: "greater_than".to_string(),
+        expected: serde_json::json!(10),
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(15), &gt).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::json!(5), &gt).passed);
+
+    let lt = victauri_core::SemanticAssertion {
+        label: "less than 10".to_string(),
+        condition: "less_than".to_string(),
+        expected: serde_json::json!(10),
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!(5), &lt).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::json!(15), &lt).passed);
+}
+
+#[test]
+fn semantic_assertion_type_is() {
+    let assertion = victauri_core::SemanticAssertion {
+        label: "is a string".to_string(),
+        condition: "type_is".to_string(),
+        expected: serde_json::json!("string"),
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!("hello"), &assertion).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::json!(42), &assertion).passed);
+}
+
+#[test]
+fn semantic_assertion_exists() {
+    let assertion = victauri_core::SemanticAssertion {
+        label: "value exists".to_string(),
+        condition: "exists".to_string(),
+        expected: serde_json::Value::Null,
+    };
+
+    assert!(victauri_core::evaluate_assertion(serde_json::json!("something"), &assertion).passed);
+    assert!(!victauri_core::evaluate_assertion(serde_json::Value::Null, &assertion).passed);
 }

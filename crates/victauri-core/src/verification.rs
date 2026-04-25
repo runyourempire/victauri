@@ -270,3 +270,88 @@ pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> Ipc
         healthy,
     }
 }
+
+// ── Semantic test assertions ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticAssertion {
+    pub label: String,
+    pub condition: String,
+    pub expected: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssertionResult {
+    pub label: String,
+    pub passed: bool,
+    pub actual: serde_json::Value,
+    pub expected: serde_json::Value,
+    pub message: Option<String>,
+}
+
+pub fn evaluate_assertion(
+    actual: serde_json::Value,
+    assertion: &SemanticAssertion,
+) -> AssertionResult {
+    let passed = match assertion.condition.as_str() {
+        "equals" => actual == assertion.expected,
+        "not_equals" => actual != assertion.expected,
+        "contains" => match (&actual, &assertion.expected) {
+            (serde_json::Value::String(a), serde_json::Value::String(e)) => a.contains(e.as_str()),
+            (serde_json::Value::Array(arr), val) => arr.contains(val),
+            _ => false,
+        },
+        "greater_than" => match (actual.as_f64(), assertion.expected.as_f64()) {
+            (Some(a), Some(e)) => a > e,
+            _ => false,
+        },
+        "less_than" => match (actual.as_f64(), assertion.expected.as_f64()) {
+            (Some(a), Some(e)) => a < e,
+            _ => false,
+        },
+        "truthy" => matches!(
+            &actual,
+            serde_json::Value::Bool(true)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_)
+                | serde_json::Value::Array(_)
+                | serde_json::Value::Object(_)
+        ) && actual != serde_json::Value::String(String::new()),
+        "falsy" => matches!(
+            &actual,
+            serde_json::Value::Null | serde_json::Value::Bool(false)
+        ) || actual == serde_json::Value::String(String::new())
+            || actual == serde_json::json!(0),
+        "exists" => actual != serde_json::Value::Null,
+        "type_is" => {
+            let type_name = assertion.expected.as_str().unwrap_or("");
+            match type_name {
+                "string" => actual.is_string(),
+                "number" => actual.is_number(),
+                "boolean" => actual.is_boolean(),
+                "array" => actual.is_array(),
+                "object" => actual.is_object(),
+                "null" => actual.is_null(),
+                _ => false,
+            }
+        }
+        _ => false,
+    };
+
+    let message = if !passed {
+        Some(format!(
+            "Assertion '{}' failed: expected {} {:?}, got {:?}",
+            assertion.label, assertion.condition, assertion.expected, actual
+        ))
+    } else {
+        None
+    };
+
+    AssertionResult {
+        label: assertion.label.clone(),
+        passed,
+        actual,
+        expected: assertion.expected.clone(),
+        message,
+    }
+}

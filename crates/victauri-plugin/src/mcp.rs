@@ -114,6 +114,28 @@ pub struct EventStreamParams {
     pub webview_label: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ResolveCommandParams {
+    /// Natural language query describing what you want to do (e.g. "save the user's settings").
+    pub query: String,
+    /// Maximum number of results to return. Default: 5.
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SemanticAssertParams {
+    /// JavaScript expression to evaluate in the webview. The result is checked against the assertion.
+    pub expression: String,
+    /// Human-readable label for this assertion (e.g. "user is logged in").
+    pub label: String,
+    /// Condition: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is.
+    pub condition: String,
+    /// Expected value for the assertion.
+    pub expected: serde_json::Value,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
 // ── MCP Handler ──────────────────────────────────────────────────────────────
 
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
@@ -350,6 +372,52 @@ impl VictauriMcpHandler {
         {
             Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Resolve a natural language query to matching Tauri commands. Returns scored results ranked by relevance, using command names, descriptions, intents, categories, and examples.")]
+    async fn resolve_command(
+        &self,
+        Parameters(params): Parameters<ResolveCommandParams>,
+    ) -> CallToolResult {
+        let limit = params.limit.unwrap_or(5);
+        let mut results = self.state.registry.resolve(&params.query);
+        results.truncate(limit);
+        match serde_json::to_string_pretty(&results) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Run a semantic assertion: evaluate a JS expression and check the result against an expected condition. Conditions: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is.")]
+    async fn assert_semantic(
+        &self,
+        Parameters(params): Parameters<SemanticAssertParams>,
+    ) -> CallToolResult {
+        let code = format!("return ({})", params.expression);
+        let actual_json = match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => return tool_error(format!("failed to evaluate expression: {e}")),
+        };
+
+        let actual: serde_json::Value = match serde_json::from_str(&actual_json) {
+            Ok(v) => v,
+            Err(e) => return tool_error(format!("expression did not return valid JSON: {e}")),
+        };
+
+        let assertion = victauri_core::SemanticAssertion {
+            label: params.label,
+            condition: params.condition,
+            expected: params.expected,
+        };
+
+        let result = victauri_core::evaluate_assertion(actual, &assertion);
+        match serde_json::to_string_pretty(&result) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
         }
     }
 }

@@ -24,6 +24,18 @@ fn simple_command() -> String {
     "hello".to_string()
 }
 
+#[victauri_macros::inspectable(
+    description = "Persist user prefs",
+    intent = "save user preferences to persistent storage",
+    category = "settings",
+    example = "save my settings",
+    example = "persist preferences"
+)]
+fn save_user_preferences(prefs: String) -> Result<(), String> {
+    let _ = prefs;
+    Ok(())
+}
+
 #[test]
 fn inspectable_generates_schema_fn() {
     let info: CommandInfo = save_api_key__schema();
@@ -36,6 +48,9 @@ fn inspectable_generates_schema_fn() {
     assert!(info.args[0].required);
     assert_eq!(info.args[1].name, "key");
     assert!(info.args[1].required);
+    assert!(info.intent.is_none());
+    assert!(info.category.is_none());
+    assert!(info.examples.is_empty());
 }
 
 #[test]
@@ -56,4 +71,20 @@ fn inspectable_default_description() {
     let info: CommandInfo = simple_command__schema();
     assert_eq!(info.description.as_deref(), Some("simple command"));
     assert_eq!(info.args.len(), 0);
+}
+
+#[test]
+fn inspectable_with_intent_annotations() {
+    let info: CommandInfo = save_user_preferences__schema();
+    assert_eq!(info.description.as_deref(), Some("Persist user prefs"));
+    assert_eq!(
+        info.intent.as_deref(),
+        Some("save user preferences to persistent storage")
+    );
+    assert_eq!(info.category.as_deref(), Some("settings"));
+    assert_eq!(info.examples.len(), 2);
+    assert_eq!(info.examples[0], "save my settings");
+    assert_eq!(info.examples[1], "persist preferences");
+    assert_eq!(info.args.len(), 1);
+    assert_eq!(info.args[0].name, "prefs");
 }
