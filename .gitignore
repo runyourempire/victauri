@@ -1,0 +1,19 @@
+/target
+**/*.rs.bk
+Cargo.lock
+*.pdb
+.env
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/plans/

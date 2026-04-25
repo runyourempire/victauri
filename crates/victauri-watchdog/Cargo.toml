@@ -1,0 +1,19 @@
+[package]
+name = "victauri-watchdog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Lightweight crash-recovery sidecar for Victauri MCP server"
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "victauri-watchdog"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/victauri-plugin",
+    "crates/victauri-macros",
+    "crates/victauri-core",
+    "crates/victauri-watchdog",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/4da-systems/victauri"
+description = "Verified Introspection & Control for Tauri Applications"
+authors = ["4DA Systems <hello@4da.ai>"]
+rust-version = "1.85"
+
+[workspace.dependencies]
+victauri-core = { path = "crates/victauri-core" }
+victauri-macros = { path = "crates/victauri-macros" }
+victauri-plugin = { path = "crates/victauri-plugin" }
+
+# Tauri
+tauri = { version = "2", default-features = false }
+
+# MCP / Server
+rmcp = { version = "1.5", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Proc macros
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+
+# Utilities
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
