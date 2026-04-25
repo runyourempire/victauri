@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 use victauri_core::{CommandRegistry, EventLog, EventRecorder};
 
 pub use victauri_macros::inspectable;
@@ -64,9 +64,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     }
                 });
 
-                tracing::info!(
-                    "Victauri plugin initialized — MCP server on port {DEFAULT_PORT}"
-                );
+                tracing::info!("Victauri plugin initialized — MCP server on port {DEFAULT_PORT}");
                 Ok(())
             })
             .on_webview_ready(|webview| {
@@ -74,9 +72,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 tracing::info!("Victauri: injecting JS bridge into webview '{label}'");
 
                 if let Err(e) = webview.eval(js_bridge::INIT_SCRIPT) {
-                    tracing::error!(
-                        "Victauri: failed to inject JS bridge into '{label}': {e}"
-                    );
+                    tracing::error!("Victauri: failed to inject JS bridge into '{label}': {e}");
                 }
             })
             .invoke_handler(tauri::generate_handler![

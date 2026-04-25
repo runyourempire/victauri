@@ -31,18 +31,23 @@ Victauri doesn't replace Playwright for web testing. It does what Playwright str
 Add to your Tauri app's `Cargo.toml`:
 
 ```toml
-[dev-dependencies]
+[dependencies]
 victauri-plugin = "0.1"
 ```
 
-Wire it up in your `lib.rs`:
+Wire it up in your `main.rs` or `lib.rs`:
 
 ```rust
-#[cfg(debug_assertions)]
-builder = builder.plugin(victauri_plugin::init());
+tauri::Builder::default()
+    .plugin(victauri_plugin::init())
+    // ... your other plugins and setup
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
 ```
 
-Run your app. Victauri starts an MCP server on `127.0.0.1:7373`. Connect Claude Code:
+`init()` is gated behind `#[cfg(debug_assertions)]` — in release builds it returns a no-op plugin with zero overhead. No conditional compilation needed on your side.
+
+Run your app in debug mode. Victauri starts an MCP server on `127.0.0.1:7373`. Connect Claude Code:
 
 ```json
 // .mcp.json

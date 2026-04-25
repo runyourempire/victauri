@@ -3,11 +3,10 @@
 pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
-        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-        SRCCOPY,
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
+        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SRCCOPY, SelectObject,
     };
-    use windows::Win32::Storage::Xps::{PrintWindow, PW_CLIENTONLY};
+    use windows::Win32::Storage::Xps::{PW_CLIENTONLY, PrintWindow};
     use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
     tokio::task::spawn_blocking(move || unsafe {
@@ -28,7 +27,17 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
 
         let captured = PrintWindow(hwnd, hdc_mem, PW_CLIENTONLY);
         if !captured.as_bool() {
-            BitBlt(hdc_mem, 0, 0, width, height, Some(hdc_screen), 0, 0, SRCCOPY)?;
+            BitBlt(
+                hdc_mem,
+                0,
+                0,
+                width,
+                height,
+                Some(hdc_screen),
+                0,
+                0,
+                SRCCOPY,
+            )?;
         }
 
         let mut bmi = BITMAPINFO {

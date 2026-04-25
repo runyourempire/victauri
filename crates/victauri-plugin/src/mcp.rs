@@ -11,14 +11,14 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{ErrorData, RoleServer, tool, tool_handler, tool_router, ServerHandler};
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tauri::Runtime;
 use tokio::sync::Mutex;
 
-use crate::bridge::WebviewBridge;
 use crate::VictauriState;
+use crate::bridge::WebviewBridge;
 
 const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -181,7 +181,9 @@ pub struct VictauriMcpHandler {
 
 #[tool_router]
 impl VictauriMcpHandler {
-    #[tool(description = "Evaluate JavaScript in the Tauri webview and return the result. Async expressions are wrapped automatically.")]
+    #[tool(
+        description = "Evaluate JavaScript in the Tauri webview and return the result. Async expressions are wrapped automatically."
+    )]
     async fn eval_js(&self, Parameters(params): Parameters<EvalJsParams>) -> CallToolResult {
         match self
             .eval_with_return(&params.code, params.webview_label.as_deref())
@@ -192,11 +194,10 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get the current DOM snapshot from the webview as a JSON accessibility tree with ref handles for interaction.")]
-    async fn dom_snapshot(
-        &self,
-        Parameters(params): Parameters<SnapshotParams>,
-    ) -> CallToolResult {
+    #[tool(
+        description = "Get the current DOM snapshot from the webview as a JSON accessibility tree with ref handles for interaction."
+    )]
+    async fn dom_snapshot(&self, Parameters(params): Parameters<SnapshotParams>) -> CallToolResult {
         let code = "return window.__VICTAURI__?.snapshot()";
         match self
             .eval_with_return(code, params.webview_label.as_deref())
@@ -222,7 +223,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Set the value of an input element by ref handle ID. Dispatches input and change events.")]
+    #[tool(
+        description = "Set the value of an input element by ref handle ID. Dispatches input and change events."
+    )]
     async fn fill(&self, Parameters(params): Parameters<FillParams>) -> CallToolResult {
         let escaped_value = params.value.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
@@ -239,7 +242,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Type text character-by-character into an element, simulating real keyboard events.")]
+    #[tool(
+        description = "Type text character-by-character into an element, simulating real keyboard events."
+    )]
     async fn type_text(&self, Parameters(params): Parameters<TypeTextParams>) -> CallToolResult {
         let escaped_text = params.text.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
@@ -256,7 +261,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get state of all Tauri windows: position, size, visibility, focus, and URL.")]
+    #[tool(
+        description = "Get state of all Tauri windows: position, size, visibility, focus, and URL."
+    )]
     async fn get_window_state(
         &self,
         Parameters(params): Parameters<WindowStateParams>,
@@ -278,10 +285,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(description = "Get recent IPC calls intercepted by Victauri's invoke handler wrapper.")]
-    async fn get_ipc_log(
-        &self,
-        Parameters(params): Parameters<IpcLogParams>,
-    ) -> CallToolResult {
+    async fn get_ipc_log(&self, Parameters(params): Parameters<IpcLogParams>) -> CallToolResult {
         let mut calls = self.state.event_log.ipc_calls();
         if let Some(limit) = params.limit {
             let start = calls.len().saturating_sub(limit);
@@ -293,11 +297,10 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "List or search all registered Tauri commands with their argument schemas.")]
-    async fn get_registry(
-        &self,
-        Parameters(params): Parameters<RegistryParams>,
-    ) -> CallToolResult {
+    #[tool(
+        description = "List or search all registered Tauri commands with their argument schemas."
+    )]
+    async fn get_registry(&self, Parameters(params): Parameters<RegistryParams>) -> CallToolResult {
         let commands = match params.query {
             Some(q) => self.state.registry.search(&q),
             None => self.state.registry.list(),
@@ -308,7 +311,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get current memory allocation statistics (allocated bytes, allocation count, deallocation count).")]
+    #[tool(
+        description = "Get current memory allocation statistics (allocated bytes, allocation count, deallocation count)."
+    )]
     async fn get_memory_stats(&self) -> CallToolResult {
         let stats = crate::memory::current_stats();
         match serde_json::to_string_pretty(&stats) {
@@ -317,7 +322,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Compare frontend state (evaluated via JS expression) against backend state to detect divergences. Returns a VerificationResult with any mismatches.")]
+    #[tool(
+        description = "Compare frontend state (evaluated via JS expression) against backend state to detect divergences. Returns a VerificationResult with any mismatches."
+    )]
     async fn verify_state(
         &self,
         Parameters(params): Parameters<VerifyStateParams>,
@@ -333,7 +340,11 @@ impl VictauriMcpHandler {
 
         let frontend_state: serde_json::Value = match serde_json::from_str(&frontend_json) {
             Ok(v) => v,
-            Err(e) => return tool_error(format!("frontend expression did not return valid JSON: {e}")),
+            Err(e) => {
+                return tool_error(format!(
+                    "frontend expression did not return valid JSON: {e}"
+                ));
+            }
         };
 
         let result = victauri_core::verify_state(frontend_state, params.backend_state);
@@ -343,7 +354,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called from the frontend. Scans the IPC log for frontend command names.")]
+    #[tool(
+        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called from the frontend. Scans the IPC log for frontend command names."
+    )]
     async fn detect_ghost_commands(
         &self,
         Parameters(params): Parameters<GhostCommandParams>,
@@ -369,7 +382,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Check IPC round-trip integrity: find stale (stuck) pending calls and errored calls. Returns health status and lists of problematic IPC calls.")]
+    #[tool(
+        description = "Check IPC round-trip integrity: find stale (stuck) pending calls and errored calls. Returns health status and lists of problematic IPC calls."
+    )]
     async fn check_ipc_integrity(
         &self,
         Parameters(params): Parameters<IpcIntegrityParams>,
@@ -382,15 +397,14 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get a combined event stream from the webview: console logs, DOM mutations, sorted by timestamp. Use the 'since' parameter to poll only new events.")]
+    #[tool(
+        description = "Get a combined event stream from the webview: console logs, DOM mutations, sorted by timestamp. Use the 'since' parameter to poll only new events."
+    )]
     async fn get_event_stream(
         &self,
         Parameters(params): Parameters<EventStreamParams>,
     ) -> CallToolResult {
-        let since_arg = params
-            .since
-            .map(|ts| format!("{ts}"))
-            .unwrap_or_default();
+        let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
         let code = if since_arg.is_empty() {
             "return window.__VICTAURI__?.getEventStream()".to_string()
         } else {
@@ -405,7 +419,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Resolve a natural language query to matching Tauri commands. Returns scored results ranked by relevance, using command names, descriptions, intents, categories, and examples.")]
+    #[tool(
+        description = "Resolve a natural language query to matching Tauri commands. Returns scored results ranked by relevance, using command names, descriptions, intents, categories, and examples."
+    )]
     async fn resolve_command(
         &self,
         Parameters(params): Parameters<ResolveCommandParams>,
@@ -419,7 +435,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Run a semantic assertion: evaluate a JS expression and check the result against an expected condition. Conditions: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is.")]
+    #[tool(
+        description = "Run a semantic assertion: evaluate a JS expression and check the result against an expected condition. Conditions: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is."
+    )]
     async fn assert_semantic(
         &self,
         Parameters(params): Parameters<SemanticAssertParams>,
@@ -451,7 +469,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Start recording IPC events and state changes. Returns false if a recording is already active.")]
+    #[tool(
+        description = "Start recording IPC events and state changes. Returns false if a recording is already active."
+    )]
     async fn start_recording(
         &self,
         Parameters(params): Parameters<StartRecordingParams>,
@@ -467,7 +487,9 @@ impl VictauriMcpHandler {
         CallToolResult::success(vec![Content::text(result.to_string())])
     }
 
-    #[tool(description = "Stop the current recording and return the full recorded session with all events and checkpoints.")]
+    #[tool(
+        description = "Stop the current recording and return the full recorded session with all events and checkpoints."
+    )]
     async fn stop_recording(&self) -> CallToolResult {
         match self.state.recorder.stop() {
             Some(session) => match serde_json::to_string_pretty(&session) {
@@ -478,11 +500,10 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Create a state checkpoint during recording. Associates the current event index with a state snapshot for later comparison.")]
-    async fn checkpoint(
-        &self,
-        Parameters(params): Parameters<CheckpointParams>,
-    ) -> CallToolResult {
+    #[tool(
+        description = "Create a state checkpoint during recording. Associates the current event index with a state snapshot for later comparison."
+    )]
+    async fn checkpoint(&self, Parameters(params): Parameters<CheckpointParams>) -> CallToolResult {
         let created = self
             .state
             .recorder
@@ -508,7 +529,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get the IPC replay sequence: all IPC calls recorded in order, suitable for replaying the session.")]
+    #[tool(
+        description = "Get the IPC replay sequence: all IPC calls recorded in order, suitable for replaying the session."
+    )]
     async fn get_replay_sequence(&self) -> CallToolResult {
         let calls = self.state.recorder.ipc_replay_sequence();
         match serde_json::to_string_pretty(&calls) {
@@ -517,7 +540,9 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Get recorded events since a specific event index. Useful for incremental replay.")]
+    #[tool(
+        description = "Get recorded events since a specific event index. Useful for incremental replay."
+    )]
     async fn get_recorded_events(
         &self,
         Parameters(params): Parameters<ReplayParams>,
@@ -629,15 +654,21 @@ impl ServerHandler for VictauriMcpHandler {
         Ok(ListResourcesResult {
             resources: vec![
                 RawResource::new(RESOURCE_URI_IPC_LOG, "ipc-log")
-                    .with_description("Live IPC call log — all commands invoked between frontend and backend")
+                    .with_description(
+                        "Live IPC call log — all commands invoked between frontend and backend",
+                    )
                     .with_mime_type("application/json")
                     .no_annotation(),
                 RawResource::new(RESOURCE_URI_WINDOWS, "windows")
-                    .with_description("Current state of all Tauri windows — position, size, visibility, focus")
+                    .with_description(
+                        "Current state of all Tauri windows — position, size, visibility, focus",
+                    )
                     .with_mime_type("application/json")
                     .no_annotation(),
                 RawResource::new(RESOURCE_URI_STATE, "state")
-                    .with_description("Victauri plugin state — event count, registered commands, memory stats")
+                    .with_description(
+                        "Victauri plugin state — event count, registered commands, memory stats",
+                    )
                     .with_mime_type("application/json")
                     .no_annotation(),
             ],
@@ -680,7 +711,9 @@ impl ServerHandler for VictauriMcpHandler {
             }
         };
 
-        Ok(ReadResourceResult::new(vec![ResourceContents::text(json, uri)]))
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(
+            json, uri,
+        )]))
     }
 
     async fn subscribe(

@@ -109,7 +109,10 @@ fn compare_values(
     }
 }
 
-fn classify_severity(frontend: &serde_json::Value, backend: &serde_json::Value) -> DivergenceSeverity {
+fn classify_severity(
+    frontend: &serde_json::Value,
+    backend: &serde_json::Value,
+) -> DivergenceSeverity {
     match (frontend, backend) {
         (serde_json::Value::Null, _) | (_, serde_json::Value::Null) => DivergenceSeverity::Warning,
         (serde_json::Value::Number(f), serde_json::Value::Number(b)) => {
@@ -164,7 +167,9 @@ pub fn detect_ghost_commands(
             ghost_commands.push(GhostCommand {
                 name: name.to_string(),
                 source: GhostSource::FrontendOnly,
-                description: Some("Command invoked from frontend but not registered in backend".to_string()),
+                description: Some(
+                    "Command invoked from frontend but not registered in backend".to_string(),
+                ),
             });
         }
     }
@@ -309,19 +314,23 @@ pub fn evaluate_assertion(
             (Some(a), Some(e)) => a < e,
             _ => false,
         },
-        "truthy" => matches!(
-            &actual,
-            serde_json::Value::Bool(true)
-                | serde_json::Value::Number(_)
-                | serde_json::Value::String(_)
-                | serde_json::Value::Array(_)
-                | serde_json::Value::Object(_)
-        ) && actual != serde_json::Value::String(String::new()),
-        "falsy" => matches!(
-            &actual,
-            serde_json::Value::Null | serde_json::Value::Bool(false)
-        ) || actual == serde_json::Value::String(String::new())
-            || actual == serde_json::json!(0),
+        "truthy" => {
+            matches!(
+                &actual,
+                serde_json::Value::Bool(true)
+                    | serde_json::Value::Number(_)
+                    | serde_json::Value::String(_)
+                    | serde_json::Value::Array(_)
+                    | serde_json::Value::Object(_)
+            ) && actual != serde_json::Value::String(String::new())
+        }
+        "falsy" => {
+            matches!(
+                &actual,
+                serde_json::Value::Null | serde_json::Value::Bool(false)
+            ) || actual == serde_json::Value::String(String::new())
+                || actual == serde_json::json!(0)
+        }
         "exists" => actual != serde_json::Value::Null,
         "type_is" => {
             let type_name = assertion.expected.as_str().unwrap_or("");

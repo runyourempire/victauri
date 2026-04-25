@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn};
+use syn::{ItemFn, parse_macro_input};
 
 /// Marks a `#[tauri::command]` as inspectable by Victauri.
 ///
@@ -110,15 +110,16 @@ fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
         } else if meta.path.is_ident("category") {
             attrs.category = Some(meta.value()?.parse::<syn::LitStr>()?.value());
         } else if meta.path.is_ident("example") {
-            attrs.examples.push(meta.value()?.parse::<syn::LitStr>()?.value());
+            attrs
+                .examples
+                .push(meta.value()?.parse::<syn::LitStr>()?.value());
         } else {
             return Err(meta.error("unknown #[inspectable] attribute"));
         }
         Ok(())
     });
 
-    syn::parse::Parser::parse(parser, attr)
-        .expect("failed to parse #[inspectable] attributes");
+    syn::parse::Parser::parse(parser, attr).expect("failed to parse #[inspectable] attributes");
     attrs
 }
 

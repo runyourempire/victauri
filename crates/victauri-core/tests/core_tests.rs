@@ -521,7 +521,11 @@ fn ghost_commands_bidirectional() {
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
 
     assert_eq!(report.ghost_commands.len(), 2);
-    let names: Vec<&str> = report.ghost_commands.iter().map(|g| g.name.as_str()).collect();
+    let names: Vec<&str> = report
+        .ghost_commands
+        .iter()
+        .map(|g| g.name.as_str())
+        .collect();
     assert!(names.contains(&"backend_only"));
     assert!(names.contains(&"frontend_only"));
 }
@@ -686,7 +690,10 @@ fn command_info_with_intent_fields() {
     });
 
     let cmd = registry.get("save_settings").unwrap();
-    assert_eq!(cmd.intent.as_deref(), Some("persist user preferences to storage"));
+    assert_eq!(
+        cmd.intent.as_deref(),
+        Some("persist user preferences to storage")
+    );
     assert_eq!(cmd.category.as_deref(), Some("settings"));
     assert_eq!(cmd.examples.len(), 2);
 }
@@ -845,7 +852,9 @@ fn semantic_assertion_contains() {
         expected: serde_json::json!("hello"),
     };
 
-    assert!(victauri_core::evaluate_assertion(serde_json::json!("say hello world"), &assertion).passed);
+    assert!(
+        victauri_core::evaluate_assertion(serde_json::json!("say hello world"), &assertion).passed
+    );
     assert!(!victauri_core::evaluate_assertion(serde_json::json!("goodbye"), &assertion).passed);
 }
 
@@ -1051,14 +1060,14 @@ fn recorder_events_between_checkpoints() {
 
     recorder.checkpoint("cp2".to_string(), None, serde_json::json!(null));
 
-    let between = recorder
-        .events_between_checkpoints("cp1", "cp2")
-        .unwrap();
+    let between = recorder.events_between_checkpoints("cp1", "cp2").unwrap();
     assert_eq!(between.len(), 2);
 
-    assert!(recorder
-        .events_between_checkpoints("cp1", "nonexistent")
-        .is_none());
+    assert!(
+        recorder
+            .events_between_checkpoints("cp1", "nonexistent")
+            .is_none()
+    );
 }
 
 #[test]

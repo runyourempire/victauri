@@ -4,11 +4,12 @@ use std::sync::Arc;
 use chrono::Utc;
 use tokio::sync::Mutex;
 
-use victauri_core::event::IpcResult;
-use victauri_core::{AppEvent, CommandInfo, CommandRegistry, EventLog, EventRecorder, IpcCall};
-use victauri_plugin::bridge::WebviewBridge;
-use victauri_plugin::mcp::{build_app, VictauriMcpHandler};
+use victauri_core::{
+    AppEvent, CommandInfo, CommandRegistry, EventLog, EventRecorder, IpcCall, IpcResult,
+};
 use victauri_plugin::VictauriState;
+use victauri_plugin::bridge::WebviewBridge;
+use victauri_plugin::mcp::{VictauriMcpHandler, build_app};
 
 // ── Mock Bridge ─────────────────────────────────────────────────────────────
 
@@ -45,7 +46,12 @@ impl WebviewBridge for MockBridge {
 
     fn get_window_states(&self, label: Option<&str>) -> Vec<victauri_core::WindowState> {
         match label {
-            Some(l) => self.windows.iter().filter(|w| w.label == l).cloned().collect(),
+            Some(l) => self
+                .windows
+                .iter()
+                .filter(|w| w.label == l)
+                .cloned()
+                .collect(),
             None => self.windows.clone(),
         }
     }
@@ -124,7 +130,10 @@ fn handler_get_info_has_correct_capabilities() {
     let handler = VictauriMcpHandler::new(state, bridge);
     let info = handler.get_info();
 
-    assert!(info.capabilities.tools.is_some(), "tools capability missing");
+    assert!(
+        info.capabilities.tools.is_some(),
+        "tools capability missing"
+    );
     assert!(
         info.capabilities.resources.is_some(),
         "resources capability missing"
@@ -284,7 +293,10 @@ async fn mcp_initialize_returns_session() {
         .unwrap();
 
     let session_id = resp.headers().get("mcp-session-id");
-    assert!(session_id.is_some(), "MCP response should include session ID header");
+    assert!(
+        session_id.is_some(),
+        "MCP response should include session ID header"
+    );
 }
 
 #[tokio::test]
@@ -351,10 +363,22 @@ async fn mcp_full_session_lists_tools() {
     let body = tools_resp.text().await.unwrap();
 
     assert!(body.contains("eval_js"), "tools should include eval_js");
-    assert!(body.contains("dom_snapshot"), "tools should include dom_snapshot");
-    assert!(body.contains("start_recording"), "tools should include start_recording");
-    assert!(body.contains("verify_state"), "tools should include verify_state");
-    assert!(body.contains("resolve_command"), "tools should include resolve_command");
+    assert!(
+        body.contains("dom_snapshot"),
+        "tools should include dom_snapshot"
+    );
+    assert!(
+        body.contains("start_recording"),
+        "tools should include start_recording"
+    );
+    assert!(
+        body.contains("verify_state"),
+        "tools should include verify_state"
+    );
+    assert!(
+        body.contains("resolve_command"),
+        "tools should include resolve_command"
+    );
 }
 
 #[tokio::test]
@@ -418,9 +442,18 @@ async fn mcp_full_session_lists_resources() {
     assert!(resp.status().is_success());
     let body = resp.text().await.unwrap();
 
-    assert!(body.contains("victauri://ipc-log"), "should list ipc-log resource");
-    assert!(body.contains("victauri://windows"), "should list windows resource");
-    assert!(body.contains("victauri://state"), "should list state resource");
+    assert!(
+        body.contains("victauri://ipc-log"),
+        "should list ipc-log resource"
+    );
+    assert!(
+        body.contains("victauri://windows"),
+        "should list windows resource"
+    );
+    assert!(
+        body.contains("victauri://state"),
+        "should list state resource"
+    );
 }
 
 // ── State wiring tests ──────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
 /target
 **/*.rs.bk
-Cargo.lock
 *.pdb
 .env
 *.db
+*.db-shm
+*.db-wal
 
 # IDE
 .idea/
@@ -19,4 +20,7 @@ Thumbs.db
 **/gen/
 
 # Claude Code
-.claude/plans/
+.claude/
+
+# Data artifacts
+data/

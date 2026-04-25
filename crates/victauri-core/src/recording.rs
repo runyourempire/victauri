@@ -150,11 +150,7 @@ impl EventRecorder {
         }
     }
 
-    pub fn events_between(
-        &self,
-        from: DateTime<Utc>,
-        to: DateTime<Utc>,
-    ) -> Vec<RecordedEvent> {
+    pub fn events_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<RecordedEvent> {
         let rec = self.recording.lock().unwrap();
         match rec.as_ref() {
             Some(active) => active
