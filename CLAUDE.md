@@ -136,7 +136,21 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-26)
 
-**All 5 phases complete. Live-tested against real multi-window Tauri app (4DA).** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 24 tools + 3 resources verified working against live 4DA app with 3 windows, 135+ DOM elements, React frontend.
+**All 5 phases complete. Extensively live-tested against 4DA (real multi-window Tauri app).** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
+
+### Live test results (4DA, 2026-04-26):
+Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; React/Vite frontend on :4444):
+- **eval_js**: `typeof __VICTAURI__` → `"object"`, `document.title` → `"4DA"`, IIFE with return → correct result, complex `Array.from()` expressions → button text list. Auto-return prepend verified working.
+- **dom_snapshot**: 34KB accessible tree with ref handles, element bounds, roles, names. Refs survive across interactions.
+- **click**: Clicked "Skip to main content" (`e3`) and "Signal" tab (`e87`) — both `{ok:true}`, UI updated (visible text confirmed "Navigated to Signal").
+- **verify_state**: Detected URL divergence after anchor click (`#main-content` vs `/`). Cross-boundary comparison with zero divergences when states match.
+- **assert_semantic**: Truthy (`nav exists` → `passed`), equals (`title === "4DA"` → `passed`).
+- **list_windows / get_window_state**: All 3 windows with position, size, visibility, focus, URL.
+- **check_ipc_integrity**: `healthy: true`, correct zero-counts.
+- **detect_ghost_commands**: Empty when no IPC traffic (correct).
+- **Time-travel**: start_recording → checkpoint → interaction → checkpoint → list_checkpoints → stop_recording — full session recorded with timestamps and state snapshots.
+- **Resources**: `victauri://state` (port, commands, events), `victauri://windows` (all 3 windows), `victauri://ipc-log` (empty, correct).
+- **Health/Info**: `/health` → `ok`, `/info` → `{name:"victauri", port:7373, protocol:"mcp", version:"0.1.0"}`.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.
@@ -151,8 +165,10 @@ Standalone binary. Monitors the MCP server health endpoint.
 - **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `build_app()` constructs the axum `Router` independently of Tauri (testable). `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation. `VictauriMcpHandler::new()` public constructor for testing.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. Zero external dependencies beyond the `windows` crate. PNG encoder: raw zlib stored blocks + CRC32 + Adler32.
-- **eval auto-return** — `eval_with_return()` auto-prepends `return` to bare expressions (e.g. `document.title` → `return document.title`). Skips statement keywords (`if`, `for`, `const`, etc.) that would be syntax errors with a prepended `return`.
+- **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode.
+- **eval auto-return** — `eval_with_return()` auto-prepends `return` to bare expressions (e.g. `document.title` → `return document.title`). Only checks `starts_with("return ")` — NOT `contains("return ")` — so IIFEs with internal returns are handled correctly. Skips statement keywords (`if`, `for`, `const`, etc.).
 - **Multi-window safety** — Default window selection prefers "main" → first visible → any, avoiding silent failures when hidden windows lack plugin capabilities.
+- **CSP compatibility** — `eval()` cannot be used inside injected scripts when CSP has `script-src 'self'` without `'unsafe-eval'`. The eval wrapper uses direct `(async () => { ... })()` pattern instead.
 
 ### Key technical decisions already made:
 - MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`
