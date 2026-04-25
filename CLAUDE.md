@@ -136,7 +136,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-25)
 
-**All 5 phases complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). Tauri 2.10.3 + rmcp 1.5.0.
+**All 5 phases complete. Live-tested against running Tauri app.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.

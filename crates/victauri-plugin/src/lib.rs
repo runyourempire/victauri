@@ -67,14 +67,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 tracing::info!("Victauri plugin initialized — MCP server on port {DEFAULT_PORT}");
                 Ok(())
             })
-            .on_webview_ready(|webview| {
-                let label = webview.label().to_string();
-                tracing::info!("Victauri: injecting JS bridge into webview '{label}'");
-
-                if let Err(e) = webview.eval(js_bridge::INIT_SCRIPT) {
-                    tracing::error!("Victauri: failed to inject JS bridge into '{label}': {e}");
-                }
-            })
+            .js_init_script(js_bridge::INIT_SCRIPT.to_string())
             .invoke_handler(tauri::generate_handler![
                 tools::victauri_eval_js,
                 tools::victauri_eval_callback,

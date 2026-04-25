@@ -15,8 +15,11 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
                 .get(l)
                 .ok_or_else(|| format!("window not found: {l}"))?,
             None => windows
-                .values()
-                .next()
+                .get("main")
+                .or_else(|| {
+                    windows.values().find(|w| w.is_visible().unwrap_or(false))
+                })
+                .or_else(|| windows.values().next())
                 .ok_or_else(|| "no webview available".to_string())?,
         };
         webview.eval(script).map_err(|e| e.to_string())
