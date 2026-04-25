@@ -134,9 +134,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] State snapshot checkpointing
 - [x] Rewind/replay tools
 
-## Current State (2026-04-25)
+## Current State (2026-04-26)
 
-**All 5 phases complete. Live-tested against running Tauri app.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
+**All 5 phases complete. Live-tested against real multi-window Tauri app (4DA).** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 64 tests pass (44 core + 4 macro + 16 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 24 tools + 3 resources verified working against live 4DA app with 3 windows, 135+ DOM elements, React frontend.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.
@@ -151,6 +151,8 @@ Standalone binary. Monitors the MCP server health endpoint.
 - **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `build_app()` constructs the axum `Router` independently of Tauri (testable). `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation. `VictauriMcpHandler::new()` public constructor for testing.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. Zero external dependencies beyond the `windows` crate. PNG encoder: raw zlib stored blocks + CRC32 + Adler32.
+- **eval auto-return** — `eval_with_return()` auto-prepends `return` to bare expressions (e.g. `document.title` → `return document.title`). Skips statement keywords (`if`, `for`, `const`, etc.) that would be syntax errors with a prepended `return`.
+- **Multi-window safety** — Default window selection prefers "main" → first visible → any, avoiding silent failures when hidden windows lack plugin capabilities.
 
 ### Key technical decisions already made:
 - MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`

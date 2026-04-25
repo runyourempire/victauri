@@ -594,6 +594,33 @@ impl VictauriMcpHandler {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.state.pending_evals.lock().await.insert(id.clone(), tx);
 
+        // Auto-prepend `return` so bare expressions produce a value.
+        // Only skip for code that starts with a statement keyword where
+        // prepending `return` would be a syntax error.
+        let code = code.trim();
+        let needs_return = !code.starts_with("return ")
+            && !code.starts_with("return;")
+            && !code.starts_with('{')
+            && !code.starts_with("if ")
+            && !code.starts_with("if(")
+            && !code.starts_with("for ")
+            && !code.starts_with("for(")
+            && !code.starts_with("while ")
+            && !code.starts_with("while(")
+            && !code.starts_with("switch ")
+            && !code.starts_with("try ")
+            && !code.starts_with("const ")
+            && !code.starts_with("let ")
+            && !code.starts_with("var ")
+            && !code.starts_with("function ")
+            && !code.starts_with("class ")
+            && !code.starts_with("throw ");
+        let code = if needs_return {
+            format!("return {code}")
+        } else {
+            code.to_string()
+        };
+
         let inject = format!(
             r#"
             (async () => {{
