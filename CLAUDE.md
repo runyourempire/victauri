@@ -119,12 +119,12 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Ghost command detection
 - [x] IPC round-trip integrity checking
 
-### Phase 3: Reactive Streaming (Next)
-- [ ] MCP resource subscriptions (ipc-log, windows, state)
-- [ ] Push notifications on state change
-- [ ] Event stream filtering
+### Phase 3: Reactive Streaming (Complete)
+- [x] MCP resource subscriptions (ipc-log, windows, state)
+- [x] Push notifications on state change
+- [x] Event stream filtering
 
-### Phase 4: Intent Layer
+### Phase 4: Intent Layer (Next)
 - [ ] Command-level intent annotations
 - [ ] Natural language → command resolution
 - [ ] Semantic test assertions
@@ -136,12 +136,12 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-25)
 
-**Phase 2 is complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 29 tests pass (26 core + 3 macro). Tauri 2.10.3 + rmcp 1.5.0.
+**Phase 3 is complete.** All 5 crates compile cleanly (`cargo clippy -- -D warnings` passes). 29 tests pass (26 core + 3 macro). Tauri 2.10.3 + rmcp 1.5.0.
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (append-only ring buffer), `CommandRegistry` (thread-safe BTreeMap with search), `DomSnapshot` with ref handles and accessible text output, `WindowState`, `VerificationResult`/`Divergence` types, `verification` module with `verify_state`, `detect_ghost_commands`, `check_ipc_integrity`. 26 unit tests.
 - **victauri-macros**: `#[inspectable]` attribute proc macro. Parses `description` attr, extracts args (skipping Tauri framework types), generates `<fn>__schema()` companion returning `CommandInfo`. 3 integration tests.
-- **victauri-plugin**: Full MCP server with 14 tools (11 Phase 1 + verify_state, detect_ghost_commands, check_ipc_integrity). Eval-with-return via oneshot channel pattern. WebviewBridge trait for type-erased AppHandle access. Windows screenshot via PrintWindow Win32 API with zero-dep PNG encoding.
+- **victauri-plugin**: Full MCP server with 15 tools + 3 resources. Phase 1: 11 tools (eval_js, dom_snapshot, click, fill, type_text, get_window_state, list_windows, get_ipc_log, get_registry, get_memory_stats, screenshot). Phase 2: verify_state, detect_ghost_commands, check_ipc_integrity. Phase 3: get_event_stream tool + victauri://ipc-log, victauri://windows, victauri://state resources with subscribe/unsubscribe. JS bridge includes MutationObserver + event stream combiner. WebviewBridge trait for type-erased AppHandle access.
 - **victauri-watchdog**: Polls `/health` every 5s, logs after 3 consecutive failures.
 - **demo-app**: Minimal Tauri 2 app in `examples/demo-app/` with Victauri wired up. Greet command + counter with backend state.
 

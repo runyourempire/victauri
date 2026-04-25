@@ -1,14 +1,21 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{
+    AnnotateAble, CallToolResult, Content, ListResourcesResult, PaginatedRequestParams,
+    RawResource, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
+    ServerCapabilities, ServerInfo, SubscribeRequestParams, UnsubscribeRequestParams,
+};
+use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{tool, tool_handler, tool_router, ServerHandler};
+use rmcp::{ErrorData, RoleServer, tool, tool_handler, tool_router, ServerHandler};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tauri::Runtime;
+use tokio::sync::Mutex;
 
 use crate::bridge::WebviewBridge;
 use crate::VictauriState;
@@ -99,12 +106,25 @@ pub struct IpcIntegrityParams {
     pub stale_threshold_ms: Option<i64>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EventStreamParams {
+    /// Only return events after this Unix timestamp (milliseconds). If omitted, returns all events.
+    pub since: Option<f64>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
 // ── MCP Handler ──────────────────────────────────────────────────────────────
+
+const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
+const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
+const RESOURCE_URI_STATE: &str = "victauri://state";
 
 #[derive(Clone)]
 pub struct VictauriMcpHandler {
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
+    subscriptions: Arc<Mutex<HashSet<String>>>,
 }
 
 #[tool_router]
@@ -309,6 +329,29 @@ impl VictauriMcpHandler {
             Err(e) => tool_error(e.to_string()),
         }
     }
+
+    #[tool(description = "Get a combined event stream from the webview: console logs, DOM mutations, sorted by timestamp. Use the 'since' parameter to poll only new events.")]
+    async fn get_event_stream(
+        &self,
+        Parameters(params): Parameters<EventStreamParams>,
+    ) -> CallToolResult {
+        let since_arg = params
+            .since
+            .map(|ts| format!("{ts}"))
+            .unwrap_or_default();
+        let code = if since_arg.is_empty() {
+            "return window.__VICTAURI__?.getEventStream()".to_string()
+        } else {
+            format!("return window.__VICTAURI__?.getEventStream({since_arg})")
+        };
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
 }
 
 impl VictauriMcpHandler {
@@ -360,9 +403,110 @@ impl VictauriMcpHandler {
     instructions = "Victauri gives you X-ray vision into a running Tauri application. \
                     You can evaluate JS, snapshot the DOM, click/fill/type UI elements, \
                     inspect window state, view IPC traffic, search the command registry, \
-                    and monitor memory usage — all through MCP tools."
+                    monitor memory usage, and subscribe to live resource streams — all through MCP."
 )]
-impl ServerHandler for VictauriMcpHandler {}
+impl ServerHandler for VictauriMcpHandler {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .enable_resources_subscribe()
+                .build(),
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        Ok(ListResourcesResult {
+            resources: vec![
+                RawResource::new(RESOURCE_URI_IPC_LOG, "ipc-log")
+                    .with_description("Live IPC call log — all commands invoked between frontend and backend")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new(RESOURCE_URI_WINDOWS, "windows")
+                    .with_description("Current state of all Tauri windows — position, size, visibility, focus")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new(RESOURCE_URI_STATE, "state")
+                    .with_description("Victauri plugin state — event count, registered commands, memory stats")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+            ],
+            ..Default::default()
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let uri = &request.uri;
+        let json = match uri.as_str() {
+            RESOURCE_URI_IPC_LOG => {
+                let calls = self.state.event_log.ipc_calls();
+                serde_json::to_string_pretty(&calls)
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            }
+            RESOURCE_URI_WINDOWS => {
+                let states = self.bridge.get_window_states(None);
+                serde_json::to_string_pretty(&states)
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            }
+            RESOURCE_URI_STATE => {
+                let state_json = serde_json::json!({
+                    "events_captured": self.state.event_log.len(),
+                    "commands_registered": self.state.registry.count(),
+                    "memory": crate::memory::current_stats(),
+                    "port": self.state.port,
+                });
+                serde_json::to_string_pretty(&state_json)
+                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+            }
+            _ => {
+                return Err(ErrorData::resource_not_found(
+                    format!("unknown resource: {uri}"),
+                    None,
+                ));
+            }
+        };
+
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(json, uri)]))
+    }
+
+    async fn subscribe(
+        &self,
+        request: SubscribeRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<(), ErrorData> {
+        let uri = &request.uri;
+        match uri.as_str() {
+            RESOURCE_URI_IPC_LOG | RESOURCE_URI_WINDOWS | RESOURCE_URI_STATE => {
+                self.subscriptions.lock().await.insert(uri.clone());
+                tracing::info!("Client subscribed to resource: {uri}");
+                Ok(())
+            }
+            _ => Err(ErrorData::resource_not_found(
+                format!("unknown resource: {uri}"),
+                None,
+            )),
+        }
+    }
+
+    async fn unsubscribe(
+        &self,
+        request: UnsubscribeRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<(), ErrorData> {
+        self.subscriptions.lock().await.remove(&request.uri);
+        tracing::info!("Client unsubscribed from resource: {}", request.uri);
+        Ok(())
+    }
+}
 
 fn tool_error(msg: impl Into<String>) -> CallToolResult {
     let mut result = CallToolResult::success(vec![Content::text(msg)]);
@@ -381,6 +525,7 @@ pub async fn start_server<R: Runtime>(
     let handler = VictauriMcpHandler {
         state: state.clone(),
         bridge,
+        subscriptions: Arc::new(Mutex::new(HashSet::new())),
     };
 
     let mcp_service = StreamableHttpService::new(

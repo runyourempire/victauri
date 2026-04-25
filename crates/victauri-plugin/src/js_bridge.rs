@@ -170,5 +170,62 @@ pub const INIT_SCRIPT: &str = r#"
     window.__VICTAURI__.clearConsoleLogs = function() {
         consoleLogs.length = 0;
     };
+
+    // DOM mutation tracking
+    const mutationLog = [];
+    let mutationBatchCount = 0;
+    let mutationBatchTimer = null;
+
+    const observer = new MutationObserver(function(mutations) {
+        mutationBatchCount += mutations.length;
+        if (!mutationBatchTimer) {
+            mutationBatchTimer = setTimeout(function() {
+                mutationLog.push({
+                    count: mutationBatchCount,
+                    timestamp: Date.now()
+                });
+                if (mutationLog.length > 500) mutationLog.shift();
+                mutationBatchCount = 0;
+                mutationBatchTimer = null;
+            }, 100);
+        }
+    });
+
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+    });
+
+    window.__VICTAURI__.getMutationLog = function(since) {
+        if (since) return mutationLog.filter(function(m) { return m.timestamp >= since; });
+        return mutationLog;
+    };
+
+    window.__VICTAURI__.clearMutationLog = function() {
+        mutationLog.length = 0;
+    };
+
+    // Event stream: combined feed for polling
+    window.__VICTAURI__.getEventStream = function(since) {
+        const events = [];
+        const ts = since || 0;
+
+        consoleLogs.forEach(function(l) {
+            if (l.timestamp >= ts) {
+                events.push({ type: 'console', level: l.level, message: l.message, timestamp: l.timestamp });
+            }
+        });
+
+        mutationLog.forEach(function(m) {
+            if (m.timestamp >= ts) {
+                events.push({ type: 'dom_mutation', count: m.count, timestamp: m.timestamp });
+            }
+        });
+
+        events.sort(function(a, b) { return a.timestamp - b.timestamp; });
+        return events;
+    };
 })();
 "#;
