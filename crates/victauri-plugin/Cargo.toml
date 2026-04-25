@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Tauri plugin for Victauri — embedded MCP server with full-stack introspection"
 authors.workspace = true
 rust-version.workspace = true
+links = "tauri-plugin-victauri"
 
 [dependencies]
 victauri-core = { workspace = true }
@@ -22,6 +23,9 @@ anyhow = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }

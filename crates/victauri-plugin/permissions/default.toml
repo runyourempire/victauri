@@ -1,0 +1,15 @@
+[default]
+description = "Default permissions for the Victauri plugin — allows all introspection commands."
+permissions = [
+    "allow-victauri-eval-js",
+    "allow-victauri-eval-callback",
+    "allow-victauri-get-window-state",
+    "allow-victauri-list-windows",
+    "allow-victauri-get-ipc-log",
+    "allow-victauri-get-registry",
+    "allow-victauri-get-memory-stats",
+    "allow-victauri-dom-snapshot",
+    "allow-victauri-verify-state",
+    "allow-victauri-detect-ghost-commands",
+    "allow-victauri-check-ipc-integrity",
+]
