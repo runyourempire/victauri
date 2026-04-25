@@ -77,6 +77,28 @@ pub struct RegistryParams {
     pub query: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VerifyStateParams {
+    /// JavaScript expression that returns the frontend state object to compare.
+    pub frontend_expr: String,
+    /// Backend state as a JSON object to compare against.
+    pub backend_state: serde_json::Value,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GhostCommandParams {
+    /// Optional filter: only consider IPC calls from this webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct IpcIntegrityParams {
+    /// Age in milliseconds after which a pending IPC call is considered stale. Default: 5000.
+    pub stale_threshold_ms: Option<i64>,
+}
+
 // ── MCP Handler ──────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -218,6 +240,71 @@ impl VictauriMcpHandler {
     async fn get_memory_stats(&self) -> CallToolResult {
         let stats = crate::memory::current_stats();
         match serde_json::to_string_pretty(&stats) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Compare frontend state (evaluated via JS expression) against backend state to detect divergences. Returns a VerificationResult with any mismatches.")]
+    async fn verify_state(
+        &self,
+        Parameters(params): Parameters<VerifyStateParams>,
+    ) -> CallToolResult {
+        let code = format!("return ({})", params.frontend_expr);
+        let frontend_json = match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => return tool_error(format!("failed to evaluate frontend expression: {e}")),
+        };
+
+        let frontend_state: serde_json::Value = match serde_json::from_str(&frontend_json) {
+            Ok(v) => v,
+            Err(e) => return tool_error(format!("frontend expression did not return valid JSON: {e}")),
+        };
+
+        let result = victauri_core::verify_state(frontend_state, params.backend_state);
+        match serde_json::to_string_pretty(&result) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called from the frontend. Scans the IPC log for frontend command names.")]
+    async fn detect_ghost_commands(
+        &self,
+        Parameters(params): Parameters<GhostCommandParams>,
+    ) -> CallToolResult {
+        let ipc_calls = self.state.event_log.ipc_calls();
+        let frontend_commands: Vec<String> = ipc_calls
+            .iter()
+            .filter(|c| {
+                params
+                    .webview_label
+                    .as_ref()
+                    .is_none_or(|label| c.webview_label == *label)
+            })
+            .map(|c| c.command.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let report = victauri_core::detect_ghost_commands(&frontend_commands, &self.state.registry);
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
+
+    #[tool(description = "Check IPC round-trip integrity: find stale (stuck) pending calls and errored calls. Returns health status and lists of problematic IPC calls.")]
+    async fn check_ipc_integrity(
+        &self,
+        Parameters(params): Parameters<IpcIntegrityParams>,
+    ) -> CallToolResult {
+        let threshold = params.stale_threshold_ms.unwrap_or(5000);
+        let report = victauri_core::check_ipc_integrity(&self.state.event_log, threshold);
+        match serde_json::to_string_pretty(&report) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
             Err(e) => tool_error(e.to_string()),
         }

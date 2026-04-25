@@ -179,3 +179,39 @@ pub async fn victauri_get_registry(
 pub async fn victauri_get_memory_stats() -> Result<serde_json::Value, String> {
     Ok(crate::memory::current_stats())
 }
+
+#[tauri::command]
+pub async fn victauri_verify_state(
+    _state: State<'_, Arc<VictauriState>>,
+    frontend_state: serde_json::Value,
+    backend_state: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let result = victauri_core::verify_state(frontend_state, backend_state);
+    serde_json::to_value(result).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn victauri_detect_ghost_commands(
+    state: State<'_, Arc<VictauriState>>,
+) -> Result<serde_json::Value, String> {
+    let ipc_calls = state.event_log.ipc_calls();
+    let frontend_commands: Vec<String> = ipc_calls
+        .iter()
+        .map(|c| c.command.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    let report = victauri_core::detect_ghost_commands(&frontend_commands, &state.registry);
+    serde_json::to_value(report).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn victauri_check_ipc_integrity(
+    state: State<'_, Arc<VictauriState>>,
+    stale_threshold_ms: Option<i64>,
+) -> Result<serde_json::Value, String> {
+    let threshold = stale_threshold_ms.unwrap_or(5000);
+    let report = victauri_core::check_ipc_integrity(&state.event_log, threshold);
+    serde_json::to_value(report).map_err(|e| e.to_string())
+}

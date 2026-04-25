@@ -295,3 +295,339 @@ fn verification_result_with_divergences() {
     assert_eq!(result.divergences.len(), 1);
     assert_eq!(result.divergences[0].path, "count");
 }
+
+// ── Phase 2: Cross-boundary state verification ─────────────────────────────
+
+#[test]
+fn verify_state_identical() {
+    let state = serde_json::json!({"count": 5, "name": "test"});
+    let result = victauri_core::verify_state(state.clone(), state);
+    assert!(result.passed);
+    assert!(result.divergences.is_empty());
+}
+
+#[test]
+fn verify_state_scalar_divergence() {
+    let frontend = serde_json::json!({"count": 5});
+    let backend = serde_json::json!({"count": 3});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 1);
+    assert_eq!(result.divergences[0].path, "count");
+    assert_eq!(result.divergences[0].frontend_value, serde_json::json!(5));
+    assert_eq!(result.divergences[0].backend_value, serde_json::json!(3));
+}
+
+#[test]
+fn verify_state_missing_keys() {
+    let frontend = serde_json::json!({"a": 1, "b": 2});
+    let backend = serde_json::json!({"b": 2, "c": 3});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 2);
+    let paths: Vec<&str> = result.divergences.iter().map(|d| d.path.as_str()).collect();
+    assert!(paths.contains(&"a"));
+    assert!(paths.contains(&"c"));
+}
+
+#[test]
+fn verify_state_nested_objects() {
+    let frontend = serde_json::json!({"user": {"name": "Alice", "age": 30}});
+    let backend = serde_json::json!({"user": {"name": "Alice", "age": 31}});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 1);
+    assert_eq!(result.divergences[0].path, "user.age");
+}
+
+#[test]
+fn verify_state_array_divergence() {
+    let frontend = serde_json::json!({"items": [1, 2, 3]});
+    let backend = serde_json::json!({"items": [1, 2, 4]});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 1);
+    assert_eq!(result.divergences[0].path, "items[2]");
+}
+
+#[test]
+fn verify_state_array_length_mismatch() {
+    let frontend = serde_json::json!({"items": [1, 2, 3]});
+    let backend = serde_json::json!({"items": [1, 2]});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 1);
+    assert_eq!(result.divergences[0].path, "items[2]");
+    assert_eq!(result.divergences[0].backend_value, serde_json::Value::Null);
+}
+
+#[test]
+fn verify_state_type_mismatch() {
+    let frontend = serde_json::json!({"value": "five"});
+    let backend = serde_json::json!({"value": 5});
+    let result = victauri_core::verify_state(frontend, backend);
+
+    assert!(!result.passed);
+    assert_eq!(result.divergences.len(), 1);
+    matches!(
+        result.divergences[0].severity,
+        victauri_core::types::DivergenceSeverity::Error
+    );
+}
+
+// ── Phase 2: Ghost command detection ────────────────────────────────────────
+
+#[test]
+fn ghost_commands_all_matched() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save".to_string(),
+        plugin: None,
+        description: None,
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+    registry.register(CommandInfo {
+        name: "load".to_string(),
+        plugin: None,
+        description: None,
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+
+    let frontend = vec!["save".to_string(), "load".to_string()];
+    let report = victauri_core::detect_ghost_commands(&frontend, &registry);
+
+    assert!(report.ghost_commands.is_empty());
+    assert_eq!(report.total_frontend_commands, 2);
+    assert_eq!(report.total_registry_commands, 2);
+}
+
+#[test]
+fn ghost_commands_frontend_only() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save".to_string(),
+        plugin: None,
+        description: None,
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+
+    let frontend = vec!["save".to_string(), "unknown_cmd".to_string()];
+    let report = victauri_core::detect_ghost_commands(&frontend, &registry);
+
+    assert_eq!(report.ghost_commands.len(), 1);
+    assert_eq!(report.ghost_commands[0].name, "unknown_cmd");
+    matches!(
+        report.ghost_commands[0].source,
+        victauri_core::GhostSource::FrontendOnly
+    );
+}
+
+#[test]
+fn ghost_commands_registry_only() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "save".to_string(),
+        plugin: None,
+        description: Some("Save data".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+    registry.register(CommandInfo {
+        name: "unused_cmd".to_string(),
+        plugin: None,
+        description: Some("Never called".to_string()),
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+
+    let frontend = vec!["save".to_string()];
+    let report = victauri_core::detect_ghost_commands(&frontend, &registry);
+
+    assert_eq!(report.ghost_commands.len(), 1);
+    assert_eq!(report.ghost_commands[0].name, "unused_cmd");
+    matches!(
+        report.ghost_commands[0].source,
+        victauri_core::GhostSource::RegistryOnly
+    );
+}
+
+#[test]
+fn ghost_commands_bidirectional() {
+    let registry = CommandRegistry::new();
+    registry.register(CommandInfo {
+        name: "shared".to_string(),
+        plugin: None,
+        description: None,
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+    registry.register(CommandInfo {
+        name: "backend_only".to_string(),
+        plugin: None,
+        description: None,
+        args: vec![],
+        return_type: None,
+        is_async: false,
+    });
+
+    let frontend = vec!["shared".to_string(), "frontend_only".to_string()];
+    let report = victauri_core::detect_ghost_commands(&frontend, &registry);
+
+    assert_eq!(report.ghost_commands.len(), 2);
+    let names: Vec<&str> = report.ghost_commands.iter().map(|g| g.name.as_str()).collect();
+    assert!(names.contains(&"backend_only"));
+    assert!(names.contains(&"frontend_only"));
+}
+
+// ── Phase 2: IPC round-trip integrity ───────────────────────────────────────
+
+#[test]
+fn ipc_integrity_healthy() {
+    let log = EventLog::new(100);
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "save".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(5),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 10,
+        webview_label: "main".to_string(),
+    }));
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "2".to_string(),
+        command: "load".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(3),
+        result: event::IpcResult::Ok(serde_json::json!("data")),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    let report = victauri_core::check_ipc_integrity(&log, 5000);
+    assert!(report.healthy);
+    assert_eq!(report.total_calls, 2);
+    assert_eq!(report.completed, 2);
+    assert_eq!(report.pending, 0);
+    assert_eq!(report.errored, 0);
+    assert!(report.stale_calls.is_empty());
+    assert!(report.error_calls.is_empty());
+}
+
+#[test]
+fn ipc_integrity_with_errors() {
+    let log = EventLog::new(100);
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "save".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(5),
+        result: event::IpcResult::Err("permission denied".to_string()),
+        arg_size_bytes: 10,
+        webview_label: "main".to_string(),
+    }));
+
+    let report = victauri_core::check_ipc_integrity(&log, 5000);
+    assert!(!report.healthy);
+    assert_eq!(report.errored, 1);
+    assert_eq!(report.error_calls.len(), 1);
+    assert_eq!(report.error_calls[0].error, "permission denied");
+    assert_eq!(report.error_calls[0].command, "save");
+}
+
+#[test]
+fn ipc_integrity_stale_pending() {
+    let log = EventLog::new(100);
+    let old_timestamp = Utc::now() - chrono::Duration::seconds(10);
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "slow_cmd".to_string(),
+        timestamp: old_timestamp,
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    let report = victauri_core::check_ipc_integrity(&log, 5000);
+    assert!(!report.healthy);
+    assert_eq!(report.pending, 1);
+    assert_eq!(report.stale_calls.len(), 1);
+    assert_eq!(report.stale_calls[0].command, "slow_cmd");
+    assert!(report.stale_calls[0].age_ms >= 9000);
+}
+
+#[test]
+fn ipc_integrity_recent_pending_not_stale() {
+    let log = EventLog::new(100);
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "fast_cmd".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    let report = victauri_core::check_ipc_integrity(&log, 5000);
+    assert!(report.healthy);
+    assert_eq!(report.pending, 1);
+    assert!(report.stale_calls.is_empty());
+}
+
+#[test]
+fn ipc_integrity_mixed_status() {
+    let log = EventLog::new(100);
+    let old = Utc::now() - chrono::Duration::seconds(30);
+
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "1".to_string(),
+        command: "ok_cmd".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(1),
+        result: event::IpcResult::Ok(serde_json::json!(null)),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "2".to_string(),
+        command: "stuck_cmd".to_string(),
+        timestamp: old,
+        duration_ms: None,
+        result: event::IpcResult::Pending,
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+    log.push(AppEvent::Ipc(IpcCall {
+        id: "3".to_string(),
+        command: "err_cmd".to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(2),
+        result: event::IpcResult::Err("boom".to_string()),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    }));
+
+    let report = victauri_core::check_ipc_integrity(&log, 5000);
+    assert!(!report.healthy);
+    assert_eq!(report.total_calls, 3);
+    assert_eq!(report.completed, 1);
+    assert_eq!(report.pending, 1);
+    assert_eq!(report.errored, 1);
+    assert_eq!(report.stale_calls.len(), 1);
+    assert_eq!(report.error_calls.len(), 1);
+}

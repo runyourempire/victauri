@@ -68,6 +68,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             tools::victauri_get_registry,
             tools::victauri_get_memory_stats,
             tools::victauri_dom_snapshot,
+            tools::victauri_verify_state,
+            tools::victauri_detect_ghost_commands,
+            tools::victauri_check_ipc_integrity,
         ])
         .build()
 }
