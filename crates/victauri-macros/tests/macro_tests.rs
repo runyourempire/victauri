@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use victauri_core::registry::CommandInfo;
 
 mod fake_tauri_types {
