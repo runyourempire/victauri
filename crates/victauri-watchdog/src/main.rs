@@ -126,3 +126,76 @@ async fn run_recovery(cmd: &str) -> anyhow::Result<std::process::ExitStatus> {
     };
     Ok(status)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults() {
+        unsafe {
+            std::env::remove_var("VICTAURI_PORT");
+            std::env::remove_var("VICTAURI_INTERVAL");
+            std::env::remove_var("VICTAURI_MAX_FAILURES");
+            std::env::remove_var("VICTAURI_ON_FAILURE");
+        }
+        let config = Config::from_env();
+        assert_eq!(config.port, 7373);
+        assert_eq!(config.interval, Duration::from_secs(5));
+        assert_eq!(config.max_failures, 3);
+        assert!(config.on_failure_cmd.is_none());
+    }
+
+    #[test]
+    fn config_from_env_vars() {
+        unsafe {
+            std::env::set_var("VICTAURI_PORT", "9999");
+            std::env::set_var("VICTAURI_INTERVAL", "10");
+            std::env::set_var("VICTAURI_MAX_FAILURES", "5");
+            std::env::set_var("VICTAURI_ON_FAILURE", "echo recovered");
+        }
+        let config = Config::from_env();
+        assert_eq!(config.port, 9999);
+        assert_eq!(config.interval, Duration::from_secs(10));
+        assert_eq!(config.max_failures, 5);
+        assert_eq!(config.on_failure_cmd, Some("echo recovered".to_string()));
+        unsafe {
+            std::env::remove_var("VICTAURI_PORT");
+            std::env::remove_var("VICTAURI_INTERVAL");
+            std::env::remove_var("VICTAURI_MAX_FAILURES");
+            std::env::remove_var("VICTAURI_ON_FAILURE");
+        }
+    }
+
+    #[test]
+    fn config_invalid_env_uses_defaults() {
+        unsafe {
+            std::env::set_var("VICTAURI_PORT", "not_a_number");
+            std::env::set_var("VICTAURI_INTERVAL", "abc");
+            std::env::set_var("VICTAURI_MAX_FAILURES", "xyz");
+        }
+        let config = Config::from_env();
+        assert_eq!(config.port, 7373);
+        assert_eq!(config.interval, Duration::from_secs(5));
+        assert_eq!(config.max_failures, 3);
+        unsafe {
+            std::env::remove_var("VICTAURI_PORT");
+            std::env::remove_var("VICTAURI_INTERVAL");
+            std::env::remove_var("VICTAURI_MAX_FAILURES");
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_runs_echo() {
+        let cmd = if cfg!(windows) { "echo ok" } else { "echo ok" };
+        let status = run_recovery(cmd).await.unwrap();
+        assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn recovery_bad_command_fails() {
+        let cmd = if cfg!(windows) { "exit /b 1" } else { "exit 1" };
+        let status = run_recovery(cmd).await.unwrap();
+        assert!(!status.success());
+    }
+}

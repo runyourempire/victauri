@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
 - Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
-- Test count: 110 -> 157
+- Test count: 110 -> 162
 
 ## [0.1.0] - 2026-04-26
 
