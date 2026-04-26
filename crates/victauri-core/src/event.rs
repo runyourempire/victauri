@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+/// A single Tauri IPC call with timing, result, and source webview.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcCall {
     pub id: String,
@@ -14,6 +15,7 @@ pub struct IpcCall {
     pub webview_label: String,
 }
 
+/// Outcome of an IPC call: pending, success with a JSON value, or error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResult {
     Pending,
@@ -21,6 +23,7 @@ pub enum IpcResult {
     Err(String),
 }
 
+/// Application event captured by the introspection layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum AppEvent {
@@ -42,6 +45,8 @@ pub enum AppEvent {
     },
 }
 
+/// Thread-safe ring-buffer event log. Automatically evicts the oldest events
+/// when capacity is reached. All operations recover from mutex poisoning.
 #[derive(Debug, Clone)]
 pub struct EventLog {
     events: Arc<Mutex<VecDeque<AppEvent>>>,
@@ -73,6 +78,17 @@ impl EventLog {
             .collect()
     }
 
+    pub fn snapshot_range(&self, offset: usize, limit: usize) -> Vec<AppEvent> {
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
     pub fn since(&self, timestamp: DateTime<Utc>) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -95,6 +111,18 @@ impl EventLog {
             .iter()
             .filter_map(|e| match e {
                 AppEvent::Ipc(call) => Some(call.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn ipc_calls_since(&self, timestamp: DateTime<Utc>) -> Vec<IpcCall> {
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter_map(|e| match e {
+                AppEvent::Ipc(call) if call.timestamp >= timestamp => Some(call.clone()),
                 _ => None,
             })
             .collect()

@@ -1969,3 +1969,164 @@ pub async fn start_server_with_options<R: Runtime>(
     axum::serve(listener, app).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn js_string_simple() {
+        assert_eq!(js_string("hello"), "\"hello\"");
+    }
+
+    #[test]
+    fn js_string_single_quotes() {
+        let result = js_string("it's a test");
+        assert!(result.contains("it's a test"));
+    }
+
+    #[test]
+    fn js_string_double_quotes() {
+        let result = js_string(r#"say "hello""#);
+        assert!(result.contains(r#"\""#));
+    }
+
+    #[test]
+    fn js_string_backslashes() {
+        let result = js_string(r"path\to\file");
+        assert!(result.contains(r"\\"));
+    }
+
+    #[test]
+    fn js_string_newlines_and_tabs() {
+        let result = js_string("line1\nline2\ttab");
+        assert!(result.contains(r"\n"));
+        assert!(result.contains(r"\t"));
+        assert!(!result.contains('\n'));
+    }
+
+    #[test]
+    fn js_string_null_bytes() {
+        let input = String::from_utf8(b"before\x00after".to_vec()).unwrap();
+        let result = js_string(&input);
+        // serde_json escapes null bytes as  
+        assert!(result.contains("\\u0000"));
+        assert!(!result.contains('\0'));
+    }
+
+    #[test]
+    fn js_string_template_literal_injection() {
+        let result = js_string("`${alert(1)}`");
+        // Should not contain unescaped backticks that could break template literals
+        // serde_json wraps in double quotes, so backticks are safe
+        assert!(result.starts_with('"'));
+        assert!(result.ends_with('"'));
+    }
+
+    #[test]
+    fn js_string_unicode_separators() {
+        // U+2028 (Line Separator) and U+2029 (Paragraph Separator) are valid in
+        // JSON strings per RFC 8259, and serde_json passes them through literally.
+        // Since js_string is used inside JS double-quoted strings (not template
+        // literals), they are safe in modern JS engines (ES2019+).
+        let result = js_string("a\u{2028}b\u{2029}c");
+        // Verify the string is valid JSON that round-trips correctly
+        let decoded: String = serde_json::from_str(&result).unwrap();
+        assert_eq!(decoded, "a\u{2028}b\u{2029}c");
+    }
+
+    #[test]
+    fn js_string_empty() {
+        assert_eq!(js_string(""), "\"\"");
+    }
+
+    #[test]
+    fn js_string_html_script_close() {
+        // </script> in a JS string inside HTML could break out of script tags
+        let result = js_string("</script><img onerror=alert(1)>");
+        assert!(result.starts_with('"'));
+        // The string is JSON-encoded; verify it round-trips safely
+        let decoded: String = serde_json::from_str(&result).unwrap();
+        assert_eq!(decoded, "</script><img onerror=alert(1)>");
+    }
+
+    #[test]
+    fn js_string_very_long() {
+        let long = "a".repeat(100_000);
+        let result = js_string(&long);
+        assert!(result.len() >= 100_002); // quotes + content
+    }
+
+    // ── URL validation tests ────────────────────────────────────────────────
+
+    #[test]
+    fn url_allows_http() {
+        assert!(validate_url("http://example.com").is_ok());
+    }
+
+    #[test]
+    fn url_allows_https() {
+        assert!(validate_url("https://example.com/path?q=1").is_ok());
+    }
+
+    #[test]
+    fn url_allows_file() {
+        assert!(validate_url("file:///tmp/test.html").is_ok());
+    }
+
+    #[test]
+    fn url_blocks_javascript() {
+        assert!(validate_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn url_blocks_javascript_case_insensitive() {
+        assert!(validate_url("JAVASCRIPT:alert(1)").is_err());
+    }
+
+    #[test]
+    fn url_blocks_data_scheme() {
+        assert!(validate_url("data:text/html,<script>alert(1)</script>").is_err());
+    }
+
+    #[test]
+    fn url_blocks_vbscript() {
+        assert!(validate_url("vbscript:MsgBox(1)").is_err());
+    }
+
+    #[test]
+    fn url_rejects_invalid() {
+        assert!(validate_url("not a url at all").is_err());
+    }
+
+    #[test]
+    fn url_strips_control_chars() {
+        // Control characters should be stripped, leaving a valid URL
+        let input = format!("http://example{}com", '\0');
+        assert!(validate_url(&input).is_ok());
+    }
+}
+
+pub async fn start_server<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    state: Arc<VictauriState>,
+    port: u16,
+) -> anyhow::Result<()> {
+    start_server_with_options(app_handle, state, port, None).await
+}
+
+pub async fn start_server_with_options<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    state: Arc<VictauriState>,
+    port: u16,
+    auth_token: Option<String>,
+) -> anyhow::Result<()> {
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
+    let app = build_app_with_options(state, bridge, auth_token);
+
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
+    tracing::info!("Victauri MCP server listening on 127.0.0.1:{port}");
+
+    axum::serve(listener, app).await?;
+    Ok(())
+}

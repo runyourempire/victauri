@@ -193,7 +193,7 @@ mod tests {
         }
         let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
         // All 1000 tokens should be dispensed; a time-based refill may add a few
-        assert!(total >= 1000 && total <= 1010);
+        assert!((1000..=1010).contains(&total));
     }
 
     #[test]

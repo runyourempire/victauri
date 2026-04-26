@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::event::{AppEvent, IpcCall};
 
+/// A snapshot of application state taken at a specific point during recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateCheckpoint {
     pub id: String,
@@ -14,6 +15,7 @@ pub struct StateCheckpoint {
     pub event_index: usize,
 }
 
+/// A complete recorded session with events and state checkpoints. Serializable for export/import.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordedSession {
     pub id: String,
@@ -29,6 +31,8 @@ pub struct RecordedEvent {
     pub event: AppEvent,
 }
 
+/// Thread-safe session recorder for time-travel debugging. Records events and
+/// state checkpoints during a recording session. Only one session can be active at a time.
 #[derive(Debug, Clone)]
 pub struct EventRecorder {
     recording: Arc<Mutex<Option<ActiveRecording>>>,

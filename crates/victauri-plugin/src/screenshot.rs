@@ -390,3 +390,101 @@ fn adler32(data: &[u8]) -> u32 {
     }
     (b << 16) | a
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn png_signature_correct() {
+        let rgba = vec![255, 0, 0, 255]; // 1x1 red pixel
+        let png = encode_png(1, 1, &rgba).unwrap();
+        assert_eq!(&png[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    #[test]
+    fn png_ihdr_chunk_present() {
+        let rgba = vec![0u8; 4]; // 1x1 black pixel
+        let png = encode_png(1, 1, &rgba).unwrap();
+        // IHDR should be right after signature (8 bytes)
+        // chunk: 4 bytes length + 4 bytes type
+        assert_eq!(&png[12..16], b"IHDR");
+    }
+
+    #[test]
+    fn png_iend_chunk_present() {
+        let rgba = vec![0u8; 4];
+        let png = encode_png(1, 1, &rgba).unwrap();
+        // IEND should be at the end: 4 bytes length (0) + "IEND" + 4 bytes CRC
+        let len = png.len();
+        assert_eq!(&png[len - 8..len - 4], b"IEND");
+    }
+
+    #[test]
+    fn png_2x2_produces_valid_output() {
+        // 2x2 RGBA: red, green, blue, white
+        let rgba = vec![
+            255, 0, 0, 255, // red
+            0, 255, 0, 255, // green
+            0, 0, 255, 255, // blue
+            255, 255, 255, 255, // white
+        ];
+        let png = encode_png(2, 2, &rgba).unwrap();
+        // Should be a valid PNG (starts with signature, has IHDR, IDAT, IEND)
+        assert!(png.len() > 50);
+        assert_eq!(&png[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    #[test]
+    fn adler32_empty() {
+        assert_eq!(adler32(&[]), 1);
+    }
+
+    #[test]
+    fn adler32_known_value() {
+        // adler32("Wikipedia") = 0x11E60398
+        assert_eq!(adler32(b"Wikipedia"), 0x11E60398);
+    }
+
+    #[test]
+    fn crc32_known_value() {
+        // CRC32 of "IEND" = 0xAE426082
+        assert_eq!(png_crc32(b"IEND"), 0xAE426082);
+    }
+
+    #[test]
+    fn deflate_compress_roundtrip_structure() {
+        let data = b"hello world";
+        let compressed = deflate_compress(data);
+        // zlib header
+        assert_eq!(compressed[0], 0x78);
+        assert_eq!(compressed[1], 0x01);
+        // Last 4 bytes should be adler32 in big-endian
+        let len = compressed.len();
+        let adler = u32::from_be_bytes([
+            compressed[len - 4],
+            compressed[len - 3],
+            compressed[len - 2],
+            compressed[len - 1],
+        ]);
+        assert_eq!(adler, adler32(data));
+    }
+
+    #[test]
+    fn deflate_compress_large_data_multi_block() {
+        // Data larger than 65535 bytes should produce multiple stored blocks
+        let data = vec![0u8; 100_000];
+        let compressed = deflate_compress(&data);
+        // Should have 2 blocks (65535 + 34465)
+        assert!(compressed.len() > 100_000); // stored blocks add overhead
+    }
+
+    #[test]
+    fn encode_png_large_image() {
+        // 100x100 image
+        let rgba = vec![128u8; 100 * 100 * 4];
+        let png = encode_png(100, 100, &rgba).unwrap();
+        assert!(png.len() > 100);
+        assert_eq!(&png[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+}

@@ -1522,4 +1522,237 @@ mod adversarial {
         let results = reg.resolve("");
         assert!(results.is_empty());
     }
+
+    // ── Recording concurrency ───────────────────────────────────────────
+
+    #[test]
+    fn recorder_concurrent_events() {
+        let rec = Arc::new(EventRecorder::new(10_000));
+        rec.start("concurrent".to_string());
+        let mut handles = Vec::new();
+        for i in 0..10 {
+            let r = Arc::clone(&rec);
+            handles.push(thread::spawn(move || {
+                for j in 0..100 {
+                    r.record_event(make_ipc(&format!("{i}-{j}"), &format!("thread_{i}")));
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(rec.event_count(), 1000);
+        let session = rec.stop().unwrap();
+        assert_eq!(session.events.len(), 1000);
+    }
+
+    #[test]
+    fn recorder_concurrent_checkpoints() {
+        let rec = Arc::new(EventRecorder::new(10_000));
+        rec.start("cp-concurrent".to_string());
+        let mut handles = Vec::new();
+        for i in 0..5 {
+            let r = Arc::clone(&rec);
+            handles.push(thread::spawn(move || {
+                for j in 0..10 {
+                    r.checkpoint(
+                        format!("cp-{i}-{j}"),
+                        Some(format!("Thread {i} checkpoint {j}")),
+                        serde_json::json!({"thread": i, "seq": j}),
+                    );
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(rec.checkpoint_count(), 50);
+    }
+
+    #[test]
+    fn recorder_stop_while_recording() {
+        let rec = Arc::new(EventRecorder::new(10_000));
+        rec.start("stop-test".to_string());
+
+        let r = Arc::clone(&rec);
+        let writer = thread::spawn(move || {
+            for i in 0..1000 {
+                r.record_event(make_ipc(&i.to_string(), "spam"));
+            }
+        });
+
+        // Stop before all events are written
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let session = rec.stop();
+        writer.join().unwrap();
+
+        // Session should have been captured (may not have all 1000 events)
+        assert!(session.is_some());
+        let s = session.unwrap();
+        assert!(s.events.len() <= 1000);
+    }
+
+    // ── Session serialization round-trip ────────────────────────────────
+
+    #[test]
+    fn recorded_session_serde_roundtrip() {
+        let rec = EventRecorder::new(1000);
+        rec.start("serde-test".to_string());
+        rec.record_event(make_ipc("1", "save"));
+        rec.record_event(make_ipc("2", "load"));
+        rec.checkpoint(
+            "cp1".to_string(),
+            Some("mid".to_string()),
+            serde_json::json!({"count": 1}),
+        );
+        let session = rec.stop().unwrap();
+
+        let json = serde_json::to_string(&session).unwrap();
+        let deserialized: victauri_core::RecordedSession = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id, "serde-test");
+        assert_eq!(deserialized.events.len(), 2);
+        assert_eq!(deserialized.checkpoints.len(), 1);
+        assert_eq!(deserialized.checkpoints[0].id, "cp1");
+    }
+
+    // ── Event log pagination (since filter) ─────────────────────────────
+
+    #[test]
+    fn event_log_since_filters_correctly() {
+        let log = EventLog::new(100);
+        let t1 = Utc::now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "1".to_string(),
+            command: "old".to_string(),
+            timestamp: t1,
+            duration_ms: None,
+            result: event::IpcResult::Pending,
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+        let t2 = Utc::now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "2".to_string(),
+            command: "new".to_string(),
+            timestamp: Utc::now(),
+            duration_ms: None,
+            result: event::IpcResult::Pending,
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+
+        let since = log.since(t2);
+        assert_eq!(since.len(), 1);
+    }
+
+    #[test]
+    fn event_log_since_all_event_types() {
+        let log = EventLog::new(100);
+        let past = Utc::now() - chrono::Duration::seconds(10);
+        let future = Utc::now() + chrono::Duration::seconds(10);
+
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "1".to_string(),
+            command: "test".to_string(),
+            timestamp: past,
+            duration_ms: None,
+            result: event::IpcResult::Pending,
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+        log.push(AppEvent::StateChange {
+            key: "k".to_string(),
+            timestamp: future,
+            caused_by: None,
+        });
+        log.push(AppEvent::DomMutation {
+            webview_label: "main".to_string(),
+            timestamp: past,
+            mutation_count: 1,
+        });
+        log.push(AppEvent::WindowEvent {
+            label: "main".to_string(),
+            event: "focus".to_string(),
+            timestamp: future,
+        });
+
+        let since = log.since(Utc::now());
+        assert_eq!(since.len(), 2); // only the future ones
+    }
+
+    // ── Snapshot pagination ────────────────────────────────────────────
+
+    #[test]
+    fn event_log_snapshot_range() {
+        let log = EventLog::new(100);
+        for i in 0..10 {
+            log.push(make_ipc(&i.to_string(), &format!("cmd_{i}")));
+        }
+        let page = log.snapshot_range(3, 4);
+        assert_eq!(page.len(), 4);
+        match &page[0] {
+            AppEvent::Ipc(call) => assert_eq!(call.id, "3"),
+            _ => panic!("expected IPC"),
+        }
+        match &page[3] {
+            AppEvent::Ipc(call) => assert_eq!(call.id, "6"),
+            _ => panic!("expected IPC"),
+        }
+    }
+
+    #[test]
+    fn event_log_snapshot_range_past_end() {
+        let log = EventLog::new(100);
+        for i in 0..5 {
+            log.push(make_ipc(&i.to_string(), "cmd"));
+        }
+        let page = log.snapshot_range(3, 100);
+        assert_eq!(page.len(), 2);
+    }
+
+    #[test]
+    fn event_log_snapshot_range_empty() {
+        let log = EventLog::new(100);
+        let page = log.snapshot_range(0, 10);
+        assert!(page.is_empty());
+    }
+
+    // ── IPC calls filtered by time ─────────────────────────────────────
+
+    #[test]
+    fn event_log_ipc_calls_since() {
+        let log = EventLog::new(100);
+        let past = Utc::now() - chrono::Duration::seconds(10);
+
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "old".to_string(),
+            command: "old_cmd".to_string(),
+            timestamp: past,
+            duration_ms: None,
+            result: event::IpcResult::Pending,
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+        log.push(AppEvent::StateChange {
+            key: "k".to_string(),
+            timestamp: Utc::now(),
+            caused_by: None,
+        });
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "new".to_string(),
+            command: "new_cmd".to_string(),
+            timestamp: Utc::now(),
+            duration_ms: Some(1),
+            result: event::IpcResult::Ok(serde_json::json!("ok")),
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+
+        let calls = log.ipc_calls_since(Utc::now() - chrono::Duration::seconds(1));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].command, "new_cmd");
+    }
 }

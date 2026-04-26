@@ -10,6 +10,10 @@ rust-version.workspace = true
 links = "tauri-plugin-victauri"
 keywords = ["tauri", "mcp", "plugin", "testing", "ai-agent"]
 categories = ["development-tools::testing", "gui"]
+homepage = "https://github.com/runyourempire/victauri"
+documentation = "https://docs.rs/victauri-plugin"
+readme = "../../README.md"
+exclude = ["tests/"]
 
 [dependencies]
 victauri-core = { workspace = true }

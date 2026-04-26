@@ -2,12 +2,18 @@ use std::collections::HashSet;
 
 use crate::redaction::Redactor;
 
+/// Privacy controls for the MCP server. Blocklist takes precedence over allowlist.
 #[derive(Default)]
 pub struct PrivacyConfig {
+    /// If set, only these commands can be invoked (positive allowlist).
     pub command_allowlist: Option<HashSet<String>>,
+    /// Commands that are always blocked, even if on the allowlist.
     pub command_blocklist: HashSet<String>,
+    /// MCP tool names that are disabled (e.g., `"eval_js"`, `"screenshot"`).
     pub disabled_tools: HashSet<String>,
+    /// Output redactor with regex and JSON-key matching.
     pub redactor: Redactor,
+    /// Whether output redaction is active.
     pub redaction_enabled: bool,
 }
 

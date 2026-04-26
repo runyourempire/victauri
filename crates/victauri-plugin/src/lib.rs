@@ -1,3 +1,36 @@
+//! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
+//!
+//! Add this plugin to your Tauri app for AI-agent-driven testing and debugging:
+//! DOM snapshots, IPC tracing, cross-boundary verification, and 55 more tools —
+//! all accessible over the Model Context Protocol.
+//!
+//! # Quick Start
+//!
+//! ```ignore
+//! tauri::Builder::default()
+//!     .plugin(victauri_plugin::init())
+//!     .run(tauri::generate_context!())
+//!     .unwrap();
+//! ```
+//!
+//! In debug builds this starts an MCP server on port 7373. In release builds
+//! the plugin is a no-op with zero overhead.
+//!
+//! # Configuration
+//!
+//! ```ignore
+//! tauri::Builder::default()
+//!     .plugin(
+//!         victauri_plugin::VictauriBuilder::new()
+//!             .port(8080)
+//!             .generate_auth_token()
+//!             .strict_privacy_mode()
+//!             .build(),
+//!     )
+//!     .run(tauri::generate_context!())
+//!     .unwrap();
+//! ```
+
 pub mod bridge;
 mod js_bridge;
 pub mod mcp;
@@ -23,18 +56,33 @@ const DEFAULT_EVENT_CAPACITY: usize = 10_000;
 const DEFAULT_RECORDER_CAPACITY: usize = 50_000;
 const DEFAULT_EVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Map of pending JavaScript eval callbacks, keyed by request ID.
+/// Each entry holds a oneshot sender that resolves when the webview returns a result.
 pub type PendingCallbacks = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 
+/// Runtime state shared between the MCP server and all tool handlers.
 pub struct VictauriState {
+    /// Ring-buffer event log for IPC calls, state changes, and DOM mutations.
     pub event_log: EventLog,
+    /// Registry of all discovered Tauri commands with metadata.
     pub registry: CommandRegistry,
+    /// TCP port the MCP server listens on.
     pub port: u16,
+    /// Pending JavaScript eval callbacks awaiting webview responses.
     pub pending_evals: PendingCallbacks,
+    /// Session recorder for time-travel debugging.
     pub recorder: EventRecorder,
+    /// Privacy configuration (tool disabling, command filtering, output redaction).
     pub privacy: privacy::PrivacyConfig,
+    /// Timeout for JavaScript eval operations.
     pub eval_timeout: std::time::Duration,
 }
 
+/// Builder for configuring the Victauri plugin before adding it to a Tauri app.
+///
+/// Supports port selection, authentication, privacy controls, output redaction,
+/// and capacity tuning. All settings have sensible defaults and can be overridden
+/// via environment variables.
 pub struct VictauriBuilder {
     port: Option<u16>,
     event_capacity: usize,
@@ -72,57 +120,67 @@ impl VictauriBuilder {
         Self::default()
     }
 
+    /// Set the TCP port for the MCP server (default: 7373, env: `VICTAURI_PORT`).
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
+    /// Set the maximum number of events in the ring-buffer log (default: 10,000).
     pub fn event_capacity(mut self, capacity: usize) -> Self {
         self.event_capacity = capacity;
         self
     }
 
+    /// Set the maximum events kept during session recording (default: 50,000).
     pub fn recorder_capacity(mut self, capacity: usize) -> Self {
         self.recorder_capacity = capacity;
         self
     }
 
-    /// Set the timeout for JavaScript eval operations (default: 30s).
+    /// Set the timeout for JavaScript eval operations (default: 30s, env: `VICTAURI_EVAL_TIMEOUT`).
     pub fn eval_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.eval_timeout = timeout;
         self
     }
 
+    /// Set an explicit auth token for the MCP server (env: `VICTAURI_AUTH_TOKEN`).
     pub fn auth_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
         self
     }
 
+    /// Generate a random UUID v4 auth token.
     pub fn generate_auth_token(mut self) -> Self {
         self.auth_token = Some(auth::generate_token());
         self
     }
 
+    /// Disable specific MCP tools by name (e.g., `["eval_js", "screenshot"]`).
     pub fn disable_tools(mut self, tools: &[&str]) -> Self {
         self.disabled_tools = tools.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Only allow these Tauri commands to be invoked via MCP (positive allowlist).
     pub fn command_allowlist(mut self, commands: &[&str]) -> Self {
         self.command_allowlist = Some(commands.iter().map(|s| s.to_string()).collect());
         self
     }
 
+    /// Block specific Tauri commands from being invoked via MCP.
     pub fn command_blocklist(mut self, commands: &[&str]) -> Self {
         self.command_blocklist = commands.iter().map(|s| s.to_string()).collect();
         self
     }
 
+    /// Add a regex pattern for output redaction (e.g., `r"SECRET_\w+"`).
     pub fn add_redaction_pattern(mut self, pattern: impl Into<String>) -> Self {
         self.redaction_patterns.push(pattern.into());
         self
     }
 
+    /// Enable output redaction with built-in patterns (API keys, emails, tokens).
     pub fn enable_redaction(mut self) -> Self {
         self.redaction_enabled = true;
         self

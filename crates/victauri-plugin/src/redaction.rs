@@ -49,6 +49,8 @@ const SENSITIVE_JSON_KEYS: &[&str] = &[
     "card_number",
 ];
 
+/// Output redactor that scrubs API keys, tokens, emails, and sensitive JSON keys
+/// from MCP tool output. Applies built-in patterns plus optional custom regexes.
 pub struct Redactor {
     builtin_set: RegexSet,
     builtin_compiled: Vec<regex::Regex>,
@@ -57,6 +59,32 @@ pub struct Redactor {
 }
 
 impl Redactor {
+    pub fn try_new(custom_patterns: &[String]) -> Result<Self, regex::Error> {
+        let builtin_set = RegexSet::new(BUILTIN_PATTERNS)?;
+        let builtin_compiled: Vec<regex::Regex> = BUILTIN_PATTERNS
+            .iter()
+            .filter_map(|p| regex::Regex::new(p).ok())
+            .collect();
+
+        let (custom_set, custom_compiled) = if custom_patterns.is_empty() {
+            (None, Vec::new())
+        } else {
+            let set = RegexSet::new(custom_patterns)?;
+            let compiled: Vec<regex::Regex> = custom_patterns
+                .iter()
+                .map(|p| regex::Regex::new(p))
+                .collect::<Result<Vec<_>, _>>()?;
+            (Some(set), compiled)
+        };
+
+        Ok(Self {
+            builtin_set,
+            builtin_compiled,
+            custom_set,
+            custom_compiled,
+        })
+    }
+
     pub fn new(custom_patterns: &[String]) -> Self {
         let builtin_set =
             RegexSet::new(BUILTIN_PATTERNS).expect("builtin redaction patterns must compile");
@@ -290,5 +318,25 @@ mod tests {
             r.redact("sk_test_ABCDEFGHIJKLMNOPQRSTUVWXYZab")
                 .contains("[REDACTED]")
         );
+    }
+
+    #[test]
+    fn try_new_valid_patterns() {
+        let r = Redactor::try_new(&["secret_\\w+".to_string()]);
+        assert!(r.is_ok());
+        let r = r.unwrap();
+        assert!(r.redact("found secret_alpha here").contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn try_new_invalid_pattern_returns_error() {
+        let r = Redactor::try_new(&["[invalid".to_string()]);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn try_new_empty_patterns() {
+        let r = Redactor::try_new(&[]);
+        assert!(r.is_ok());
     }
 }
