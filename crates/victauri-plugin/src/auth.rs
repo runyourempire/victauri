@@ -28,10 +28,17 @@ pub async fn require_auth(
         .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+        .and_then(|v| {
+            let lower = v.to_lowercase();
+            if lower.starts_with("bearer ") {
+                Some(v[7..].to_string())
+            } else {
+                None
+            }
+        });
 
     match provided {
-        Some(token) if token == expected => Ok(next.run(request).await),
+        Some(ref token) if token == expected => Ok(next.run(request).await),
         _ => Err(StatusCode::UNAUTHORIZED),
     }
 }

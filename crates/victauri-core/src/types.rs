@@ -16,7 +16,7 @@ pub struct MemoryDelta {
     pub command: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VerificationResult {
     pub passed: bool,
     pub frontend_state: serde_json::Value,
@@ -24,7 +24,7 @@ pub struct VerificationResult {
     pub divergences: Vec<Divergence>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Divergence {
     pub path: String,
     pub frontend_value: serde_json::Value,
@@ -32,7 +32,7 @@ pub struct Divergence {
     pub severity: DivergenceSeverity,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DivergenceSeverity {
     Info,
     Warning,

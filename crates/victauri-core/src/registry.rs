@@ -38,27 +38,39 @@ impl CommandRegistry {
     pub fn register(&self, info: CommandInfo) {
         self.commands
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(info.name.clone(), info);
     }
 
     pub fn get(&self, name: &str) -> Option<CommandInfo> {
-        self.commands.read().unwrap().get(name).cloned()
+        self.commands
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+            .cloned()
     }
 
     pub fn list(&self) -> Vec<CommandInfo> {
-        self.commands.read().unwrap().values().cloned().collect()
+        self.commands
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn count(&self) -> usize {
-        self.commands.read().unwrap().len()
+        self.commands
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     pub fn search(&self, query: &str) -> Vec<CommandInfo> {
         let query_lower = query.to_lowercase();
         self.commands
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .filter(|cmd| {
                 cmd.name.to_lowercase().contains(&query_lower)
@@ -81,7 +93,7 @@ impl CommandRegistry {
         let mut scored: Vec<ScoredCommand> = self
             .commands
             .read()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .filter_map(|cmd| {
                 let score = score_command(cmd, &query_lower, &query_words);
@@ -96,11 +108,7 @@ impl CommandRegistry {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.score.total_cmp(&a.score));
         scored
     }
 }

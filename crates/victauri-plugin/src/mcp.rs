@@ -1644,7 +1644,7 @@ impl VictauriMcpHandler {
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {
                 self.state.pending_evals.lock().await.remove(&id);
-                Err("eval timed out after 10s".to_string())
+                Err(format!("eval timed out after {}s", EVAL_TIMEOUT.as_secs()))
             }
         }
     }

@@ -57,7 +57,7 @@ impl EventLog {
     }
 
     pub fn push(&self, event: AppEvent) {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         if events.len() >= self.max_capacity {
             events.pop_front();
         }
@@ -65,13 +65,18 @@ impl EventLog {
     }
 
     pub fn snapshot(&self) -> Vec<AppEvent> {
-        self.events.lock().unwrap().iter().cloned().collect()
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn since(&self, timestamp: DateTime<Utc>) -> Vec<AppEvent> {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter(|e| match e {
                 AppEvent::Ipc(call) => call.timestamp >= timestamp,
@@ -86,7 +91,7 @@ impl EventLog {
     pub fn ipc_calls(&self) -> Vec<IpcCall> {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter_map(|e| match e {
                 AppEvent::Ipc(call) => Some(call.clone()),
@@ -96,14 +101,20 @@ impl EventLog {
     }
 
     pub fn len(&self) -> usize {
-        self.events.lock().unwrap().len()
+        self.events.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.events.lock().unwrap().is_empty()
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 
     pub fn clear(&self) {
-        self.events.lock().unwrap().clear();
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }

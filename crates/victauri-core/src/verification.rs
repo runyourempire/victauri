@@ -89,7 +89,7 @@ fn compare_values(
                         backend_value: b_val.clone(),
                         severity: DivergenceSeverity::Warning,
                     }),
-                    (None, None) => unreachable!(),
+                    (None, None) => {}
                 }
             }
         }
@@ -116,12 +116,9 @@ fn classify_severity(
     match (frontend, backend) {
         (serde_json::Value::Null, _) | (_, serde_json::Value::Null) => DivergenceSeverity::Warning,
         (serde_json::Value::Number(f), serde_json::Value::Number(b)) => {
-            let f_f64 = f.as_f64().unwrap_or(0.0);
-            let b_f64 = b.as_f64().unwrap_or(0.0);
-            if (f_f64 - b_f64).abs() < f64::EPSILON {
-                DivergenceSeverity::Info
-            } else {
-                DivergenceSeverity::Error
+            match (f.as_f64(), b.as_f64()) {
+                (Some(fv), Some(bv)) if (fv - bv).abs() < f64::EPSILON => DivergenceSeverity::Info,
+                _ => DivergenceSeverity::Error,
             }
         }
         _ => DivergenceSeverity::Error,
@@ -344,7 +341,18 @@ pub fn evaluate_assertion(
                 _ => false,
             }
         }
-        _ => false,
+        unknown => {
+            return AssertionResult {
+                label: assertion.label.clone(),
+                passed: false,
+                actual,
+                expected: assertion.expected.clone(),
+                message: Some(format!(
+                    "Unknown assertion condition '{}' in '{}'",
+                    unknown, assertion.label
+                )),
+            };
+        }
     };
 
     let message = if !passed {

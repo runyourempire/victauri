@@ -40,9 +40,10 @@ struct ActiveRecording {
     session_id: String,
     started_at: DateTime<Utc>,
     events: VecDeque<RecordedEvent>,
-    checkpoints: Vec<StateCheckpoint>,
+    checkpoints: VecDeque<StateCheckpoint>,
     event_counter: usize,
     max_events: usize,
+    max_checkpoints: usize,
 }
 
 impl EventRecorder {
@@ -54,7 +55,7 @@ impl EventRecorder {
     }
 
     pub fn start(&self, session_id: String) -> bool {
-        let mut rec = self.recording.lock().unwrap();
+        let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if rec.is_some() {
             return false;
         }
@@ -62,29 +63,33 @@ impl EventRecorder {
             session_id,
             started_at: Utc::now(),
             events: VecDeque::new(),
-            checkpoints: Vec::new(),
+            checkpoints: VecDeque::new(),
             event_counter: 0,
             max_events: self.max_events,
+            max_checkpoints: 1000,
         });
         true
     }
 
     pub fn stop(&self) -> Option<RecordedSession> {
-        let mut rec = self.recording.lock().unwrap();
+        let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         rec.take().map(|r| RecordedSession {
             id: r.session_id,
             started_at: r.started_at,
             events: r.events.into_iter().collect(),
-            checkpoints: r.checkpoints,
+            checkpoints: r.checkpoints.into_iter().collect(),
         })
     }
 
     pub fn is_recording(&self) -> bool {
-        self.recording.lock().unwrap().is_some()
+        self.recording
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
     }
 
     pub fn record_event(&self, event: AppEvent) {
-        let mut rec = self.recording.lock().unwrap();
+        let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
             let timestamp = extract_timestamp(&event);
             let index = active.event_counter;
@@ -103,10 +108,13 @@ impl EventRecorder {
     }
 
     pub fn checkpoint(&self, id: String, label: Option<String>, state: serde_json::Value) -> bool {
-        let mut rec = self.recording.lock().unwrap();
+        let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
             let event_index = active.event_counter;
-            active.checkpoints.push(StateCheckpoint {
+            if active.checkpoints.len() >= active.max_checkpoints {
+                active.checkpoints.pop_front();
+            }
+            active.checkpoints.push_back(StateCheckpoint {
                 id,
                 label,
                 timestamp: Utc::now(),
@@ -122,7 +130,7 @@ impl EventRecorder {
     pub fn event_count(&self) -> usize {
         self.recording
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|r| r.events.len())
             .unwrap_or(0)
@@ -131,14 +139,14 @@ impl EventRecorder {
     pub fn checkpoint_count(&self) -> usize {
         self.recording
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|r| r.checkpoints.len())
             .unwrap_or(0)
     }
 
     pub fn events_since(&self, index: usize) -> Vec<RecordedEvent> {
-        let rec = self.recording.lock().unwrap();
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
             Some(active) => active
                 .events
@@ -151,7 +159,7 @@ impl EventRecorder {
     }
 
     pub fn events_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<RecordedEvent> {
-        let rec = self.recording.lock().unwrap();
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
             Some(active) => active
                 .events
@@ -164,9 +172,9 @@ impl EventRecorder {
     }
 
     pub fn get_checkpoints(&self) -> Vec<StateCheckpoint> {
-        let rec = self.recording.lock().unwrap();
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
-            Some(active) => active.checkpoints.clone(),
+            Some(active) => active.checkpoints.iter().cloned().collect(),
             None => Vec::new(),
         }
     }
@@ -176,7 +184,7 @@ impl EventRecorder {
         from_checkpoint_id: &str,
         to_checkpoint_id: &str,
     ) -> Option<Vec<RecordedEvent>> {
-        let rec = self.recording.lock().unwrap();
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         let active = rec.as_ref()?;
 
         let from_idx = active
@@ -207,7 +215,7 @@ impl EventRecorder {
     }
 
     pub fn ipc_replay_sequence(&self) -> Vec<IpcCall> {
-        let rec = self.recording.lock().unwrap();
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
             Some(active) => active
                 .events
@@ -219,6 +227,12 @@ impl EventRecorder {
                 .collect(),
             None => Vec::new(),
         }
+    }
+}
+
+impl Default for EventRecorder {
+    fn default() -> Self {
+        Self::new(50_000)
     }
 }
 

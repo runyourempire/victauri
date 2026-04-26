@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowState {
     pub label: String,
     pub title: String,
@@ -14,14 +14,14 @@ pub struct WindowState {
     pub size: (u32, u32),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomSnapshot {
     pub webview_label: String,
     pub elements: Vec<DomElement>,
     pub ref_map: std::collections::HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomElement {
     pub ref_id: String,
     pub tag: String,
@@ -37,7 +37,7 @@ pub struct DomElement {
     pub attributes: std::collections::HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ElementBounds {
     pub x: f64,
     pub y: f64,

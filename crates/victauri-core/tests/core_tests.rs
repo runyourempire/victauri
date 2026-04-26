@@ -1,5 +1,6 @@
 use chrono::Utc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use victauri_core::*;
 
 #[test]
@@ -1115,4 +1116,410 @@ fn recorder_not_recording_returns_empty() {
     assert!(recorder.events_since(0).is_empty());
     assert!(recorder.ipc_replay_sequence().is_empty());
     assert!(recorder.stop().is_none());
+}
+
+// ── Adversarial Tests ─────────────────────────────────────────────────────
+
+mod adversarial {
+    use super::*;
+    use std::thread;
+
+    fn make_ipc(id: &str, cmd: &str) -> AppEvent {
+        AppEvent::Ipc(IpcCall {
+            id: id.to_string(),
+            command: cmd.to_string(),
+            timestamp: Utc::now(),
+            duration_ms: Some(1),
+            result: event::IpcResult::Ok(serde_json::json!("ok")),
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        })
+    }
+
+    // ── Mutex poisoning recovery ────────────────────────────────────────
+
+    #[test]
+    fn event_log_survives_poisoned_mutex() {
+        let log = EventLog::new(10);
+        let log2 = log.clone();
+        let _ = thread::spawn(move || {
+            let _guard = log2.snapshot();
+            panic!("intentional panic while holding lock");
+        })
+        .join();
+        // After poisoning, operations should still work
+        log.push(make_ipc("1", "after_poison"));
+        assert_eq!(log.len(), 1);
+        assert!(!log.is_empty());
+        let snap = log.snapshot();
+        assert_eq!(snap.len(), 1);
+    }
+
+    #[test]
+    fn recorder_survives_poisoned_mutex() {
+        let rec = EventRecorder::new(100);
+        let rec2 = rec.clone();
+        let _ = thread::spawn(move || {
+            let _guard = rec2.event_count();
+            panic!("intentional panic while holding lock");
+        })
+        .join();
+        // After poisoning, operations should still work via recovery
+        assert!(!rec.is_recording());
+        assert_eq!(rec.event_count(), 0);
+        assert!(rec.start("after-poison".to_string()));
+        rec.record_event(make_ipc("1", "test"));
+        assert_eq!(rec.event_count(), 1);
+    }
+
+    #[test]
+    fn registry_survives_poisoned_rwlock() {
+        let reg = CommandRegistry::new();
+        let reg2 = reg.clone();
+        let _ = thread::spawn(move || {
+            let _list = reg2.list();
+            panic!("intentional panic while holding read lock");
+        })
+        .join();
+        reg.register(registry::CommandInfo {
+            name: "after_poison".to_string(),
+            plugin: None,
+            description: Some("works after poisoning".to_string()),
+            args: vec![],
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: vec![],
+        });
+        assert_eq!(reg.count(), 1);
+    }
+
+    // ── Concurrent access ───────────────────────────────────────────────
+
+    #[test]
+    fn event_log_concurrent_push_and_read() {
+        let log = Arc::new(EventLog::new(1000));
+        let mut handles = Vec::new();
+        for i in 0..10 {
+            let log = Arc::clone(&log);
+            handles.push(thread::spawn(move || {
+                for j in 0..100 {
+                    log.push(make_ipc(&format!("{i}-{j}"), "concurrent"));
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(log.len(), 1000);
+    }
+
+    #[test]
+    fn registry_concurrent_register_and_search() {
+        let reg = Arc::new(CommandRegistry::new());
+        let mut handles = Vec::new();
+        for i in 0..10 {
+            let reg = Arc::clone(&reg);
+            handles.push(thread::spawn(move || {
+                for j in 0..10 {
+                    reg.register(registry::CommandInfo {
+                        name: format!("cmd_{i}_{j}"),
+                        plugin: None,
+                        description: Some(format!("Command {i}-{j}")),
+                        args: vec![],
+                        return_type: None,
+                        is_async: false,
+                        intent: None,
+                        category: None,
+                        examples: vec![],
+                    });
+                }
+            }));
+        }
+        for i in 0..5 {
+            let reg = Arc::clone(&reg);
+            handles.push(thread::spawn(move || {
+                for _ in 0..20 {
+                    let _ = reg.search(&format!("cmd_{i}"));
+                    let _ = reg.resolve(&format!("cmd {i}"));
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(reg.count(), 100);
+    }
+
+    // ── Ring buffer edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn event_log_capacity_one() {
+        let log = EventLog::new(1);
+        log.push(make_ipc("1", "first"));
+        log.push(make_ipc("2", "second"));
+        assert_eq!(log.len(), 1);
+        let snap = log.snapshot();
+        match &snap[0] {
+            AppEvent::Ipc(call) => assert_eq!(call.id, "2"),
+            _ => panic!("expected IPC event"),
+        }
+    }
+
+    #[test]
+    fn recorder_ring_buffer_wraps_correctly() {
+        let rec = EventRecorder::new(3);
+        rec.start("wrap-test".to_string());
+        for i in 0..5 {
+            rec.record_event(make_ipc(&i.to_string(), &format!("cmd_{i}")));
+        }
+        assert_eq!(rec.event_count(), 3);
+        let session = rec.stop().unwrap();
+        assert_eq!(session.events.len(), 3);
+        // Should have events 2, 3, 4 (oldest evicted)
+        assert_eq!(session.events[0].index, 2);
+        assert_eq!(session.events[2].index, 4);
+    }
+
+    #[test]
+    fn recorder_event_index_stays_monotonic_after_wrap() {
+        let rec = EventRecorder::new(2);
+        rec.start("mono-test".to_string());
+        for i in 0..10 {
+            rec.record_event(make_ipc(&i.to_string(), "wrap"));
+        }
+        let session = rec.stop().unwrap();
+        for pair in session.events.windows(2) {
+            assert!(pair[1].index > pair[0].index);
+        }
+    }
+
+    // ── Verification edge cases ─────────────────────────────────────────
+
+    #[test]
+    fn verify_both_empty_objects_pass() {
+        let result = verify_state(serde_json::json!({}), serde_json::json!({}));
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn verify_deeply_nested_divergence() {
+        let frontend = serde_json::json!({"a": {"b": {"c": {"d": 1}}}});
+        let backend = serde_json::json!({"a": {"b": {"c": {"d": 2}}}});
+        let result = verify_state(frontend, backend);
+        assert!(!result.passed);
+        assert_eq!(result.divergences[0].path, "a.b.c.d");
+    }
+
+    #[test]
+    fn verify_type_mismatch_string_vs_number() {
+        let frontend = serde_json::json!({"count": "5"});
+        let backend = serde_json::json!({"count": 5});
+        let result = verify_state(frontend, backend);
+        assert!(!result.passed);
+        assert_eq!(
+            result.divergences[0].severity,
+            types::DivergenceSeverity::Error
+        );
+    }
+
+    #[test]
+    fn verify_null_vs_missing_key() {
+        let frontend = serde_json::json!({"a": null});
+        let backend = serde_json::json!({});
+        let result = verify_state(frontend, backend);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn verify_empty_arrays_pass() {
+        let result = verify_state(serde_json::json!({"a": []}), serde_json::json!({"a": []}));
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn verify_array_length_mismatch() {
+        let frontend = serde_json::json!({"arr": [1, 2, 3]});
+        let backend = serde_json::json!({"arr": [1, 2]});
+        let result = verify_state(frontend, backend);
+        assert!(!result.passed);
+        assert!(result.divergences.iter().any(|d| d.path.contains("[2]")));
+    }
+
+    // ── Ghost command edge cases ────────────────────────────────────────
+
+    #[test]
+    fn ghost_commands_empty_both_sides() {
+        let registry = CommandRegistry::new();
+        let report = detect_ghost_commands(&[], &registry);
+        assert!(report.ghost_commands.is_empty());
+        assert_eq!(report.total_frontend_commands, 0);
+        assert_eq!(report.total_registry_commands, 0);
+    }
+
+    #[test]
+    fn ghost_commands_perfect_match() {
+        let registry = CommandRegistry::new();
+        registry.register(registry::CommandInfo {
+            name: "get_settings".to_string(),
+            plugin: None,
+            description: None,
+            args: vec![],
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: vec![],
+        });
+        let frontend = vec!["get_settings".to_string()];
+        let report = detect_ghost_commands(&frontend, &registry);
+        assert!(report.ghost_commands.is_empty());
+    }
+
+    // ── Assertion edge cases ────────────────────────────────────────────
+
+    #[test]
+    fn assertion_unknown_condition_reports_error() {
+        let assertion = verification::SemanticAssertion {
+            label: "bogus".to_string(),
+            condition: "definitely_not_a_condition".to_string(),
+            expected: serde_json::json!(true),
+        };
+        let result = verification::evaluate_assertion(serde_json::json!(true), &assertion);
+        assert!(!result.passed);
+        assert!(
+            result
+                .message
+                .as_ref()
+                .unwrap()
+                .contains("Unknown assertion condition")
+        );
+    }
+
+    #[test]
+    fn assertion_truthy_edge_cases() {
+        let truthy = verification::SemanticAssertion {
+            label: "t".to_string(),
+            condition: "truthy".to_string(),
+            expected: serde_json::json!(null),
+        };
+        // Numbers are truthy (including 0 — this is Rust semantics, not JS)
+        assert!(verification::evaluate_assertion(serde_json::json!(0), &truthy).passed);
+        assert!(verification::evaluate_assertion(serde_json::json!(42), &truthy).passed);
+        // Empty string is falsy
+        assert!(!verification::evaluate_assertion(serde_json::json!(""), &truthy).passed);
+        // Non-empty string is truthy
+        assert!(verification::evaluate_assertion(serde_json::json!("x"), &truthy).passed);
+        // null is falsy
+        assert!(!verification::evaluate_assertion(serde_json::Value::Null, &truthy).passed);
+        // false is falsy
+        assert!(!verification::evaluate_assertion(serde_json::json!(false), &truthy).passed);
+    }
+
+    #[test]
+    fn assertion_contains_in_array() {
+        let assertion = verification::SemanticAssertion {
+            label: "arr".to_string(),
+            condition: "contains".to_string(),
+            expected: serde_json::json!(2),
+        };
+        assert!(verification::evaluate_assertion(serde_json::json!([1, 2, 3]), &assertion).passed);
+        assert!(!verification::evaluate_assertion(serde_json::json!([1, 3, 5]), &assertion).passed);
+    }
+
+    // ── IPC integrity edge cases ────────────────────────────────────────
+
+    #[test]
+    fn ipc_integrity_empty_log() {
+        let log = EventLog::new(100);
+        let report = check_ipc_integrity(&log, 5000);
+        assert!(report.healthy);
+        assert_eq!(report.total_calls, 0);
+    }
+
+    #[test]
+    fn ipc_integrity_detects_errors() {
+        let log = EventLog::new(100);
+        log.push(AppEvent::Ipc(IpcCall {
+            id: "err1".to_string(),
+            command: "broken_cmd".to_string(),
+            timestamp: Utc::now(),
+            duration_ms: None,
+            result: event::IpcResult::Err("something failed".to_string()),
+            arg_size_bytes: 0,
+            webview_label: "main".to_string(),
+        }));
+        let report = check_ipc_integrity(&log, 5000);
+        assert!(!report.healthy);
+        assert_eq!(report.errored, 1);
+        assert_eq!(report.error_calls[0].command, "broken_cmd");
+    }
+
+    // ── Recording checkpoint limits ─────────────────────────────────────
+
+    #[test]
+    fn recorder_double_start_returns_false() {
+        let rec = EventRecorder::new(100);
+        assert!(rec.start("first".to_string()));
+        assert!(!rec.start("second".to_string()));
+        let session = rec.stop().unwrap();
+        assert_eq!(session.id, "first");
+    }
+
+    #[test]
+    fn recorder_checkpoint_without_recording_returns_false() {
+        let rec = EventRecorder::new(100);
+        assert!(!rec.checkpoint("cp1".to_string(), None, serde_json::json!({})));
+    }
+
+    #[test]
+    fn recorder_default_impl() {
+        let rec = EventRecorder::default();
+        assert!(!rec.is_recording());
+        assert!(rec.start("default-test".to_string()));
+        for i in 0..100 {
+            rec.record_event(make_ipc(&i.to_string(), "default"));
+        }
+        assert_eq!(rec.event_count(), 100);
+        rec.stop();
+    }
+
+    // ── Registry sort stability with equal scores ───────────────────────
+
+    #[test]
+    fn registry_resolve_with_no_match() {
+        let reg = CommandRegistry::new();
+        reg.register(registry::CommandInfo {
+            name: "alpha".to_string(),
+            plugin: None,
+            description: None,
+            args: vec![],
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: vec![],
+        });
+        let results = reg.resolve("zzz_nonexistent_query");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn registry_resolve_empty_query() {
+        let reg = CommandRegistry::new();
+        reg.register(registry::CommandInfo {
+            name: "alpha".to_string(),
+            plugin: None,
+            description: None,
+            args: vec![],
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: vec![],
+        });
+        let results = reg.resolve("");
+        assert!(results.is_empty());
+    }
 }

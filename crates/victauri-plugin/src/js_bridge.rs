@@ -73,12 +73,21 @@ pub const INIT_SCRIPT: &str = r#"
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
             el.focus();
+            var proto = el instanceof HTMLTextAreaElement
+                ? HTMLTextAreaElement.prototype
+                : HTMLInputElement.prototype;
+            var desc = Object.getOwnPropertyDescriptor(proto, 'value');
             for (var i = 0; i < text.length; i++) {
                 var ch = text[i];
                 el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
                 el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
-                if (typeof el.value === 'string') el.value += ch;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
+                var current = el.value || '';
+                if (desc && desc.set) {
+                    desc.set.call(el, current + ch);
+                } else {
+                    el.value = current + ch;
+                }
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
                 el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
             }
             el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -343,11 +352,19 @@ pub const INIT_SCRIPT: &str = r#"
                         return;
                     }
 
+                    function getFullText(root) {
+                        var text = root.innerText || '';
+                        var els = root.querySelectorAll('*');
+                        for (var j = 0; j < els.length; j++) {
+                            if (els[j].shadowRoot) text += ' ' + getFullText(els[j].shadowRoot);
+                        }
+                        return text;
+                    }
                     var met = false;
                     if (opts.condition === 'text' && opts.value) {
-                        met = document.body.innerText.indexOf(opts.value) !== -1;
+                        met = getFullText(document.body).indexOf(opts.value) !== -1;
                     } else if (opts.condition === 'text_gone' && opts.value) {
-                        met = document.body.innerText.indexOf(opts.value) === -1;
+                        met = getFullText(document.body).indexOf(opts.value) === -1;
                     } else if (opts.condition === 'selector' && opts.value) {
                         met = !!document.querySelector(opts.value);
                     } else if (opts.condition === 'selector_gone' && opts.value) {
@@ -833,6 +850,13 @@ pub const INIT_SCRIPT: &str = r#"
         for (var c = 0; c < node.children.length; c++) {
             var childEl = walkDom(node.children[c]);
             if (childEl) element.children.push(childEl);
+        }
+
+        if (node.shadowRoot) {
+            for (var s = 0; s < node.shadowRoot.children.length; s++) {
+                var shadowChild = walkDom(node.shadowRoot.children[s]);
+                if (shadowChild) element.children.push(shadowChild);
+            }
         }
 
         return element;
