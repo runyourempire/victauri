@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Default` impl for `EventRecorder` (50K event capacity)
 - Checkpoint capacity limit (1000, was unbounded)
 - 26 adversarial tests: mutex poisoning recovery, concurrent access, ring buffer edge cases, verification edge cases, ghost command edge cases, assertion edge cases
+- 8 auth unit tests: token generation, rate limiter budget exhaustion, concurrent acquire, zero capacity
+- 14 builder unit tests: defaults, port override, auth token, capacities, privacy config, strict mode
 - Criterion benchmark suite: 13 benchmarks across 5 groups (event log, registry, verification, recording, ghost commands)
 - Demo app frontend upgraded: full Todo list UI, Settings panel, Counter decrement/reset, debug state inspector (exercises all 12 backend commands)
 - Honest README with limitations section, security model, privacy controls, roadmap
@@ -34,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
 - Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
-- Test count: 110 -> 136
+- Test count: 110 -> 157
 
 ## [0.1.0] - 2026-04-26
 

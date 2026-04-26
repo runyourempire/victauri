@@ -131,3 +131,78 @@ const DEFAULT_RATE_LIMIT: u64 = 100;
 pub fn default_rate_limiter() -> Arc<RateLimiterState> {
     Arc::new(RateLimiterState::new(DEFAULT_RATE_LIMIT))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_generation_is_unique() {
+        let t1 = generate_token();
+        let t2 = generate_token();
+        assert_ne!(t1, t2);
+        assert_eq!(t1.len(), 36); // UUID v4 format
+    }
+
+    #[test]
+    fn token_is_valid_uuid() {
+        let token = generate_token();
+        assert!(uuid::Uuid::parse_str(&token).is_ok());
+    }
+
+    #[test]
+    fn rate_limiter_allows_within_budget() {
+        let limiter = RateLimiterState::new(10);
+        for _ in 0..10 {
+            assert!(limiter.try_acquire());
+        }
+    }
+
+    #[test]
+    fn rate_limiter_denies_when_exhausted() {
+        let limiter = RateLimiterState::new(5);
+        for _ in 0..5 {
+            assert!(limiter.try_acquire());
+        }
+        assert!(!limiter.try_acquire());
+    }
+
+    #[test]
+    fn rate_limiter_initial_tokens_match_max() {
+        let limiter = RateLimiterState::new(42);
+        assert_eq!(limiter.tokens.load(Ordering::Relaxed), 42);
+        assert_eq!(limiter.max_tokens, 42);
+    }
+
+    #[test]
+    fn rate_limiter_concurrent_acquire() {
+        let limiter = Arc::new(RateLimiterState::new(100));
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let l = limiter.clone();
+            handles.push(std::thread::spawn(move || {
+                let mut acquired = 0;
+                for _ in 0..20 {
+                    if l.try_acquire() {
+                        acquired += 1;
+                    }
+                }
+                acquired
+            }));
+        }
+        let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
+        assert_eq!(total, 100);
+    }
+
+    #[test]
+    fn default_rate_limiter_has_100_tokens() {
+        let limiter = default_rate_limiter();
+        assert_eq!(limiter.max_tokens, 100);
+    }
+
+    #[test]
+    fn rate_limiter_zero_capacity() {
+        let limiter = RateLimiterState::new(0);
+        assert!(!limiter.try_acquire());
+    }
+}

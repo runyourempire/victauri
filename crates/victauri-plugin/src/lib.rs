@@ -249,3 +249,117 @@ impl VictauriBuilder {
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     VictauriBuilder::new().build()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_default_values() {
+        let builder = VictauriBuilder::new();
+        assert_eq!(builder.event_capacity, DEFAULT_EVENT_CAPACITY);
+        assert_eq!(builder.recorder_capacity, DEFAULT_RECORDER_CAPACITY);
+        assert!(builder.auth_token.is_none());
+        assert!(builder.disabled_tools.is_empty());
+        assert!(builder.command_allowlist.is_none());
+        assert!(builder.command_blocklist.is_empty());
+        assert!(!builder.redaction_enabled);
+        assert!(!builder.strict_privacy);
+    }
+
+    #[test]
+    fn builder_port_override() {
+        let builder = VictauriBuilder::new().port(9090);
+        assert_eq!(builder.resolve_port(), 9090);
+    }
+
+    #[test]
+    fn builder_default_port() {
+        let builder = VictauriBuilder::new();
+        // Clear env var to test default
+        unsafe { std::env::remove_var("VICTAURI_PORT") };
+        assert_eq!(builder.resolve_port(), DEFAULT_PORT);
+    }
+
+    #[test]
+    fn builder_auth_token_explicit() {
+        let builder = VictauriBuilder::new().auth_token("my-secret");
+        assert_eq!(builder.resolve_auth_token(), Some("my-secret".to_string()));
+    }
+
+    #[test]
+    fn builder_auth_token_generated() {
+        let builder = VictauriBuilder::new().generate_auth_token();
+        let token = builder.resolve_auth_token().unwrap();
+        assert_eq!(token.len(), 36);
+    }
+
+    #[test]
+    fn builder_capacities() {
+        let builder = VictauriBuilder::new()
+            .event_capacity(500)
+            .recorder_capacity(2000);
+        assert_eq!(builder.event_capacity, 500);
+        assert_eq!(builder.recorder_capacity, 2000);
+    }
+
+    #[test]
+    fn builder_disable_tools() {
+        let builder = VictauriBuilder::new().disable_tools(&["eval_js", "screenshot"]);
+        assert_eq!(builder.disabled_tools.len(), 2);
+        assert!(builder.disabled_tools.contains(&"eval_js".to_string()));
+    }
+
+    #[test]
+    fn builder_command_allowlist() {
+        let builder = VictauriBuilder::new().command_allowlist(&["greet", "increment"]);
+        assert!(builder.command_allowlist.is_some());
+        assert_eq!(builder.command_allowlist.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn builder_command_blocklist() {
+        let builder = VictauriBuilder::new().command_blocklist(&["dangerous_cmd"]);
+        assert_eq!(builder.command_blocklist.len(), 1);
+    }
+
+    #[test]
+    fn builder_redaction() {
+        let builder = VictauriBuilder::new()
+            .add_redaction_pattern(r"SECRET_\w+")
+            .enable_redaction();
+        assert!(builder.redaction_enabled);
+        assert_eq!(builder.redaction_patterns.len(), 1);
+    }
+
+    #[test]
+    fn builder_strict_privacy_config() {
+        let builder = VictauriBuilder::new().strict_privacy_mode();
+        let config = builder.build_privacy_config();
+        assert!(config.redaction_enabled);
+        assert!(!config.disabled_tools.is_empty());
+        assert!(config.disabled_tools.contains("eval_js"));
+        assert!(config.disabled_tools.contains("screenshot"));
+    }
+
+    #[test]
+    fn builder_normal_privacy_config() {
+        let builder = VictauriBuilder::new()
+            .command_blocklist(&["secret_cmd"])
+            .disable_tools(&["eval_js"]);
+        let config = builder.build_privacy_config();
+        assert!(config.command_blocklist.contains("secret_cmd"));
+        assert!(config.disabled_tools.contains("eval_js"));
+        assert!(!config.redaction_enabled);
+    }
+
+    #[test]
+    fn builder_strict_with_extra_blocklist() {
+        let builder = VictauriBuilder::new()
+            .strict_privacy_mode()
+            .command_blocklist(&["extra_dangerous"]);
+        let config = builder.build_privacy_config();
+        assert!(config.command_blocklist.contains("extra_dangerous"));
+        assert!(config.disabled_tools.contains("eval_js"));
+    }
+}
