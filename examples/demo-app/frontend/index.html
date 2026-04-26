@@ -14,7 +14,7 @@
       justify-content: center;
       padding: 40px 20px;
     }
-    .container { max-width: 600px; width: 100%; }
+    .container { max-width: 640px; width: 100%; }
     h1 { color: #8b5cf6; margin-bottom: 8px; font-size: 1.8em; }
     .subtitle { color: #888; margin-bottom: 32px; font-size: 0.95em; }
     .card {
@@ -26,7 +26,7 @@
     }
     .card h2 { color: #a78bfa; font-size: 1.1em; margin-bottom: 16px; }
     label { display: block; color: #aaa; font-size: 0.85em; margin-bottom: 6px; }
-    input {
+    input, select {
       width: 100%;
       padding: 10px 14px;
       background: #0f0f13;
@@ -36,7 +36,7 @@
       font-size: 0.95em;
       margin-bottom: 12px;
     }
-    input:focus { outline: none; border-color: #8b5cf6; }
+    input:focus, select:focus { outline: none; border-color: #8b5cf6; }
     button {
       padding: 10px 20px;
       background: #8b5cf6;
@@ -49,6 +49,18 @@
     }
     button:hover { background: #7c3aed; }
     button:active { background: #6d28d9; }
+    button.secondary {
+      background: #2a2a3a;
+      color: #a78bfa;
+    }
+    button.secondary:hover { background: #333348; }
+    button.danger {
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 6px 12px;
+      font-size: 0.8em;
+    }
+    button.danger:hover { background: #991b1b; }
     .result {
       margin-top: 12px;
       padding: 12px;
@@ -67,6 +79,65 @@
       margin: 16px 0;
     }
     .counter-buttons { display: flex; gap: 12px; justify-content: center; }
+    .todo-list { list-style: none; }
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: #0f0f13;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .todo-item.completed .todo-title {
+      text-decoration: line-through;
+      color: #666;
+    }
+    .todo-title { flex: 1; cursor: pointer; }
+    .todo-check {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 2px solid #444;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .todo-check.done {
+      background: #8b5cf6;
+      border-color: #8b5cf6;
+    }
+    .todo-check.done::after { content: "✓"; color: white; font-size: 12px; }
+    .todo-input-row { display: flex; gap: 8px; }
+    .todo-input-row input { flex: 1; margin-bottom: 0; }
+    .settings-row {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 16px;
+    }
+    .settings-row label { margin-bottom: 0; flex-shrink: 0; width: 120px; }
+    .settings-row select, .settings-row input { flex: 1; margin-bottom: 0; }
+    .toggle {
+      width: 44px; height: 24px;
+      background: #333;
+      border-radius: 12px;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: #8b5cf6; }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      width: 18px; height: 18px;
+      background: white;
+      border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(20px); }
+    .empty-state { color: #666; text-align: center; padding: 20px; font-size: 0.9em; }
     .status {
       margin-top: 32px;
       padding: 16px;
@@ -83,13 +154,40 @@
       border-radius: 50%;
       margin-right: 8px;
     }
+    .debug-btn {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: #1a2a1a;
+      color: #4ade80;
+      border: 1px solid #2a3a2a;
+      border-radius: 8px;
+      font-size: 0.8em;
+      cursor: pointer;
+      font-family: monospace;
+    }
+    .debug-btn:hover { background: #1a3a1a; }
+    .debug-output {
+      margin-top: 8px;
+      padding: 12px;
+      background: #0a0a0f;
+      border: 1px solid #1a3a1a;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.8em;
+      color: #4ade80;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Victauri Demo</h1>
-    <p class="subtitle">A minimal Tauri app with Victauri introspection</p>
+    <p class="subtitle">12 instrumented commands — connect an MCP client to introspect everything</p>
 
+    <!-- Greet Card -->
     <div class="card">
       <h2>Greet</h2>
       <label for="name-input">Your name</label>
@@ -98,24 +196,69 @@
       <div id="greet-result" class="result"></div>
     </div>
 
+    <!-- Counter Card -->
     <div class="card">
       <h2>Counter</h2>
       <div id="counter-value" class="counter-display">0</div>
       <div class="counter-buttons">
-        <button id="increment-btn">Increment</button>
-        <button id="refresh-btn">Refresh from Backend</button>
+        <button id="decrement-btn" class="secondary">−</button>
+        <button id="increment-btn">+</button>
+        <button id="reset-btn" class="secondary">Reset</button>
       </div>
     </div>
 
+    <!-- Todo Card -->
+    <div class="card">
+      <h2>Todos</h2>
+      <div class="todo-input-row">
+        <input id="todo-input" type="text" placeholder="What needs to be done?" />
+        <button id="add-todo-btn">Add</button>
+      </div>
+      <ul id="todo-list" class="todo-list" style="margin-top: 16px;"></ul>
+      <div id="todo-empty" class="empty-state">No todos yet — add one above</div>
+    </div>
+
+    <!-- Settings Card -->
+    <div class="card">
+      <h2>Settings</h2>
+      <div class="settings-row">
+        <label>Theme</label>
+        <select id="theme-select">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+          <option value="system">System</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>Notifications</label>
+        <div id="notif-toggle" class="toggle on"></div>
+      </div>
+      <div class="settings-row">
+        <label>Language</label>
+        <select id="lang-select">
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="ja">日本語</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Status + Debug -->
     <div class="status">
       <span class="dot"></span>
       Victauri MCP server running on <strong>127.0.0.1:7373</strong>
+      <br/>
+      <button class="debug-btn" id="debug-btn">get_app_state()</button>
+      <div id="debug-output" class="debug-output"></div>
     </div>
   </div>
 
   <script>
     const { invoke } = window.__TAURI__.core;
 
+    // === Greet ===
     document.getElementById("greet-btn").addEventListener("click", async () => {
       const name = document.getElementById("name-input").value || "World";
       const result = await invoke("greet", { name });
@@ -126,18 +269,119 @@
       if (e.key === "Enter") document.getElementById("greet-btn").click();
     });
 
+    // === Counter ===
+    async function refreshCounter() {
+      const count = await invoke("get_counter");
+      document.getElementById("counter-value").textContent = count;
+    }
+
     document.getElementById("increment-btn").addEventListener("click", async () => {
       const count = await invoke("increment");
       document.getElementById("counter-value").textContent = count;
     });
 
-    document.getElementById("refresh-btn").addEventListener("click", async () => {
-      const count = await invoke("get_counter");
+    document.getElementById("decrement-btn").addEventListener("click", async () => {
+      const count = await invoke("decrement");
       document.getElementById("counter-value").textContent = count;
     });
 
-    invoke("get_counter").then((count) => {
+    document.getElementById("reset-btn").addEventListener("click", async () => {
+      const count = await invoke("reset_counter");
       document.getElementById("counter-value").textContent = count;
+    });
+
+    refreshCounter();
+
+    // === Todos ===
+    async function renderTodos() {
+      const todos = await invoke("list_todos");
+      const list = document.getElementById("todo-list");
+      const empty = document.getElementById("todo-empty");
+
+      list.innerHTML = "";
+      empty.style.display = todos.length === 0 ? "block" : "none";
+
+      for (const todo of todos) {
+        const li = document.createElement("li");
+        li.className = "todo-item" + (todo.completed ? " completed" : "");
+
+        const check = document.createElement("div");
+        check.className = "todo-check" + (todo.completed ? " done" : "");
+        check.addEventListener("click", async () => {
+          await invoke("toggle_todo", { id: todo.id });
+          renderTodos();
+        });
+
+        const title = document.createElement("span");
+        title.className = "todo-title";
+        title.textContent = todo.title;
+        title.addEventListener("click", async () => {
+          await invoke("toggle_todo", { id: todo.id });
+          renderTodos();
+        });
+
+        const del = document.createElement("button");
+        del.className = "danger";
+        del.textContent = "Delete";
+        del.addEventListener("click", async () => {
+          await invoke("delete_todo", { id: todo.id });
+          renderTodos();
+        });
+
+        li.appendChild(check);
+        li.appendChild(title);
+        li.appendChild(del);
+        list.appendChild(li);
+      }
+    }
+
+    document.getElementById("add-todo-btn").addEventListener("click", async () => {
+      const input = document.getElementById("todo-input");
+      const title = input.value.trim();
+      if (!title) return;
+      await invoke("add_todo", { title });
+      input.value = "";
+      renderTodos();
+    });
+
+    document.getElementById("todo-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("add-todo-btn").click();
+    });
+
+    renderTodos();
+
+    // === Settings ===
+    async function loadSettings() {
+      const s = await invoke("get_settings");
+      document.getElementById("theme-select").value = s.theme;
+      document.getElementById("lang-select").value = s.language;
+      const toggle = document.getElementById("notif-toggle");
+      toggle.className = "toggle" + (s.notifications_enabled ? " on" : "");
+    }
+
+    document.getElementById("theme-select").addEventListener("change", async (e) => {
+      await invoke("update_settings", { theme: e.target.value });
+    });
+
+    document.getElementById("lang-select").addEventListener("change", async (e) => {
+      await invoke("update_settings", { language: e.target.value });
+    });
+
+    document.getElementById("notif-toggle").addEventListener("click", async () => {
+      const toggle = document.getElementById("notif-toggle");
+      const isOn = toggle.classList.contains("on");
+      await invoke("update_settings", { notificationsEnabled: !isOn });
+      toggle.className = "toggle" + (!isOn ? " on" : "");
+    });
+
+    loadSettings();
+
+    // === Debug: Full State ===
+    document.getElementById("debug-btn").addEventListener("click", async () => {
+      const output = document.getElementById("debug-output");
+      const state = await invoke("get_app_state");
+      output.textContent = JSON.stringify(state, null, 2);
+      output.style.display = output.style.display === "none" ? "block" : "none";
     });
   </script>
 </body>

@@ -176,17 +176,43 @@ victauri/
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests
+cargo test                     # Run all tests (136)
+cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
 ```
+
+## CI Integration
+
+Run Victauri-powered checks in GitHub Actions:
+
+```yaml
+- name: Build app (debug)
+  run: cargo build -p my-app
+
+- name: Start app in background
+  run: cargo run -p my-app &
+  env:
+    VICTAURI_AUTH_TOKEN: ${{ secrets.VICTAURI_TOKEN }}
+
+- name: Wait for MCP server
+  run: |
+    for i in $(seq 1 30); do
+      curl -sf http://127.0.0.1:7373/mcp && break || sleep 1
+    done
+
+- name: Run MCP-based checks
+  run: node tests/mcp-checks.js
+```
+
+Because Victauri compiles away in release builds, CI runs debug builds to get introspection. The MCP server starts automatically with the app — no separate process to manage.
 
 ## Roadmap
 
 - [ ] Multi-window tool targeting
 - [ ] Linux screenshot support
 - [ ] Session persistence (export/import recordings)
-- [ ] Benchmark suite with real response time data
+- [x] Benchmark suite with real response time data
 - [ ] IPC debugger UI (visual timeline of command flow)
 - [ ] Test assertion helpers as a standalone crate
 - [ ] crates.io publication
