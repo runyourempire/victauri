@@ -685,6 +685,15 @@ async fn mcp_tool_count_is_correct() {
         "resize_window",
         "move_window",
         "set_window_title",
+        // Phase 8: Deep Introspection
+        "get_styles",
+        "get_bounding_boxes",
+        "highlight_element",
+        "clear_highlights",
+        "inject_css",
+        "remove_injected_css",
+        "audit_accessibility",
+        "get_performance_metrics",
     ];
 
     for tool_name in &expected_tools {

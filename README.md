@@ -23,9 +23,12 @@ Playwright gives agents eyes and hands **on the glass**. It sees the DOM, clicks
 | IPC interception | No | **Yes** |
 | Command registry | No | **Yes** |
 | Cross-boundary verification | No | **Yes** |
-| Memory attribution | No | **Yes** |
+| Memory & performance profiling | No | **Yes** |
 | Event recording & replay | No | **Yes** |
 | Semantic assertions | No | **Yes** |
+| Accessibility auditing | Limited | **Yes** |
+| CSS introspection & injection | No | **Yes** |
+| Visual debug overlays | No | **Yes** |
 | Native on all platforms | Browser only | **Native** |
 
 Victauri doesn't replace Playwright for web testing. It does what Playwright structurally cannot do for desktop applications.
@@ -80,7 +83,7 @@ Now Claude Code can see and control your entire app.
 
 ## What You Get
 
-### 47 MCP Tools
+### 55 MCP Tools
 
 | Category | Tools |
 |---|---|
@@ -96,6 +99,10 @@ Now Claude Code can see and control your entire app.
 | **Intent** | `resolve_command`, `assert_semantic` |
 | **Wait** | `wait_for` |
 | **Time-Travel** | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints` |
+| **CSS/Style** | `get_styles`, `get_bounding_boxes`, `inject_css`, `remove_injected_css` |
+| **Visual Debug** | `highlight_element`, `clear_highlights` |
+| **Accessibility** | `audit_accessibility` |
+| **Performance** | `get_performance_metrics` |
 
 ### 3 MCP Resources
 

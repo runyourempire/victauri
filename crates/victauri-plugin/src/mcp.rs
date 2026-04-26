@@ -378,6 +378,68 @@ pub struct SetWindowTitleParams {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetStylesParams {
+    /// Ref handle ID of the element to inspect.
+    pub ref_id: String,
+    /// Optional list of CSS property names to return. If omitted, returns key properties.
+    pub properties: Option<Vec<String>>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetBoundingBoxesParams {
+    /// List of ref handle IDs to measure.
+    pub ref_ids: Vec<String>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct HighlightElementParams {
+    /// Ref handle ID of the element to highlight.
+    pub ref_id: String,
+    /// CSS color for the overlay (default: "rgba(255, 0, 0, 0.3)").
+    pub color: Option<String>,
+    /// Optional text label to display above the highlight.
+    pub label: Option<String>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ClearHighlightsParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InjectCssParams {
+    /// CSS text to inject into the page.
+    pub css: String,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RemoveInjectedCssParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditAccessibilityParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetPerformanceMetricsParams {
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
 // ── MCP Handler ──────────────────────────────────────────────────────────────
 
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
@@ -1298,6 +1360,164 @@ impl VictauriMcpHandler {
             Err(e) => tool_error(e),
         }
     }
+
+    // ── Phase 8: Deep Introspection ─────────────────────────────────────────
+
+    #[tool(
+        description = "Get computed CSS styles for an element. Returns key properties by default, or specific properties if listed."
+    )]
+    async fn get_styles(&self, Parameters(params): Parameters<GetStylesParams>) -> CallToolResult {
+        let props_arg = match &params.properties {
+            Some(props) => {
+                let arr: Vec<String> = props.iter().map(|p| format!("\"{}\"", p)).collect();
+                format!("[{}]", arr.join(","))
+            }
+            None => "null".to_string(),
+        };
+        let code = format!(
+            "return window.__VICTAURI__?.getStyles(\"{}\", {})",
+            params.ref_id, props_arg
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Get precise bounding boxes with CSS box model (margin, padding, border) for one or more elements."
+    )]
+    async fn get_bounding_boxes(
+        &self,
+        Parameters(params): Parameters<GetBoundingBoxesParams>,
+    ) -> CallToolResult {
+        let refs: Vec<String> = params
+            .ref_ids
+            .iter()
+            .map(|r| format!("\"{}\"", r))
+            .collect();
+        let code = format!(
+            "return window.__VICTAURI__?.getBoundingBoxes([{}])",
+            refs.join(",")
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Draw a colored overlay on an element for visual debugging. The overlay is fixed-position and non-interactive."
+    )]
+    async fn highlight_element(
+        &self,
+        Parameters(params): Parameters<HighlightElementParams>,
+    ) -> CallToolResult {
+        let color_arg = match &params.color {
+            Some(c) => format!("\"{}\"", c),
+            None => "null".to_string(),
+        };
+        let label_arg = match &params.label {
+            Some(l) => format!("\"{}\"", l),
+            None => "null".to_string(),
+        };
+        let code = format!(
+            "return window.__VICTAURI__?.highlightElement(\"{}\", {}, {})",
+            params.ref_id, color_arg, label_arg
+        );
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Remove all debug highlight overlays from the page.")]
+    async fn clear_highlights(
+        &self,
+        Parameters(params): Parameters<ClearHighlightsParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.clearHighlights()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Inject custom CSS into the page. Replaces any previously injected CSS. Useful for debugging layout issues or prototyping style changes."
+    )]
+    async fn inject_css(&self, Parameters(params): Parameters<InjectCssParams>) -> CallToolResult {
+        let escaped = params.css.replace('\\', "\\\\").replace('`', "\\`");
+        let code = format!("return window.__VICTAURI__?.injectCss(`{}`)", escaped);
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(description = "Remove previously injected CSS from the page.")]
+    async fn remove_injected_css(
+        &self,
+        Parameters(params): Parameters<RemoveInjectedCssParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.removeInjectedCss()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Run a comprehensive accessibility audit. Checks for missing alt text, unlabeled form inputs, empty buttons/links, heading hierarchy, color contrast, ARIA role validity, and more. Returns violations and warnings with severity levels."
+    )]
+    async fn audit_accessibility(
+        &self,
+        Parameters(params): Parameters<AuditAccessibilityParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.auditAccessibility()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Get performance metrics: navigation timing, resource loading summary, paint timing, JS heap usage, long task count, and DOM statistics."
+    )]
+    async fn get_performance_metrics(
+        &self,
+        Parameters(params): Parameters<GetPerformanceMetricsParams>,
+    ) -> CallToolResult {
+        let code = "return window.__VICTAURI__?.getPerformanceMetrics()";
+        match self
+            .eval_with_return(code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
 }
 
 impl VictauriMcpHandler {
@@ -1387,7 +1607,11 @@ impl VictauriMcpHandler {
                     capture screenshots, manage windows (minimize, maximize, resize, move, close), \
                     view IPC and network traffic, read/write browser storage, track navigation history, \
                     handle dialogs, wait for conditions, search the command registry, monitor process memory, \
-                    record and replay sessions, and subscribe to live resource streams — all through MCP."
+                    record and replay sessions, inspect computed CSS styles, measure element bounding boxes, \
+                    draw debug overlays on elements, inject custom CSS, run accessibility audits (alt text, \
+                    labels, contrast, ARIA, heading hierarchy), get performance metrics (navigation timing, \
+                    resource loading, JS heap, long tasks, DOM stats), and subscribe to live resource \
+                    streams — all through MCP."
 )]
 impl ServerHandler for VictauriMcpHandler {
     fn get_info(&self) -> ServerInfo {

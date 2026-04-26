@@ -6,8 +6,6 @@ pub const INIT_SCRIPT: &str = r#"
     var refCounter = 0;
     var consoleLogs = [];
     var mutationLog = [];
-    var ipcLog = [];
-    var ipcCounter = 0;
     var networkLog = [];
     var networkCounter = 0;
     var navigationLog = [];
@@ -127,12 +125,36 @@ pub const INIT_SCRIPT: &str = r#"
         // ── IPC Log ──────────────────────────────────────────────────────────
 
         getIpcLog: function(limit) {
-            if (limit) return ipcLog.slice(-limit);
-            return ipcLog;
+            var ipcPrefix = 'http://ipc.localhost/';
+            var victauriPrefix = 'plugin%3Avictauri%7C';
+            var entries = [];
+            for (var i = 0; i < networkLog.length; i++) {
+                var n = networkLog[i];
+                if (n.url.indexOf(ipcPrefix) !== 0) continue;
+                var raw = n.url.substring(ipcPrefix.length);
+                if (raw.indexOf(victauriPrefix) === 0) continue;
+                var command;
+                try { command = decodeURIComponent(raw); } catch(e) { command = raw; }
+                entries.push({
+                    id: n.id,
+                    command: command,
+                    args: {},
+                    timestamp: n.timestamp,
+                    status: n.status === 200 ? 'ok' : (n.status === 0 ? 'pending' : 'error'),
+                    duration_ms: n.duration_ms,
+                    result: null,
+                    error: n.status !== 200 && n.status !== 0 ? 'HTTP ' + n.status : null,
+                });
+            }
+            if (limit) return entries.slice(-limit);
+            return entries;
         },
 
         clearIpcLog: function() {
-            ipcLog.length = 0;
+            var ipcPrefix = 'http://ipc.localhost/';
+            for (var i = networkLog.length - 1; i >= 0; i--) {
+                if (networkLog[i].url.indexOf(ipcPrefix) === 0) networkLog.splice(i, 1);
+            }
         },
 
         // ── Console ──────────────────────────────────────────────────────────
@@ -279,9 +301,14 @@ pub const INIT_SCRIPT: &str = r#"
                 }
             });
 
-            ipcLog.forEach(function(c) {
-                if (c.timestamp >= ts) {
-                    events.push({ type: 'ipc', command: c.command, status: c.status, duration_ms: c.duration_ms, timestamp: c.timestamp });
+            var ipcPrefix = 'http://ipc.localhost/';
+            var victauriPrefix = 'plugin%3Avictauri%7C';
+            networkLog.forEach(function(n) {
+                if (n.timestamp >= ts && n.url.indexOf(ipcPrefix) === 0) {
+                    var raw = n.url.substring(ipcPrefix.length);
+                    if (raw.indexOf(victauriPrefix) === 0) return;
+                    var cmd; try { cmd = decodeURIComponent(raw); } catch(e) { cmd = raw; }
+                    events.push({ type: 'ipc', command: cmd, status: n.status === 200 ? 'ok' : (n.status === 0 ? 'pending' : 'error'), duration_ms: n.duration_ms, timestamp: n.timestamp });
                 }
             });
 
@@ -328,7 +355,7 @@ pub const INIT_SCRIPT: &str = r#"
                     } else if (opts.condition === 'url' && opts.value) {
                         met = window.location.href.indexOf(opts.value) !== -1;
                     } else if (opts.condition === 'ipc_idle') {
-                        met = ipcLog.every(function(c) { return c.status !== 'pending'; });
+                        met = networkLog.filter(function(n) { return n.url.indexOf('http://ipc.localhost/') === 0; }).every(function(n) { return n.status !== 0; });
                     } else if (opts.condition === 'network_idle') {
                         met = networkLog.every(function(n) { return n.status !== 'pending'; });
                     }
@@ -342,7 +369,421 @@ pub const INIT_SCRIPT: &str = r#"
                 check();
             });
         },
+        // ── CSS / Style Introspection ────────────────────────────────────────
+
+        getStyles: function(refId, properties) {
+            var el = refMap.get(refId);
+            if (!el) return { error: 'ref not found: ' + refId };
+            var computed = window.getComputedStyle(el);
+            var result = {};
+            if (properties && properties.length > 0) {
+                for (var i = 0; i < properties.length; i++) {
+                    result[properties[i]] = computed.getPropertyValue(properties[i]);
+                }
+            } else {
+                var important = ['display','position','width','height','margin','padding',
+                    'color','background-color','font-size','font-family','font-weight',
+                    'border','border-radius','opacity','visibility','overflow','z-index',
+                    'flex-direction','justify-content','align-items','gap','grid-template-columns',
+                    'box-shadow','transform','transition','cursor','pointer-events','text-align',
+                    'line-height','letter-spacing','white-space','text-overflow','max-width',
+                    'max-height','min-width','min-height','top','right','bottom','left'];
+                for (var i = 0; i < important.length; i++) {
+                    var v = computed.getPropertyValue(important[i]);
+                    if (v && v !== '' && v !== 'none' && v !== 'normal' && v !== 'auto' && v !== '0px' && v !== 'rgba(0, 0, 0, 0)') {
+                        result[important[i]] = v;
+                    }
+                }
+            }
+            return { ref_id: refId, tag: el.tagName.toLowerCase(), styles: result };
+        },
+
+        getBoundingBoxes: function(refIds) {
+            var results = [];
+            for (var i = 0; i < refIds.length; i++) {
+                var el = refMap.get(refIds[i]);
+                if (!el) { results.push({ ref_id: refIds[i], error: 'ref not found' }); continue; }
+                var rect = el.getBoundingClientRect();
+                var computed = window.getComputedStyle(el);
+                results.push({
+                    ref_id: refIds[i],
+                    tag: el.tagName.toLowerCase(),
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height),
+                    margin: {
+                        top: parseInt(computed.marginTop) || 0,
+                        right: parseInt(computed.marginRight) || 0,
+                        bottom: parseInt(computed.marginBottom) || 0,
+                        left: parseInt(computed.marginLeft) || 0,
+                    },
+                    padding: {
+                        top: parseInt(computed.paddingTop) || 0,
+                        right: parseInt(computed.paddingRight) || 0,
+                        bottom: parseInt(computed.paddingBottom) || 0,
+                        left: parseInt(computed.paddingLeft) || 0,
+                    },
+                    border: {
+                        top: parseInt(computed.borderTopWidth) || 0,
+                        right: parseInt(computed.borderRightWidth) || 0,
+                        bottom: parseInt(computed.borderBottomWidth) || 0,
+                        left: parseInt(computed.borderLeftWidth) || 0,
+                    },
+                });
+            }
+            return results;
+        },
+
+        // ── Visual Debug Overlays ────────────────────────────────────────────
+
+        highlightElement: function(refId, color, label) {
+            var el = refMap.get(refId);
+            if (!el) return { error: 'ref not found: ' + refId };
+            var c = color || 'rgba(255, 0, 0, 0.3)';
+            var overlay = document.createElement('div');
+            overlay.className = '__victauri_highlight__';
+            overlay.setAttribute('data-victauri-ref', refId);
+            var rect = el.getBoundingClientRect();
+            overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
+                'border:2px solid ' + c + ';background:' + c + ';' +
+                'left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+                'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
+                'transition:all 0.2s ease;';
+            if (label) {
+                var tag = document.createElement('span');
+                tag.textContent = label;
+                tag.style.cssText = 'position:absolute;top:-20px;left:0;background:#222;color:#fff;' +
+                    'font-size:11px;padding:2px 6px;border-radius:3px;white-space:nowrap;font-family:monospace;';
+                overlay.appendChild(tag);
+            }
+            document.body.appendChild(overlay);
+            return { ok: true, ref_id: refId };
+        },
+
+        clearHighlights: function() {
+            var overlays = document.querySelectorAll('.__victauri_highlight__');
+            for (var i = 0; i < overlays.length; i++) overlays[i].remove();
+            return { ok: true, removed: overlays.length };
+        },
+
+        // ── CSS Injection ────────────────────────────────────────────────────
+
+        injectCss: function(css) {
+            var existing = document.getElementById('__victauri_injected_css__');
+            if (existing) existing.remove();
+            var style = document.createElement('style');
+            style.id = '__victauri_injected_css__';
+            style.textContent = css;
+            document.head.appendChild(style);
+            return { ok: true, length: css.length };
+        },
+
+        removeInjectedCss: function() {
+            var existing = document.getElementById('__victauri_injected_css__');
+            if (!existing) return { ok: true, removed: false };
+            existing.remove();
+            return { ok: true, removed: true };
+        },
+
+        // ── Accessibility Audit ──────────────────────────────────────────────
+
+        auditAccessibility: function() {
+            var violations = [];
+            var warnings = [];
+
+            // Images without alt text
+            var imgs = document.querySelectorAll('img');
+            for (var i = 0; i < imgs.length; i++) {
+                if (!imgs[i].hasAttribute('alt')) {
+                    violations.push({ rule: 'img-alt', severity: 'critical', element: describeEl(imgs[i]),
+                        message: 'Image missing alt attribute' });
+                } else if (imgs[i].alt.trim() === '') {
+                    warnings.push({ rule: 'img-alt-empty', severity: 'minor', element: describeEl(imgs[i]),
+                        message: 'Image has empty alt (ok if decorative)' });
+                }
+            }
+
+            // Form inputs without labels
+            var inputs = document.querySelectorAll('input, select, textarea');
+            for (var i = 0; i < inputs.length; i++) {
+                var inp = inputs[i];
+                if (inp.type === 'hidden') continue;
+                var hasLabel = inp.id && document.querySelector('label[for="' + inp.id + '"]');
+                var hasAria = inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby');
+                var hasTitle = inp.title;
+                var hasPlaceholder = inp.placeholder;
+                if (!hasLabel && !hasAria && !hasTitle && !hasPlaceholder) {
+                    violations.push({ rule: 'input-label', severity: 'serious', element: describeEl(inp),
+                        message: 'Form input has no accessible label' });
+                }
+            }
+
+            // Buttons without accessible text
+            var buttons = document.querySelectorAll('button, [role="button"]');
+            for (var i = 0; i < buttons.length; i++) {
+                var btn = buttons[i];
+                var text = (btn.textContent || '').trim();
+                var ariaLabel = btn.getAttribute('aria-label');
+                var ariaLabelledBy = btn.getAttribute('aria-labelledby');
+                if (!text && !ariaLabel && !ariaLabelledBy && !btn.title) {
+                    var hasImg = btn.querySelector('img[alt], svg[aria-label]');
+                    if (!hasImg) {
+                        violations.push({ rule: 'button-name', severity: 'serious', element: describeEl(btn),
+                            message: 'Button has no accessible name' });
+                    }
+                }
+            }
+
+            // Links without text
+            var links = document.querySelectorAll('a[href]');
+            for (var i = 0; i < links.length; i++) {
+                var link = links[i];
+                var text = (link.textContent || '').trim();
+                var ariaLabel = link.getAttribute('aria-label');
+                if (!text && !ariaLabel && !link.title) {
+                    violations.push({ rule: 'link-name', severity: 'serious', element: describeEl(link),
+                        message: 'Link has no accessible text' });
+                }
+            }
+
+            // Missing document language
+            if (!document.documentElement.lang) {
+                violations.push({ rule: 'html-lang', severity: 'serious', element: '<html>',
+                    message: 'Document missing lang attribute' });
+            }
+
+            // Heading hierarchy
+            var headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            var prevLevel = 0;
+            for (var i = 0; i < headings.length; i++) {
+                var level = parseInt(headings[i].tagName.charAt(1));
+                if (level > prevLevel + 1 && prevLevel > 0) {
+                    warnings.push({ rule: 'heading-order', severity: 'moderate', element: describeEl(headings[i]),
+                        message: 'Heading level skipped from h' + prevLevel + ' to h' + level });
+                }
+                prevLevel = level;
+            }
+
+            // Missing page title
+            if (!document.title || document.title.trim() === '') {
+                violations.push({ rule: 'document-title', severity: 'serious', element: '<head>',
+                    message: 'Document has no title' });
+            }
+
+            // Color contrast (simplified — checks text elements against backgrounds)
+            var textEls = document.querySelectorAll('p, span, a, button, h1, h2, h3, h4, h5, h6, li, td, th, label, div');
+            var contrastIssues = 0;
+            for (var i = 0; i < textEls.length && contrastIssues < 10; i++) {
+                var el = textEls[i];
+                if (!el.textContent || el.textContent.trim() === '') continue;
+                if (el.children.length > 0 && el.children[0].textContent === el.textContent) continue;
+                var cs = window.getComputedStyle(el);
+                var fg = parseColor(cs.color);
+                var bg = parseColor(cs.backgroundColor);
+                if (fg && bg && bg.a > 0) {
+                    var ratio = contrastRatio(fg, bg);
+                    var fontSize = parseFloat(cs.fontSize);
+                    var isBold = parseInt(cs.fontWeight) >= 700;
+                    var isLarge = fontSize >= 24 || (fontSize >= 18.66 && isBold);
+                    var threshold = isLarge ? 3 : 4.5;
+                    if (ratio < threshold) {
+                        contrastIssues++;
+                        warnings.push({ rule: 'color-contrast', severity: 'serious',
+                            element: describeEl(el),
+                            message: 'Contrast ratio ' + ratio.toFixed(2) + ':1 (needs ' + threshold + ':1)',
+                            details: { fg: cs.color, bg: cs.backgroundColor, ratio: ratio.toFixed(2) } });
+                    }
+                }
+            }
+
+            // ARIA role validity
+            var ariaEls = document.querySelectorAll('[role]');
+            var validRoles = new Set(['alert','alertdialog','application','article','banner','button',
+                'cell','checkbox','columnheader','combobox','complementary','contentinfo','definition',
+                'dialog','directory','document','feed','figure','form','grid','gridcell','group',
+                'heading','img','link','list','listbox','listitem','log','main','marquee','math',
+                'menu','menubar','menuitem','menuitemcheckbox','menuitemradio','meter','navigation',
+                'none','note','option','presentation','progressbar','radio','radiogroup','region',
+                'row','rowgroup','rowheader','scrollbar','search','searchbox','separator','slider',
+                'spinbutton','status','switch','tab','table','tablist','tabpanel','term','textbox',
+                'timer','toolbar','tooltip','tree','treegrid','treeitem']);
+            for (var i = 0; i < ariaEls.length; i++) {
+                var role = ariaEls[i].getAttribute('role');
+                if (role && !validRoles.has(role)) {
+                    warnings.push({ rule: 'aria-role', severity: 'moderate', element: describeEl(ariaEls[i]),
+                        message: 'Invalid ARIA role: ' + role });
+                }
+            }
+
+            // Tab index > 0
+            var tabbable = document.querySelectorAll('[tabindex]');
+            for (var i = 0; i < tabbable.length; i++) {
+                var ti = parseInt(tabbable[i].getAttribute('tabindex'));
+                if (ti > 0) {
+                    warnings.push({ rule: 'tabindex-positive', severity: 'moderate', element: describeEl(tabbable[i]),
+                        message: 'Positive tabindex disrupts natural tab order (tabindex=' + ti + ')' });
+                }
+            }
+
+            return {
+                violations: violations,
+                warnings: warnings,
+                summary: {
+                    critical: violations.filter(function(v) { return v.severity === 'critical'; }).length,
+                    serious: violations.filter(function(v) { return v.severity === 'serious'; }).length + warnings.filter(function(w) { return w.severity === 'serious'; }).length,
+                    moderate: warnings.filter(function(w) { return w.severity === 'moderate'; }).length,
+                    minor: warnings.filter(function(w) { return w.severity === 'minor'; }).length,
+                    total: violations.length + warnings.length,
+                }
+            };
+        },
+
+        // ── Performance Metrics ──────────────────────────────────────────────
+
+        getPerformanceMetrics: function() {
+            var result = {};
+
+            // Navigation timing
+            var nav = performance.getEntriesByType('navigation')[0];
+            if (nav) {
+                result.navigation = {
+                    dns_ms: Math.round(nav.domainLookupEnd - nav.domainLookupStart),
+                    connect_ms: Math.round(nav.connectEnd - nav.connectStart),
+                    ttfb_ms: Math.round(nav.responseStart - nav.requestStart),
+                    response_ms: Math.round(nav.responseEnd - nav.responseStart),
+                    dom_interactive_ms: Math.round(nav.domInteractive - nav.startTime),
+                    dom_complete_ms: Math.round(nav.domComplete - nav.startTime),
+                    load_event_ms: Math.round(nav.loadEventEnd - nav.startTime),
+                    transfer_size: nav.transferSize,
+                    encoded_body_size: nav.encodedBodySize,
+                    decoded_body_size: nav.decodedBodySize,
+                };
+            }
+
+            // Resource summary
+            var resources = performance.getEntriesByType('resource');
+            var byType = {};
+            var totalTransfer = 0;
+            for (var i = 0; i < resources.length; i++) {
+                var r = resources[i];
+                var type = r.initiatorType || 'other';
+                if (!byType[type]) byType[type] = { count: 0, total_ms: 0, total_bytes: 0 };
+                byType[type].count++;
+                byType[type].total_ms += r.duration;
+                byType[type].total_bytes += r.transferSize || 0;
+                totalTransfer += r.transferSize || 0;
+            }
+            result.resources = {
+                total_count: resources.length,
+                total_transfer_bytes: totalTransfer,
+                by_type: byType,
+                slowest: resources.sort(function(a, b) { return b.duration - a.duration; }).slice(0, 5).map(function(r) {
+                    return { name: r.name.split('/').pop().split('?')[0], duration_ms: Math.round(r.duration), size: r.transferSize || 0, type: r.initiatorType };
+                }),
+            };
+
+            // Paint timing
+            var paints = performance.getEntriesByType('paint');
+            result.paint = {};
+            for (var i = 0; i < paints.length; i++) {
+                result.paint[paints[i].name] = Math.round(paints[i].startTime);
+            }
+
+            // Memory (Chrome/Edge)
+            if (performance.memory) {
+                result.js_heap = {
+                    used_mb: Math.round(performance.memory.usedJSHeapSize / 1048576 * 100) / 100,
+                    total_mb: Math.round(performance.memory.totalJSHeapSize / 1048576 * 100) / 100,
+                    limit_mb: Math.round(performance.memory.jsHeapSizeLimit / 1048576 * 100) / 100,
+                };
+            }
+
+            // Long tasks (if PerformanceObserver captured any)
+            if (window.__VICTAURI__._longTasks) {
+                result.long_tasks = {
+                    count: window.__VICTAURI__._longTasks.length,
+                    total_ms: Math.round(window.__VICTAURI__._longTasks.reduce(function(s, t) { return s + t.duration; }, 0)),
+                    worst_ms: window.__VICTAURI__._longTasks.length > 0 ? Math.round(Math.max.apply(null, window.__VICTAURI__._longTasks.map(function(t) { return t.duration; }))) : 0,
+                };
+            }
+
+            // DOM stats
+            result.dom = {
+                elements: document.querySelectorAll('*').length,
+                max_depth: (function() { var d = 0; var walk = function(el, depth) { if (depth > d) d = depth; for (var i = 0; i < el.children.length && i < 5; i++) walk(el.children[i], depth + 1); }; walk(document.body, 0); return d; })(),
+                event_listeners: window.__VICTAURI__._listenerCount || 0,
+            };
+
+            return result;
+        },
     };
+
+    // ── Accessibility Helpers ────────────────────────────────────────────────
+
+    function describeEl(el) {
+        var s = '<' + el.tagName.toLowerCase();
+        if (el.id) s += ' id="' + el.id + '"';
+        if (el.className && typeof el.className === 'string') {
+            var cls = el.className.trim();
+            if (cls) s += ' class="' + cls.substring(0, 50) + '"';
+        }
+        s += '>';
+        return s;
+    }
+
+    function parseColor(str) {
+        if (!str) return null;
+        var m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if (!m) return null;
+        return { r: parseInt(m[1]), g: parseInt(m[2]), b: parseInt(m[3]), a: m[4] !== undefined ? parseFloat(m[4]) : 1 };
+    }
+
+    function luminance(c) {
+        var rs = c.r / 255, gs = c.g / 255, bs = c.b / 255;
+        var r = rs <= 0.03928 ? rs / 12.92 : Math.pow((rs + 0.055) / 1.055, 2.4);
+        var g = gs <= 0.03928 ? gs / 12.92 : Math.pow((gs + 0.055) / 1.055, 2.4);
+        var b = bs <= 0.03928 ? bs / 12.92 : Math.pow((bs + 0.055) / 1.055, 2.4);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+
+    function contrastRatio(fg, bg) {
+        var l1 = luminance(fg), l2 = luminance(bg);
+        var lighter = Math.max(l1, l2), darker = Math.min(l1, l2);
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    // ── Long Task Observer ──────────────────────────────────────────────────
+
+    try {
+        window.__VICTAURI__._longTasks = [];
+        var ltObserver = new PerformanceObserver(function(list) {
+            var entries = list.getEntries();
+            for (var i = 0; i < entries.length; i++) {
+                window.__VICTAURI__._longTasks.push({ duration: entries[i].duration, startTime: entries[i].startTime });
+                if (window.__VICTAURI__._longTasks.length > 100) window.__VICTAURI__._longTasks.shift();
+            }
+        });
+        ltObserver.observe({ type: 'longtask', buffered: true });
+    } catch(e) {}
+
+    // ── Event Listener Counter ──────────────────────────────────────────────
+
+    (function() {
+        var count = 0;
+        var origAdd = EventTarget.prototype.addEventListener;
+        var origRemove = EventTarget.prototype.removeEventListener;
+        EventTarget.prototype.addEventListener = function() {
+            count++;
+            window.__VICTAURI__._listenerCount = count;
+            return origAdd.apply(this, arguments);
+        };
+        EventTarget.prototype.removeEventListener = function() {
+            count--;
+            window.__VICTAURI__._listenerCount = count;
+            return origRemove.apply(this, arguments);
+        };
+    })();
 
     // ── DOM Walking ──────────────────────────────────────────────────────────
 
@@ -478,54 +919,11 @@ pub const INIT_SCRIPT: &str = r#"
         document.addEventListener('DOMContentLoaded', startMutationObserver);
     }
 
-    // ── IPC Interception ─────────────────────────────────────────────────────
-
-    function interceptIpc() {
-        var tauri = window.__TAURI_INTERNALS__;
-        if (!tauri || !tauri.invoke) {
-            if (Date.now() - loadTime < 5000) {
-                setTimeout(interceptIpc, 50);
-            }
-            return;
-        }
-        if (tauri.__victauriPatched) return;
-        tauri.__victauriPatched = true;
-
-        var origInvoke = tauri.invoke;
-        tauri.invoke = function(cmd, args, options) {
-            if (typeof cmd === 'string' && cmd.indexOf('plugin:victauri|') === 0) {
-                return origInvoke.call(this, cmd, args, options);
-            }
-            var id = ++ipcCounter;
-            var entry = {
-                id: id,
-                command: typeof cmd === 'string' ? cmd : String(cmd),
-                args: args || {},
-                timestamp: Date.now(),
-                status: 'pending',
-                duration_ms: null,
-                result: null,
-                error: null,
-            };
-            ipcLog.push(entry);
-            if (ipcLog.length > 2000) ipcLog.shift();
-
-            return origInvoke.call(this, cmd, args, options).then(function(result) {
-                entry.status = 'ok';
-                try { entry.result = JSON.parse(JSON.stringify(result)); } catch(e) { entry.result = String(result); }
-                entry.duration_ms = Date.now() - entry.timestamp;
-                return result;
-            }, function(err) {
-                entry.status = 'error';
-                entry.error = String(err);
-                entry.duration_ms = Date.now() - entry.timestamp;
-                throw err;
-            });
-        };
-    }
-
-    var loadTime = Date.now();
-    interceptIpc();
+    // IPC logging is derived from the network log: Tauri 2.0 sends all IPC
+    // via fetch to http://ipc.localhost/<command>. The fetch interceptor below
+    // captures these, and getIpcLog() filters them from networkLog. This avoids
+    // the need to patch __TAURI_INTERNALS__.invoke, which Tauri freezes with
+    // configurable:false, writable:false.
 
     // ── Network Interception ─────────────────────────────────────────────────
 
