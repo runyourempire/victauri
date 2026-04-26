@@ -36,7 +36,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
 - Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
-- Test count: 110 -> 162
+- Test count: 110 -> 205
+- Tool count: 55 -> 58 (added `export_session`, `import_session`, `slow_ipc_calls`)
+
+### Security
+
+- **JS injection fix**: All 22 manual string escaping sites replaced with `serde_json::to_string()` via `js_string()` helper. Eliminates entire class of injection through newlines, null bytes, unicode separators, template literals.
+- **URL validation**: Switched from blocklist to scheme allowlist (http/https/file only) using the `url` crate parser. Blocks javascript:, data:, vbscript:, and all other schemes.
+- **Screenshot error handling**: `GetDIBits()` return value checked on Windows — prevents silent all-black screenshots.
+
+### API
+
+- Configurable eval timeout via `VictauriBuilder::eval_timeout()` and `VICTAURI_EVAL_TIMEOUT` env var
+- `EventLog::snapshot_range(offset, limit)` for paginated event access
+- `EventLog::ipc_calls_since(timestamp)` for filtered IPC queries
+- `Redactor::try_new()` returns `Result` for pattern compilation error handling
+- Doc comments on all public types and builder methods
+- Crate-level doc comments with Quick Start and Configuration examples
+- Cargo.toml metadata (homepage, documentation, readme, exclude) for all 4 crates
 
 ## [0.1.0] - 2026-04-26
 

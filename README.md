@@ -211,9 +211,9 @@ Because Victauri compiles away in release builds, CI runs debug builds to get in
 
 - [ ] Multi-window tool targeting
 - [ ] Linux screenshot support
-- [ ] Session persistence (export/import recordings)
+- [x] Session persistence (`export_session` / `import_session` tools)
 - [x] Benchmark suite with real response time data
-- [ ] IPC debugger UI (visual timeline of command flow)
+- [x] IPC performance analysis (`slow_ipc_calls` tool)
 - [ ] Test assertion helpers as a standalone crate
 - [ ] crates.io publication
 

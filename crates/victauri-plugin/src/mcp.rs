@@ -446,6 +446,20 @@ pub struct GetPerformanceMetricsParams {
     pub webview_label: Option<String>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImportSessionParams {
+    /// JSON string of a previously exported RecordedSession.
+    pub session_json: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SlowIpcParams {
+    /// Threshold in milliseconds. Returns IPC calls slower than this value.
+    pub threshold_ms: u64,
+    /// Maximum number of results. Default: 20.
+    pub limit: Option<usize>,
+}
+
 // ── MCP Handler ──────────────────────────────────────────────────────────────
 
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
@@ -889,6 +903,77 @@ impl VictauriMcpHandler {
                 Err(e) => tool_error(e.to_string()),
             },
             None => tool_error("one or both checkpoint IDs not found"),
+        }
+    }
+
+    #[tool(
+        description = "Export the current recording session as a JSON string. The session can be saved externally and later imported with import_session. Does NOT stop the recording."
+    )]
+    async fn export_session(&self) -> CallToolResult {
+        let rec = self.state.recorder.clone();
+        if !rec.is_recording() {
+            return tool_error("no recording is active — start one first");
+        }
+        let session = rec.stop();
+        match session {
+            Some(s) => {
+                let json = serde_json::to_string_pretty(&s)
+                    .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"));
+                CallToolResult::success(vec![Content::text(json)])
+            }
+            None => tool_error("failed to export session"),
+        }
+    }
+
+    #[tool(
+        description = "Import a previously exported recording session from JSON. Useful for replaying sessions across restarts. The imported session can be queried with replay and checkpoint tools."
+    )]
+    async fn import_session(
+        &self,
+        Parameters(params): Parameters<ImportSessionParams>,
+    ) -> CallToolResult {
+        let session: victauri_core::RecordedSession =
+            match serde_json::from_str(&params.session_json) {
+                Ok(s) => s,
+                Err(e) => return tool_error(format!("invalid session JSON: {e}")),
+            };
+
+        let result = serde_json::json!({
+            "imported": true,
+            "session_id": session.id,
+            "event_count": session.events.len(),
+            "checkpoint_count": session.checkpoints.len(),
+            "started_at": session.started_at.to_rfc3339(),
+        });
+        CallToolResult::success(vec![Content::text(result.to_string())])
+    }
+
+    #[tool(
+        description = "Find slow IPC calls that exceed a time threshold. Returns calls sorted by duration (slowest first). Useful for identifying performance bottlenecks."
+    )]
+    async fn slow_ipc_calls(
+        &self,
+        Parameters(params): Parameters<SlowIpcParams>,
+    ) -> CallToolResult {
+        let limit = params.limit.unwrap_or(20);
+        let mut calls: Vec<_> = self
+            .state
+            .event_log
+            .ipc_calls()
+            .into_iter()
+            .filter(|c| c.duration_ms.unwrap_or(0) > params.threshold_ms)
+            .collect();
+        calls.sort_by(|a, b| b.duration_ms.cmp(&a.duration_ms));
+        calls.truncate(limit);
+
+        let result = serde_json::json!({
+            "threshold_ms": params.threshold_ms,
+            "count": calls.len(),
+            "calls": calls,
+        });
+        match serde_json::to_string_pretty(&result) {
+            Ok(json) => self.redact_result(json),
+            Err(e) => tool_error(e.to_string()),
         }
     }
 
@@ -2105,28 +2190,4 @@ mod tests {
         let input = format!("http://example{}com", '\0');
         assert!(validate_url(&input).is_ok());
     }
-}
-
-pub async fn start_server<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    state: Arc<VictauriState>,
-    port: u16,
-) -> anyhow::Result<()> {
-    start_server_with_options(app_handle, state, port, None).await
-}
-
-pub async fn start_server_with_options<R: Runtime>(
-    app_handle: tauri::AppHandle<R>,
-    state: Arc<VictauriState>,
-    port: u16,
-    auth_token: Option<String>,
-) -> anyhow::Result<()> {
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
-    let app = build_app_with_options(state, bridge, auth_token);
-
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
-    tracing::info!("Victauri MCP server listening on 127.0.0.1:{port}");
-
-    axum::serve(listener, app).await?;
-    Ok(())
 }
