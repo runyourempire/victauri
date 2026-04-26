@@ -24,6 +24,13 @@ use crate::bridge::WebviewBridge;
 
 const EVAL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Produce a properly escaped JavaScript string literal (with double quotes).
+/// Uses serde_json which handles all special characters: \n, \r, \0, \t,
+/// unicode escapes, quotes, backslashes, etc.
+fn js_string(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+}
+
 // ── Parameter structs ────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -490,8 +497,8 @@ impl VictauriMcpHandler {
     #[tool(description = "Click an element by its ref handle ID from a DOM snapshot.")]
     async fn click(&self, Parameters(params): Parameters<ClickParams>) -> CallToolResult {
         let code = format!(
-            "return window.__VICTAURI__?.click('{}')",
-            params.ref_id.replace('\'', "\\'")
+            "return window.__VICTAURI__?.click({})",
+            js_string(&params.ref_id)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -509,11 +516,10 @@ impl VictauriMcpHandler {
         if !self.state.privacy.is_tool_enabled("fill") {
             return tool_disabled("fill");
         }
-        let escaped_value = params.value.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
-            "return window.__VICTAURI__?.fill('{}', '{}')",
-            params.ref_id.replace('\'', "\\'"),
-            escaped_value
+            "return window.__VICTAURI__?.fill({}, {})",
+            js_string(&params.ref_id),
+            js_string(&params.value)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -531,11 +537,10 @@ impl VictauriMcpHandler {
         if !self.state.privacy.is_tool_enabled("type_text") {
             return tool_disabled("type_text");
         }
-        let escaped_text = params.text.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
-            "return window.__VICTAURI__?.type('{}', '{}')",
-            params.ref_id.replace('\'', "\\'"),
-            escaped_text
+            "return window.__VICTAURI__?.type({}, {})",
+            js_string(&params.ref_id),
+            js_string(&params.text)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -905,8 +910,10 @@ impl VictauriMcpHandler {
         }
         let args_json = params.args.unwrap_or(serde_json::json!({}));
         let args_str = serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
-        let escaped_cmd = params.command.replace('\\', "\\\\").replace('\'', "\\'");
-        let code = format!("return window.__TAURI__.core.invoke('{escaped_cmd}', {args_str})");
+        let code = format!(
+            "return window.__TAURI__.core.invoke({}, {args_str})",
+            js_string(&params.command)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -943,8 +950,10 @@ impl VictauriMcpHandler {
         description = "Press a keyboard key on the currently focused element. Useful for triggering keyboard shortcuts, submitting forms (Enter), closing dialogs (Escape), or navigating (Tab, ArrowDown)."
     )]
     async fn press_key(&self, Parameters(params): Parameters<PressKeyParams>) -> CallToolResult {
-        let escaped_key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
-        let code = format!("return window.__VICTAURI__?.pressKey('{escaped_key}')");
+        let code = format!(
+            "return window.__VICTAURI__?.pressKey({})",
+            js_string(&params.key)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -984,8 +993,8 @@ impl VictauriMcpHandler {
         Parameters(params): Parameters<DoubleClickParams>,
     ) -> CallToolResult {
         let code = format!(
-            "return window.__VICTAURI__?.doubleClick('{}')",
-            params.ref_id.replace('\'', "\\'")
+            "return window.__VICTAURI__?.doubleClick({})",
+            js_string(&params.ref_id)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1001,8 +1010,8 @@ impl VictauriMcpHandler {
     )]
     async fn hover(&self, Parameters(params): Parameters<HoverParams>) -> CallToolResult {
         let code = format!(
-            "return window.__VICTAURI__?.hover('{}')",
-            params.ref_id.replace('\'', "\\'")
+            "return window.__VICTAURI__?.hover({})",
+            js_string(&params.ref_id)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1023,8 +1032,8 @@ impl VictauriMcpHandler {
         let values_json =
             serde_json::to_string(&params.values).unwrap_or_else(|_| "[]".to_string());
         let code = format!(
-            "return window.__VICTAURI__?.selectOption('{}', {})",
-            params.ref_id.replace('\'', "\\'"),
+            "return window.__VICTAURI__?.selectOption({}, {})",
+            js_string(&params.ref_id),
             values_json
         );
         match self
@@ -1043,7 +1052,7 @@ impl VictauriMcpHandler {
         let ref_arg = params
             .ref_id
             .as_ref()
-            .map(|r| format!("'{}'", r.replace('\'', "\\'")))
+            .map(|r| js_string(r))
             .unwrap_or_else(|| "null".to_string());
         let x = params.x.unwrap_or(0.0);
         let y = params.y.unwrap_or(0.0);
@@ -1063,8 +1072,8 @@ impl VictauriMcpHandler {
         Parameters(params): Parameters<FocusElementParams>,
     ) -> CallToolResult {
         let code = format!(
-            "return window.__VICTAURI__?.focusElement('{}')",
-            params.ref_id.replace('\'', "\\'")
+            "return window.__VICTAURI__?.focusElement({})",
+            js_string(&params.ref_id)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1087,7 +1096,7 @@ impl VictauriMcpHandler {
         let filter_arg = params
             .filter
             .as_ref()
-            .map(|f| format!("'{}'", f.replace('\'', "\\'")))
+            .map(|f| js_string(f))
             .unwrap_or_else(|| "null".to_string());
         let limit_arg = params
             .limit
@@ -1119,7 +1128,7 @@ impl VictauriMcpHandler {
         let key_arg = params
             .key
             .as_ref()
-            .map(|k| format!("'{}'", k.replace('\'', "\\'")))
+            .map(|k| js_string(k))
             .unwrap_or_default();
         let code = format!("return window.__VICTAURI__?.{method}({key_arg})");
         match self
@@ -1143,10 +1152,12 @@ impl VictauriMcpHandler {
             "session" => "setSessionStorage",
             _ => "setLocalStorage",
         };
-        let key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
         let value_json =
             serde_json::to_string(&params.value).unwrap_or_else(|_| "null".to_string());
-        let code = format!("return window.__VICTAURI__?.{method}('{key}', {value_json})");
+        let code = format!(
+            "return window.__VICTAURI__?.{method}({}, {value_json})",
+            js_string(&params.key)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -1168,8 +1179,10 @@ impl VictauriMcpHandler {
             "session" => "deleteSessionStorage",
             _ => "deleteLocalStorage",
         };
-        let key = params.key.replace('\\', "\\\\").replace('\'', "\\'");
-        let code = format!("return window.__VICTAURI__?.{method}('{key}')");
+        let code = format!(
+            "return window.__VICTAURI__?.{method}({})",
+            js_string(&params.key)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -1223,8 +1236,10 @@ impl VictauriMcpHandler {
         if let Err(e) = validate_url(&params.url) {
             return tool_error(e);
         }
-        let url = params.url.replace('\\', "\\\\").replace('\'', "\\'");
-        let code = format!("return window.__VICTAURI__?.navigate('{url}')");
+        let code = format!(
+            "return window.__VICTAURI__?.navigate({})",
+            js_string(&params.url)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -1278,18 +1293,15 @@ impl VictauriMcpHandler {
         if !self.state.privacy.is_tool_enabled("set_dialog_response") {
             return tool_disabled("set_dialog_response");
         }
-        let dtype = params
-            .dialog_type
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'");
-        let action = params.action.replace('\\', "\\\\").replace('\'', "\\'");
         let text_arg = params
             .text
             .as_ref()
-            .map(|t| format!("'{}'", t.replace('\\', "\\\\").replace('\'', "\\'")))
+            .map(|t| js_string(t))
             .unwrap_or_else(|| "undefined".to_string());
         let code = format!(
-            "return window.__VICTAURI__?.setDialogAutoResponse('{dtype}', '{action}', {text_arg})"
+            "return window.__VICTAURI__?.setDialogAutoResponse({}, {}, {text_arg})",
+            js_string(&params.dialog_type),
+            js_string(&params.action)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1306,16 +1318,16 @@ impl VictauriMcpHandler {
         description = "Wait for a condition to be met. Polls at regular intervals until satisfied or timeout. Conditions: text (text appears), text_gone (text disappears), selector (CSS selector matches), selector_gone, url (URL contains value), ipc_idle (no pending IPC calls), network_idle (no pending network requests)."
     )]
     async fn wait_for(&self, Parameters(params): Parameters<WaitForParams>) -> CallToolResult {
-        let condition = params.condition.replace('\\', "\\\\").replace('\'', "\\'");
         let value = params
             .value
             .as_ref()
-            .map(|v| format!("'{}'", v.replace('\\', "\\\\").replace('\'', "\\'")))
+            .map(|v| js_string(v))
             .unwrap_or_else(|| "null".to_string());
         let timeout = params.timeout_ms.unwrap_or(10000);
         let poll = params.poll_ms.unwrap_or(200);
         let code = format!(
-            "return window.__VICTAURI__?.waitFor({{ condition: '{condition}', value: {value}, timeout_ms: {timeout}, poll_ms: {poll} }})"
+            "return window.__VICTAURI__?.waitFor({{ condition: {}, value: {value}, timeout_ms: {timeout}, poll_ms: {poll} }})",
+            js_string(&params.condition)
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1406,14 +1418,15 @@ impl VictauriMcpHandler {
     async fn get_styles(&self, Parameters(params): Parameters<GetStylesParams>) -> CallToolResult {
         let props_arg = match &params.properties {
             Some(props) => {
-                let arr: Vec<String> = props.iter().map(|p| format!("\"{}\"", p)).collect();
+                let arr: Vec<String> = props.iter().map(|p| js_string(p)).collect();
                 format!("[{}]", arr.join(","))
             }
             None => "null".to_string(),
         };
         let code = format!(
-            "return window.__VICTAURI__?.getStyles(\"{}\", {})",
-            params.ref_id, props_arg
+            "return window.__VICTAURI__?.getStyles({}, {})",
+            js_string(&params.ref_id),
+            props_arg
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1431,11 +1444,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<GetBoundingBoxesParams>,
     ) -> CallToolResult {
-        let refs: Vec<String> = params
-            .ref_ids
-            .iter()
-            .map(|r| format!("\"{}\"", r))
-            .collect();
+        let refs: Vec<String> = params.ref_ids.iter().map(|r| js_string(r)).collect();
         let code = format!(
             "return window.__VICTAURI__?.getBoundingBoxes([{}])",
             refs.join(",")
@@ -1464,12 +1473,12 @@ impl VictauriMcpHandler {
             None => "null".to_string(),
         };
         let label_arg = match &params.label {
-            Some(l) => format!("\"{}\"", l.replace('"', "\\\"").replace('\\', "\\\\")),
+            Some(l) => js_string(l),
             None => "null".to_string(),
         };
         let code = format!(
-            "return window.__VICTAURI__?.highlightElement(\"{}\", {}, {})",
-            params.ref_id.replace('"', "\\\""),
+            "return window.__VICTAURI__?.highlightElement({}, {}, {})",
+            js_string(&params.ref_id),
             color_arg,
             label_arg
         );
@@ -1504,8 +1513,10 @@ impl VictauriMcpHandler {
         if !self.state.privacy.is_tool_enabled("inject_css") {
             return tool_disabled("inject_css");
         }
-        let escaped = params.css.replace('\\', "\\\\").replace('`', "\\`");
-        let code = format!("return window.__VICTAURI__?.injectCss(`{}`)", escaped);
+        let code = format!(
+            "return window.__VICTAURI__?.injectCss({})",
+            js_string(&params.css)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -1823,47 +1834,16 @@ fn tool_disabled(name: &str) -> CallToolResult {
 }
 
 fn validate_url(url: &str) -> Result<(), String> {
-    // Strip whitespace, control chars, and null bytes that browsers silently ignore
-    let normalized: String = url
-        .chars()
-        .filter(|c| !c.is_control() && !c.is_whitespace() && *c != '\0')
-        .collect();
-    let lower = normalized.to_lowercase();
-
-    // Decode percent-encoded scheme prefixes (e.g. java%73cript: -> javascript:)
-    let decoded = percent_decode_scheme(&lower);
-
-    for prefix in &["javascript:", "data:", "vbscript:", "livescript:"] {
-        if decoded.starts_with(prefix) || lower.starts_with(prefix) {
-            return Err(format!("{prefix} URLs are blocked for security"));
-        }
+    let trimmed: String = url.chars().filter(|c| !c.is_control()).collect();
+    match url::Url::parse(&trimmed) {
+        Ok(parsed) => match parsed.scheme() {
+            "http" | "https" | "file" => Ok(()),
+            scheme => Err(format!(
+                "scheme '{scheme}' is not allowed; use http, https, or file"
+            )),
+        },
+        Err(e) => Err(format!("invalid URL: {e}")),
     }
-    Ok(())
-}
-
-fn percent_decode_scheme(url: &str) -> String {
-    let colon_pos = match url.find(':') {
-        Some(p) => p,
-        None => return url.to_string(),
-    };
-    let scheme_part = &url[..colon_pos];
-    let mut decoded = String::with_capacity(scheme_part.len());
-    let bytes = scheme_part.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) =
-                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
-            {
-                decoded.push(byte as char);
-                i += 3;
-                continue;
-            }
-        }
-        decoded.push(bytes[i] as char);
-        i += 1;
-    }
-    decoded + &url[colon_pos..]
 }
 
 fn sanitize_css_color(color: &str) -> Result<String, String> {

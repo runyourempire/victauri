@@ -4756,6 +4756,7 @@ dependencies = [
  "tauri-plugin",
  "tokio",
  "tracing",
+ "url",
  "uuid",
  "victauri-core",
  "victauri-macros",

@@ -55,7 +55,7 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
 
         let row_bytes = (width as usize) * 4;
         let mut pixels = vec![0u8; row_bytes * height as usize];
-        GetDIBits(
+        let rows = GetDIBits(
             hdc_mem,
             hbmp,
             0,
@@ -64,6 +64,14 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
             &mut bmi,
             DIB_RGB_COLORS,
         );
+
+        if rows == 0 {
+            SelectObject(hdc_mem, old);
+            let _ = DeleteObject(hbmp.into());
+            let _ = DeleteDC(hdc_mem);
+            ReleaseDC(Some(hwnd), hdc_screen);
+            anyhow::bail!("GetDIBits failed to read pixel data from window");
+        }
 
         // BGRA → RGBA
         for chunk in pixels.chunks_exact_mut(4) {
@@ -277,7 +285,8 @@ pub async fn capture_window(_window_id: isize) -> anyhow::Result<Vec<u8>> {
 fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
     use std::io::Write;
 
-    let mut out = Vec::new();
+    // Pre-allocate: signature(8) + IHDR chunk(25) + IDAT chunk(~data) + IEND(12)
+    let mut out = Vec::with_capacity(45 + rgba.len() + (height as usize) * 6);
 
     // PNG signature
     out.write_all(&[137, 80, 78, 71, 13, 10, 26, 10])?;
@@ -345,7 +354,8 @@ fn png_crc32(data: &[u8]) -> u32 {
 
 #[allow(dead_code)]
 fn deflate_compress(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
+    let num_blocks = data.len().div_ceil(65535);
+    let mut out = Vec::with_capacity(2 + num_blocks * 5 + data.len() + 4);
 
     // zlib header: CM=8 (deflate), CINFO=7 (32K window)
     out.push(0x78);
