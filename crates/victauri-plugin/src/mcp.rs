@@ -222,7 +222,7 @@ pub struct HoverParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SelectOptionParams {
-    /// Ref handle ID of the <select> element.
+    /// Ref handle ID of the `<select>` element.
     pub ref_id: String,
     /// Values to select.
     pub values: Vec<String>,
