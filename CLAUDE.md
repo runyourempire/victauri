@@ -12,8 +12,10 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests
+cargo test                     # Run all tests (157)
+cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
+cargo fmt --all -- --check     # Format check
 cargo doc --no-deps --open     # Generate docs
 ```
 
@@ -148,7 +150,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-26)
 
-**All 5 phases complete + Phase 6 enhancements + Phase 7 expansion + Phase 8 deep introspection (CSS inspection, visual overlays, accessibility auditing, performance profiling, CSS injection).** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 86 tests pass (44 core + 4 macro + 38 plugin integration). CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
+**All 8 phases complete.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 157 tests pass (70 core + 4 macro + 39 plugin unit + 44 plugin integration) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
@@ -215,7 +217,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 **Bridge methods:** version, snapshot, getRef, click, fill, type, pressKey, getConsoleLogs, clearConsoleLogs, getMutationLog, clearMutationLog, getEventStream, getStyles, getBoundingBoxes, highlightElement, clearHighlights, injectCss, removeInjectedCss, auditAccessibility, getPerformanceMetrics.
 
 ### What exists and works:
-- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 44 unit tests.
+- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 70 unit tests (including 26 adversarial tests). 13 Criterion benchmarks across 5 groups. All mutex/rwlock calls use poisoning recovery.
 - **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Uses proper `syn::meta` parsing (not string matching). Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
 - **victauri-plugin**: Full MCP server with **55 tools** + 3 resources. Tools organized by category:
   - **WebView (11)**: eval_js, dom_snapshot, click, double_click, hover, fill, type_text, press_key, select_option, scroll_to, focus_element
@@ -234,9 +236,9 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
   - **Visual Debug (2)**: highlight_element, clear_highlights
   - **Accessibility (1)**: audit_accessibility
   - **Performance (1)**: get_performance_metrics
-  Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge v0.2.0 with IPC interception, network monitoring, storage access, navigation tracking, dialog capture, extended interactions, and waitFor. `EventRecorder` with 50,000 event capacity. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. `VictauriBuilder` for port/capacity/auth configuration + `VICTAURI_PORT`/`VICTAURI_AUTH_TOKEN` env vars. Bearer token auth middleware (opt-in). Tool enable/disable via builder. 38 integration tests (mock bridge, HTTP endpoints, MCP protocol, tool/resource listing, resource reading, recording, memory stats, auth accept/reject/bypass).
+  Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge v0.2.0 with IPC interception, network monitoring, storage access, navigation tracking, dialog capture, extended interactions, and waitFor. `EventRecorder` with 50,000 event capacity. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. `VictauriBuilder` for port/capacity/auth configuration + `VICTAURI_PORT`/`VICTAURI_AUTH_TOKEN` env vars. Bearer token auth middleware (opt-in, case-insensitive per RFC 7235). Token-bucket rate limiter (AtomicU64, 100 req/sec default). Privacy layer with command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode. Tool enable/disable via builder. 39 unit tests (8 auth + 8 privacy + 10 redaction + 14 builder) + 44 integration tests.
 - **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
-- **demo-app**: Tauri 2 app in `examples/demo-app/` with Victauri wired up. 12 commands (greet, counter CRUD, todo CRUD, settings, app state dump) all decorated with `#[inspectable]` including intent, category, examples. Includes `.mcp.json` for immediate Claude Code connection.
+- **demo-app**: Tauri 2 app in `examples/demo-app/` with Victauri wired up. 12 commands (greet, counter CRUD, todo CRUD, settings, app state dump) all decorated with `#[inspectable]` including intent, category, examples. Frontend exercises all 12 commands: greet form, counter with +/−/reset, todo list with add/toggle/delete, settings panel (theme/notifications/language), debug state inspector. Includes `.mcp.json` for immediate Claude Code connection.
 - **CI**: GitHub Actions workflow (`ci.yml`) — clippy + tests + docs on Linux/Windows/macOS, format check on Linux. All crate code passes `cargo fmt --check`.
 
 ### Architecture notes:

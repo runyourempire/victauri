@@ -1,0 +1,9 @@
+# Normalize line endings for cross-platform development
+* text=auto eol=lf
+
+# Binary files
+*.ico binary
+*.png binary
+*.jpg binary
+*.woff binary
+*.woff2 binary
