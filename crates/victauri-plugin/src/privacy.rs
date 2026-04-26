@@ -1,0 +1,149 @@
+use std::collections::HashSet;
+
+use crate::redaction::Redactor;
+
+#[derive(Default)]
+pub struct PrivacyConfig {
+    pub command_allowlist: Option<HashSet<String>>,
+    pub command_blocklist: HashSet<String>,
+    pub disabled_tools: HashSet<String>,
+    pub redactor: Redactor,
+    pub redaction_enabled: bool,
+}
+
+impl PrivacyConfig {
+    pub fn is_command_allowed(&self, command: &str) -> bool {
+        if self.command_blocklist.contains(command) {
+            return false;
+        }
+        match &self.command_allowlist {
+            Some(allow) => allow.contains(command),
+            None => true,
+        }
+    }
+
+    pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
+        !self.disabled_tools.contains(tool_name)
+    }
+
+    pub fn redact_output(&self, output: &str) -> String {
+        if self.redaction_enabled {
+            self.redactor.redact(output)
+        } else {
+            output.to_string()
+        }
+    }
+}
+
+const STRICT_DISABLED_TOOLS: &[&str] = &[
+    "eval_js",
+    "screenshot",
+    "inject_css",
+    "set_storage",
+    "delete_storage",
+    "navigate",
+    "set_dialog_response",
+    "fill",
+    "type_text",
+];
+
+pub fn strict_privacy_config() -> PrivacyConfig {
+    PrivacyConfig {
+        command_allowlist: None,
+        command_blocklist: HashSet::new(),
+        disabled_tools: STRICT_DISABLED_TOOLS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        redactor: Redactor::default(),
+        redaction_enabled: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_allows_all_commands() {
+        let config = PrivacyConfig::default();
+        assert!(config.is_command_allowed("get_settings"));
+        assert!(config.is_command_allowed("anything"));
+    }
+
+    #[test]
+    fn blocklist_blocks() {
+        let mut config = PrivacyConfig::default();
+        config.command_blocklist.insert("save_api_key".to_string());
+        assert!(!config.is_command_allowed("save_api_key"));
+        assert!(config.is_command_allowed("get_settings"));
+    }
+
+    #[test]
+    fn allowlist_restricts() {
+        let mut allow = HashSet::new();
+        allow.insert("get_settings".to_string());
+        allow.insert("get_monitoring_status".to_string());
+        let config = PrivacyConfig {
+            command_allowlist: Some(allow),
+            ..Default::default()
+        };
+        assert!(config.is_command_allowed("get_settings"));
+        assert!(!config.is_command_allowed("save_api_key"));
+    }
+
+    #[test]
+    fn blocklist_wins_over_allowlist() {
+        let mut allow = HashSet::new();
+        allow.insert("save_api_key".to_string());
+        let mut block = HashSet::new();
+        block.insert("save_api_key".to_string());
+        let config = PrivacyConfig {
+            command_allowlist: Some(allow),
+            command_blocklist: block,
+            ..Default::default()
+        };
+        assert!(!config.is_command_allowed("save_api_key"));
+    }
+
+    #[test]
+    fn tool_disabling() {
+        let mut disabled = HashSet::new();
+        disabled.insert("eval_js".to_string());
+        let config = PrivacyConfig {
+            disabled_tools: disabled,
+            ..Default::default()
+        };
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(config.is_tool_enabled("dom_snapshot"));
+    }
+
+    #[test]
+    fn strict_mode_disables_dangerous_tools() {
+        let config = strict_privacy_config();
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(!config.is_tool_enabled("screenshot"));
+        assert!(!config.is_tool_enabled("inject_css"));
+        assert!(!config.is_tool_enabled("navigate"));
+        assert!(config.is_tool_enabled("dom_snapshot"));
+        assert!(config.is_tool_enabled("get_window_state"));
+        assert!(config.redaction_enabled);
+    }
+
+    #[test]
+    fn redaction_when_enabled() {
+        let config = PrivacyConfig {
+            redaction_enabled: true,
+            ..Default::default()
+        };
+        let output = config.redact_output("key is sk-abc123def456ghi789jkl012mno");
+        assert!(output.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn no_redaction_when_disabled() {
+        let config = PrivacyConfig::default();
+        let input = "key is sk-abc123def456ghi789jkl012mno";
+        assert_eq!(config.redact_output(input), input);
+    }
+}

@@ -27,6 +27,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 raw-window-handle = "0.6"
 base64 = "0.22"
+regex = "1"
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }

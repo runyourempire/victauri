@@ -2,12 +2,14 @@ pub mod bridge;
 mod js_bridge;
 pub mod mcp;
 mod memory;
+pub mod privacy;
+pub mod redaction;
 pub(crate) mod screenshot;
 mod tools;
 
 pub mod auth;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
@@ -28,6 +30,7 @@ pub struct VictauriState {
     pub port: u16,
     pub pending_evals: PendingCallbacks,
     pub recorder: EventRecorder,
+    pub privacy: privacy::PrivacyConfig,
 }
 
 pub struct VictauriBuilder {
@@ -36,6 +39,11 @@ pub struct VictauriBuilder {
     recorder_capacity: usize,
     auth_token: Option<String>,
     disabled_tools: Vec<String>,
+    command_allowlist: Option<Vec<String>>,
+    command_blocklist: Vec<String>,
+    redaction_patterns: Vec<String>,
+    redaction_enabled: bool,
+    strict_privacy: bool,
 }
 
 impl Default for VictauriBuilder {
@@ -46,6 +54,11 @@ impl Default for VictauriBuilder {
             recorder_capacity: DEFAULT_RECORDER_CAPACITY,
             auth_token: None,
             disabled_tools: Vec::new(),
+            command_allowlist: None,
+            command_blocklist: Vec::new(),
+            redaction_patterns: Vec::new(),
+            redaction_enabled: false,
+            strict_privacy: false,
         }
     }
 }
@@ -85,6 +98,34 @@ impl VictauriBuilder {
         self
     }
 
+    pub fn command_allowlist(mut self, commands: &[&str]) -> Self {
+        self.command_allowlist = Some(commands.iter().map(|s| s.to_string()).collect());
+        self
+    }
+
+    pub fn command_blocklist(mut self, commands: &[&str]) -> Self {
+        self.command_blocklist = commands.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    pub fn add_redaction_pattern(mut self, pattern: impl Into<String>) -> Self {
+        self.redaction_patterns.push(pattern.into());
+        self
+    }
+
+    pub fn enable_redaction(mut self) -> Self {
+        self.redaction_enabled = true;
+        self
+    }
+
+    /// Enable strict privacy mode: disables dangerous tools (eval_js, screenshot,
+    /// inject_css, set_storage, delete_storage, navigate, set_dialog_response,
+    /// fill, type_text), enables output redaction with built-in PII patterns.
+    pub fn strict_privacy_mode(mut self) -> Self {
+        self.strict_privacy = true;
+        self
+    }
+
     fn resolve_port(&self) -> u16 {
         self.port
             .or_else(|| std::env::var("VICTAURI_PORT").ok()?.parse().ok())
@@ -95,6 +136,36 @@ impl VictauriBuilder {
         self.auth_token
             .clone()
             .or_else(|| std::env::var("VICTAURI_AUTH_TOKEN").ok())
+    }
+
+    fn build_privacy_config(&self) -> privacy::PrivacyConfig {
+        if self.strict_privacy {
+            let mut config = privacy::strict_privacy_config();
+            for cmd in &self.command_blocklist {
+                config.command_blocklist.insert(cmd.clone());
+            }
+            if let Some(ref allow) = self.command_allowlist {
+                config.command_allowlist = Some(allow.iter().cloned().collect());
+            }
+            for tool in &self.disabled_tools {
+                config.disabled_tools.insert(tool.clone());
+            }
+            if !self.redaction_patterns.is_empty() {
+                config.redactor = redaction::Redactor::new(&self.redaction_patterns);
+            }
+            config
+        } else {
+            privacy::PrivacyConfig {
+                command_allowlist: self
+                    .command_allowlist
+                    .as_ref()
+                    .map(|v| v.iter().cloned().collect::<HashSet<String>>()),
+                command_blocklist: self.command_blocklist.iter().cloned().collect(),
+                disabled_tools: self.disabled_tools.iter().cloned().collect(),
+                redactor: redaction::Redactor::new(&self.redaction_patterns),
+                redaction_enabled: self.redaction_enabled,
+            }
+        }
     }
 
     pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
@@ -109,7 +180,7 @@ impl VictauriBuilder {
             let event_capacity = self.event_capacity;
             let recorder_capacity = self.recorder_capacity;
             let auth_token = self.resolve_auth_token();
-            let disabled_tools = self.disabled_tools;
+            let privacy_config = self.build_privacy_config();
 
             Builder::new("victauri")
                 .setup(move |app, _api| {
@@ -122,26 +193,23 @@ impl VictauriBuilder {
                         port,
                         pending_evals: Arc::new(Mutex::new(HashMap::new())),
                         recorder: EventRecorder::new(recorder_capacity),
+                        privacy: privacy_config,
                     });
 
                     app.manage(state.clone());
 
                     if let Some(ref token) = auth_token {
                         tracing::info!(
-                            "Victauri MCP server auth token: {token} (set Authorization: Bearer {token})"
+                            "Victauri MCP server auth token: [REDACTED] (check VICTAURI_AUTH_TOKEN env var)"
                         );
+                        tracing::debug!("Auth token value: {token}");
                     }
 
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = mcp::start_server_with_options(
-                            app_handle,
-                            state,
-                            port,
-                            auth_token,
-                            disabled_tools,
-                        )
-                        .await
+                        if let Err(e) =
+                            mcp::start_server_with_options(app_handle, state, port, auth_token)
+                                .await
                         {
                             tracing::error!("Victauri MCP server failed to start: {e}");
                         }

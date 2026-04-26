@@ -4507,6 +4507,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "raw-window-handle",
+ "regex",
  "reqwest 0.12.28",
  "rmcp",
  "schemars 1.2.1",

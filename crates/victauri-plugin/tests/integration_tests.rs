@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -10,6 +10,7 @@ use victauri_core::{
 use victauri_plugin::VictauriState;
 use victauri_plugin::bridge::WebviewBridge;
 use victauri_plugin::mcp::{VictauriMcpHandler, build_app, build_app_with_options};
+use victauri_plugin::privacy::PrivacyConfig;
 
 // ── Mock Bridge ─────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ fn test_state() -> Arc<VictauriState> {
         port: 0,
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
+        privacy: Default::default(),
     })
 }
 
@@ -987,6 +989,7 @@ async fn state_port_reflected_in_info() {
         port: 9999,
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
+        privacy: Default::default(),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
@@ -1043,6 +1046,7 @@ fn builder_custom_port_reflected_in_state() {
         port: 8888,
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(500),
+        privacy: Default::default(),
     });
 
     assert_eq!(state.port, 8888);
@@ -1283,4 +1287,282 @@ fn generate_token_produces_valid_uuid() {
     let token = victauri_plugin::auth::generate_token();
     assert_eq!(token.len(), 36, "token should be a UUID");
     assert!(token.contains('-'), "token should be hyphenated UUID");
+}
+
+// ── Privacy integration tests ─────────────────────────────────────────────
+
+fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
+    Arc::new(VictauriState {
+        event_log: EventLog::new(1000),
+        registry: CommandRegistry::new(),
+        port: 0,
+        pending_evals: Arc::new(Mutex::new(HashMap::new())),
+        recorder: EventRecorder::new(1000),
+        privacy: config,
+    })
+}
+
+async fn start_privacy_test_server(config: PrivacyConfig, labels: &[&str]) -> String {
+    let state = privacy_state(config);
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(labels));
+    let app = build_app(state, bridge);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    format!("http://{addr}")
+}
+
+async fn mcp_session(base: &str) -> (reqwest::Client, String) {
+    let client = reqwest::Client::new();
+    let init_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0.1.0"}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let session_id = init_resp
+        .headers()
+        .get("mcp-session-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    (client, session_id)
+}
+
+#[tokio::test]
+async fn privacy_disabled_tools_hidden_from_list() {
+    let mut disabled = HashSet::new();
+    disabled.insert("eval_js".to_string());
+    disabled.insert("screenshot".to_string());
+    disabled.insert("inject_css".to_string());
+
+    let config = PrivacyConfig {
+        disabled_tools: disabled,
+        ..Default::default()
+    };
+
+    let base = start_privacy_test_server(config, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let tools_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body = tools_resp.text().await.unwrap();
+    assert!(
+        !body.contains("\"eval_js\""),
+        "eval_js should be hidden when disabled"
+    );
+    assert!(
+        !body.contains("\"screenshot\""),
+        "screenshot should be hidden when disabled"
+    );
+    assert!(
+        !body.contains("\"inject_css\""),
+        "inject_css should be hidden when disabled"
+    );
+    assert!(
+        body.contains("dom_snapshot"),
+        "non-disabled tools should still be listed"
+    );
+    assert!(
+        body.contains("get_window_state"),
+        "non-disabled tools should still be listed"
+    );
+}
+
+#[tokio::test]
+async fn privacy_disabled_tool_call_rejected() {
+    let mut disabled = HashSet::new();
+    disabled.insert("eval_js".to_string());
+
+    let config = PrivacyConfig {
+        disabled_tools: disabled,
+        ..Default::default()
+    };
+
+    let base = start_privacy_test_server(config, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let call_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "eval_js",
+                "arguments": {"code": "document.title"}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body = call_resp.text().await.unwrap();
+    assert!(
+        body.contains("disabled"),
+        "calling a disabled tool should return a disabled message, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn privacy_strict_mode_disables_dangerous_tools() {
+    let config = victauri_plugin::privacy::strict_privacy_config();
+
+    let base = start_privacy_test_server(config, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let tools_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body = tools_resp.text().await.unwrap();
+    for tool_name in &[
+        "eval_js",
+        "screenshot",
+        "inject_css",
+        "set_storage",
+        "delete_storage",
+        "navigate",
+        "set_dialog_response",
+        "fill",
+        "type_text",
+    ] {
+        assert!(
+            !body.contains(&format!("\"{tool_name}\"")),
+            "{tool_name} should be hidden in strict privacy mode"
+        );
+    }
+    assert!(
+        body.contains("dom_snapshot"),
+        "read-only tools should still be visible"
+    );
+    assert!(
+        body.contains("get_ipc_log"),
+        "read-only tools should still be visible"
+    );
+}
+
+#[tokio::test]
+async fn privacy_info_shows_privacy_mode() {
+    let mut disabled = HashSet::new();
+    disabled.insert("eval_js".to_string());
+    let config = PrivacyConfig {
+        disabled_tools: disabled,
+        ..Default::default()
+    };
+
+    let base = start_privacy_test_server(config, &["main"]).await;
+    let json: serde_json::Value = reqwest::get(format!("{base}/info"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        json["privacy_mode"], true,
+        "info should show privacy_mode: true when tools are disabled"
+    );
+}
+
+#[tokio::test]
+async fn privacy_info_shows_no_privacy_by_default() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let json: serde_json::Value = reqwest::get(format!("{base}/info"))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        json["privacy_mode"], false,
+        "info should show privacy_mode: false with default config"
+    );
+}
+
+#[tokio::test]
+async fn rate_limiter_returns_429_on_burst() {
+    let state = test_state();
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let app = build_app(state, bridge);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base = format!("http://{addr}");
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let mut got_429 = false;
+    for _ in 0..200 {
+        let resp = client.get(format!("{base}/info")).send().await.unwrap();
+        if resp.status() == 429 {
+            got_429 = true;
+            break;
+        }
+    }
+
+    assert!(
+        got_429,
+        "rate limiter should return 429 after exceeding limit"
+    );
 }

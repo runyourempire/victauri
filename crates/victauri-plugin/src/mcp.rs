@@ -2,16 +2,18 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    AnnotateAble, CallToolResult, Content, ListResourcesResult, PaginatedRequestParams,
-    RawResource, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
-    ServerCapabilities, ServerInfo, SubscribeRequestParams, UnsubscribeRequestParams,
+    AnnotateAble, CallToolRequestParams, CallToolResult, Content, ListResourcesResult,
+    ListToolsResult, PaginatedRequestParams, RawResource, ReadResourceRequestParams,
+    ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo, SubscribeRequestParams,
+    Tool, UnsubscribeRequestParams,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use tauri::Runtime;
@@ -459,11 +461,14 @@ impl VictauriMcpHandler {
         description = "Evaluate JavaScript in the Tauri webview and return the result. Async expressions are wrapped automatically."
     )]
     async fn eval_js(&self, Parameters(params): Parameters<EvalJsParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("eval_js") {
+            return tool_disabled("eval_js");
+        }
         match self
             .eval_with_return(&params.code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -501,6 +506,9 @@ impl VictauriMcpHandler {
         description = "Set the value of an input element by ref handle ID. Dispatches input and change events."
     )]
     async fn fill(&self, Parameters(params): Parameters<FillParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("fill") {
+            return tool_disabled("fill");
+        }
         let escaped_value = params.value.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
             "return window.__VICTAURI__?.fill('{}', '{}')",
@@ -520,6 +528,9 @@ impl VictauriMcpHandler {
         description = "Type text character-by-character into an element, simulating real keyboard events."
     )]
     async fn type_text(&self, Parameters(params): Parameters<TypeTextParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("type_text") {
+            return tool_disabled("type_text");
+        }
         let escaped_text = params.text.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!(
             "return window.__VICTAURI__?.type('{}', '{}')",
@@ -572,7 +583,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -880,12 +891,18 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Invoke a registered Tauri command via IPC, just like the frontend would. Goes through the real IPC pipeline so calls are logged and verifiable. Returns the command's result."
+        description = "Invoke a registered Tauri command via IPC, just like the frontend would. Goes through the real IPC pipeline so calls are logged and verifiable. Returns the command's result. Subject to privacy command filtering."
     )]
     async fn invoke_command(
         &self,
         Parameters(params): Parameters<InvokeCommandParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_command_allowed(&params.command) {
+            return tool_error(format!(
+                "command '{}' is blocked by privacy configuration",
+                params.command
+            ));
+        }
         let args_json = params.args.unwrap_or(serde_json::json!({}));
         let args_str = serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
         let escaped_cmd = params.command.replace('\\', "\\\\").replace('\'', "\\'");
@@ -894,7 +911,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(format!("invoke_command failed: {e}")),
         }
     }
@@ -903,6 +920,9 @@ impl VictauriMcpHandler {
         description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error."
     )]
     async fn screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("screenshot") {
+            return tool_disabled("screenshot");
+        }
         match self
             .bridge
             .get_native_handle(params.window_label.as_deref())
@@ -951,7 +971,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -1078,7 +1098,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -1106,7 +1126,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -1116,6 +1136,9 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<SetStorageParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("set_storage") {
+            return tool_disabled("set_storage");
+        }
         let method = match params.storage_type.as_str() {
             "session" => "setSessionStorage",
             _ => "setLocalStorage",
@@ -1138,6 +1161,9 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<DeleteStorageParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("delete_storage") {
+            return tool_disabled("delete_storage");
+        }
         let method = match params.storage_type.as_str() {
             "session" => "deleteSessionStorage",
             _ => "deleteLocalStorage",
@@ -1163,7 +1189,7 @@ impl VictauriMcpHandler {
             .eval_with_return(code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => self.redact_result(result),
             Err(e) => tool_error(e),
         }
     }
@@ -1187,8 +1213,16 @@ impl VictauriMcpHandler {
         }
     }
 
-    #[tool(description = "Navigate the webview to a URL.")]
+    #[tool(
+        description = "Navigate the webview to a URL. Blocks javascript:, data:, and vbscript: URLs."
+    )]
     async fn navigate(&self, Parameters(params): Parameters<NavigateParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("navigate") {
+            return tool_disabled("navigate");
+        }
+        if let Err(e) = validate_url(&params.url) {
+            return tool_error(e);
+        }
         let url = params.url.replace('\\', "\\\\").replace('\'', "\\'");
         let code = format!("return window.__VICTAURI__?.navigate('{url}')");
         match self
@@ -1241,6 +1275,9 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<SetDialogResponseParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("set_dialog_response") {
+            return tool_disabled("set_dialog_response");
+        }
         let dtype = params
             .dialog_type
             .replace('\\', "\\\\")
@@ -1420,16 +1457,21 @@ impl VictauriMcpHandler {
         Parameters(params): Parameters<HighlightElementParams>,
     ) -> CallToolResult {
         let color_arg = match &params.color {
-            Some(c) => format!("\"{}\"", c),
+            Some(c) => match sanitize_css_color(c) {
+                Ok(safe) => format!("\"{}\"", safe),
+                Err(e) => return tool_error(e),
+            },
             None => "null".to_string(),
         };
         let label_arg = match &params.label {
-            Some(l) => format!("\"{}\"", l),
+            Some(l) => format!("\"{}\"", l.replace('"', "\\\"").replace('\\', "\\\\")),
             None => "null".to_string(),
         };
         let code = format!(
             "return window.__VICTAURI__?.highlightElement(\"{}\", {}, {})",
-            params.ref_id, color_arg, label_arg
+            params.ref_id.replace('"', "\\\""),
+            color_arg,
+            label_arg
         );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -1459,6 +1501,9 @@ impl VictauriMcpHandler {
         description = "Inject custom CSS into the page. Replaces any previously injected CSS. Useful for debugging layout issues or prototyping style changes."
     )]
     async fn inject_css(&self, Parameters(params): Parameters<InjectCssParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("inject_css") {
+            return tool_disabled("inject_css");
+        }
         let escaped = params.css.replace('\\', "\\\\").replace('`', "\\`");
         let code = format!("return window.__VICTAURI__?.injectCss(`{}`)", escaped);
         match self
@@ -1527,6 +1572,11 @@ impl VictauriMcpHandler {
             bridge,
             subscriptions: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    fn redact_result(&self, output: String) -> CallToolResult {
+        let redacted = self.state.privacy.redact_output(&output);
+        CallToolResult::success(vec![Content::text(redacted)])
     }
 
     async fn eval_with_return(
@@ -1600,19 +1650,18 @@ impl VictauriMcpHandler {
     }
 }
 
-#[tool_handler(
-    instructions = "Victauri gives you X-ray vision and hands inside a running Tauri application. \
-                    You can evaluate JS, snapshot the DOM, interact with elements (click, double-click, \
-                    hover, fill, type, select, scroll, focus), press keys, invoke Tauri commands, \
-                    capture screenshots, manage windows (minimize, maximize, resize, move, close), \
-                    view IPC and network traffic, read/write browser storage, track navigation history, \
-                    handle dialogs, wait for conditions, search the command registry, monitor process memory, \
-                    record and replay sessions, inspect computed CSS styles, measure element bounding boxes, \
-                    draw debug overlays on elements, inject custom CSS, run accessibility audits (alt text, \
-                    labels, contrast, ARIA, heading hierarchy), get performance metrics (navigation timing, \
-                    resource loading, JS heap, long tasks, DOM stats), and subscribe to live resource \
-                    streams — all through MCP."
-)]
+const SERVER_INSTRUCTIONS: &str = "Victauri gives you X-ray vision and hands inside a running Tauri application. \
+You can evaluate JS, snapshot the DOM, interact with elements (click, double-click, \
+hover, fill, type, select, scroll, focus), press keys, invoke Tauri commands, \
+capture screenshots, manage windows (minimize, maximize, resize, move, close), \
+view IPC and network traffic, read/write browser storage, track navigation history, \
+handle dialogs, wait for conditions, search the command registry, monitor process memory, \
+record and replay sessions, inspect computed CSS styles, measure element bounding boxes, \
+draw debug overlays on elements, inject custom CSS, run accessibility audits (alt text, \
+labels, contrast, ARIA, heading hierarchy), get performance metrics (navigation timing, \
+resource loading, JS heap, long tasks, DOM stats), and subscribe to live resource \
+streams — all through MCP.";
+
 impl ServerHandler for VictauriMcpHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
@@ -1622,6 +1671,43 @@ impl ServerHandler for VictauriMcpHandler {
                 .enable_resources_subscribe()
                 .build(),
         )
+        .with_instructions(SERVER_INSTRUCTIONS)
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let all_tools = Self::tool_router().list_all();
+        let filtered: Vec<Tool> = all_tools
+            .into_iter()
+            .filter(|t| self.state.privacy.is_tool_enabled(t.name.as_ref()))
+            .collect();
+        Ok(ListToolsResult {
+            tools: filtered,
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let tool_name = request.name.as_ref();
+        if !self.state.privacy.is_tool_enabled(tool_name) {
+            return Ok(tool_disabled(tool_name));
+        }
+        let ctx = ToolCallContext::new(self, request, context);
+        Self::tool_router().call(ctx).await
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Tool> {
+        if !self.state.privacy.is_tool_enabled(name) {
+            return None;
+        }
+        Self::tool_router().get(name).cloned()
     }
 
     async fn list_resources(
@@ -1730,6 +1816,83 @@ fn tool_error(msg: impl Into<String>) -> CallToolResult {
     result
 }
 
+fn tool_disabled(name: &str) -> CallToolResult {
+    tool_error(format!(
+        "tool '{name}' is disabled by privacy configuration"
+    ))
+}
+
+fn validate_url(url: &str) -> Result<(), String> {
+    // Strip whitespace, control chars, and null bytes that browsers silently ignore
+    let normalized: String = url
+        .chars()
+        .filter(|c| !c.is_control() && !c.is_whitespace() && *c != '\0')
+        .collect();
+    let lower = normalized.to_lowercase();
+
+    // Decode percent-encoded scheme prefixes (e.g. java%73cript: -> javascript:)
+    let decoded = percent_decode_scheme(&lower);
+
+    for prefix in &["javascript:", "data:", "vbscript:", "livescript:"] {
+        if decoded.starts_with(prefix) || lower.starts_with(prefix) {
+            return Err(format!("{prefix} URLs are blocked for security"));
+        }
+    }
+    Ok(())
+}
+
+fn percent_decode_scheme(url: &str) -> String {
+    let colon_pos = match url.find(':') {
+        Some(p) => p,
+        None => return url.to_string(),
+    };
+    let scheme_part = &url[..colon_pos];
+    let mut decoded = String::with_capacity(scheme_part.len());
+    let bytes = scheme_part.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
+                decoded.push(byte as char);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i] as char);
+        i += 1;
+    }
+    decoded + &url[colon_pos..]
+}
+
+fn sanitize_css_color(color: &str) -> Result<String, String> {
+    let s = color.trim();
+    if s.len() > 100 {
+        return Err("CSS color value too long".to_string());
+    }
+    // Reject CSS escape sequences (\XX hex escapes)
+    if s.contains('\\') {
+        return Err("CSS escape sequences not allowed in color values".to_string());
+    }
+    let valid = s
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '#' | '(' | ')' | ',' | '.' | ' ' | '%' | '-'));
+    if !valid {
+        return Err("invalid characters in CSS color value".to_string());
+    }
+    if s.contains(';')
+        || s.contains('{')
+        || s.contains('}')
+        || s.to_lowercase().contains("url(")
+        || s.to_lowercase().contains("expression(")
+        || s.to_lowercase().contains("import")
+    {
+        return Err("invalid CSS color value".to_string());
+    }
+    Ok(s.to_string())
+}
+
 // ── Server startup ───────────────────────────────────────────────────────────
 
 pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> axum::Router {
@@ -1755,6 +1918,11 @@ pub fn build_app_with_options(
     let info_state = state.clone();
     let info_auth = auth_token.is_some();
 
+    let privacy_enabled = !state.privacy.disabled_tools.is_empty()
+        || state.privacy.command_allowlist.is_some()
+        || !state.privacy.command_blocklist.is_empty()
+        || state.privacy.redaction_enabled;
+
     let mut router = axum::Router::new()
         .route_service("/mcp", mcp_service)
         .route(
@@ -1770,6 +1938,7 @@ pub fn build_app_with_options(
                         "events_captured": s.event_log.len(),
                         "port": s.port,
                         "auth_required": info_auth,
+                        "privacy_mode": privacy_enabled,
                     }))
                 }
             }),
@@ -1781,6 +1950,12 @@ pub fn build_app_with_options(
             crate::auth::require_auth,
         ));
     }
+
+    let rate_limiter = crate::auth::default_rate_limiter();
+    router = router.layer(axum::middleware::from_fn_with_state(
+        rate_limiter,
+        crate::auth::rate_limit,
+    ));
 
     router.route("/health", axum::routing::get(|| async { "ok" }))
 }
@@ -1796,7 +1971,7 @@ pub async fn start_server<R: Runtime>(
     state: Arc<VictauriState>,
     port: u16,
 ) -> anyhow::Result<()> {
-    start_server_with_options(app_handle, state, port, None, Vec::new()).await
+    start_server_with_options(app_handle, state, port, None).await
 }
 
 pub async fn start_server_with_options<R: Runtime>(
@@ -1804,7 +1979,6 @@ pub async fn start_server_with_options<R: Runtime>(
     state: Arc<VictauriState>,
     port: u16,
     auth_token: Option<String>,
-    _disabled_tools: Vec<String>,
 ) -> anyhow::Result<()> {
     let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
     let app = build_app_with_options(state, bridge, auth_token);
