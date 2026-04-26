@@ -187,7 +187,7 @@ mod tests {
 
     #[tokio::test]
     async fn recovery_runs_echo() {
-        let cmd = if cfg!(windows) { "echo ok" } else { "echo ok" };
+        let cmd = "echo ok";
         let status = run_recovery(cmd).await.unwrap();
         assert!(status.success());
     }
