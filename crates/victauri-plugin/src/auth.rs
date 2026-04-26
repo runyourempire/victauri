@@ -176,13 +176,14 @@ mod tests {
 
     #[test]
     fn rate_limiter_concurrent_acquire() {
-        let limiter = Arc::new(RateLimiterState::new(100));
+        // Use a large bucket so time-based refills (1 per second) are negligible
+        let limiter = Arc::new(RateLimiterState::new(1000));
         let mut handles = vec![];
         for _ in 0..10 {
             let l = limiter.clone();
             handles.push(std::thread::spawn(move || {
                 let mut acquired = 0;
-                for _ in 0..20 {
+                for _ in 0..200 {
                     if l.try_acquire() {
                         acquired += 1;
                     }
@@ -191,7 +192,8 @@ mod tests {
             }));
         }
         let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-        assert_eq!(total, 100);
+        // All 1000 tokens should be dispensed; a time-based refill may add a few
+        assert!(total >= 1000 && total <= 1010);
     }
 
     #[test]

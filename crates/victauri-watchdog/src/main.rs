@@ -130,15 +130,23 @@ async fn run_recovery(cmd: &str) -> anyhow::Result<std::process::ExitStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
-    #[test]
-    fn config_defaults() {
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn clear_env() {
         unsafe {
             std::env::remove_var("VICTAURI_PORT");
             std::env::remove_var("VICTAURI_INTERVAL");
             std::env::remove_var("VICTAURI_MAX_FAILURES");
             std::env::remove_var("VICTAURI_ON_FAILURE");
         }
+    }
+
+    #[test]
+    fn config_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
         let config = Config::from_env();
         assert_eq!(config.port, 7373);
         assert_eq!(config.interval, Duration::from_secs(5));
@@ -148,6 +156,8 @@ mod tests {
 
     #[test]
     fn config_from_env_vars() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
         unsafe {
             std::env::set_var("VICTAURI_PORT", "9999");
             std::env::set_var("VICTAURI_INTERVAL", "10");
@@ -159,16 +169,13 @@ mod tests {
         assert_eq!(config.interval, Duration::from_secs(10));
         assert_eq!(config.max_failures, 5);
         assert_eq!(config.on_failure_cmd, Some("echo recovered".to_string()));
-        unsafe {
-            std::env::remove_var("VICTAURI_PORT");
-            std::env::remove_var("VICTAURI_INTERVAL");
-            std::env::remove_var("VICTAURI_MAX_FAILURES");
-            std::env::remove_var("VICTAURI_ON_FAILURE");
-        }
+        clear_env();
     }
 
     #[test]
     fn config_invalid_env_uses_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_env();
         unsafe {
             std::env::set_var("VICTAURI_PORT", "not_a_number");
             std::env::set_var("VICTAURI_INTERVAL", "abc");
@@ -178,11 +185,7 @@ mod tests {
         assert_eq!(config.port, 7373);
         assert_eq!(config.interval, Duration::from_secs(5));
         assert_eq!(config.max_failures, 3);
-        unsafe {
-            std::env::remove_var("VICTAURI_PORT");
-            std::env::remove_var("VICTAURI_INTERVAL");
-            std::env::remove_var("VICTAURI_MAX_FAILURES");
-        }
+        clear_env();
     }
 
     #[tokio::test]
