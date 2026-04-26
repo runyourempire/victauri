@@ -92,6 +92,7 @@ fn test_state() -> Arc<VictauriState> {
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
+        eval_timeout: std::time::Duration::from_secs(30),
     })
 }
 
@@ -990,6 +991,7 @@ async fn state_port_reflected_in_info() {
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
+        eval_timeout: std::time::Duration::from_secs(30),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
@@ -1047,6 +1049,7 @@ fn builder_custom_port_reflected_in_state() {
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(500),
         privacy: Default::default(),
+        eval_timeout: std::time::Duration::from_secs(30),
     });
 
     assert_eq!(state.port, 8888);
@@ -1299,6 +1302,7 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: config,
+        eval_timeout: std::time::Duration::from_secs(30),
     })
 }
 

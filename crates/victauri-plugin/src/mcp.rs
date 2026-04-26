@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
@@ -21,8 +20,6 @@ use tokio::sync::Mutex;
 
 use crate::VictauriState;
 use crate::bridge::WebviewBridge;
-
-const EVAL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Produce a properly escaped JavaScript string literal (with double quotes).
 /// Uses serde_json which handles all special characters: \n, \r, \0, \t,
@@ -1650,12 +1647,15 @@ impl VictauriMcpHandler {
             return Err(format!("eval injection failed: {e}"));
         }
 
-        match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
+        match tokio::time::timeout(self.state.eval_timeout, rx).await {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {
                 self.state.pending_evals.lock().await.remove(&id);
-                Err(format!("eval timed out after {}s", EVAL_TIMEOUT.as_secs()))
+                Err(format!(
+                    "eval timed out after {}s",
+                    self.state.eval_timeout.as_secs()
+                ))
             }
         }
     }

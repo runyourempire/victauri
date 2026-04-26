@@ -21,6 +21,7 @@ pub use victauri_macros::inspectable;
 const DEFAULT_PORT: u16 = 7373;
 const DEFAULT_EVENT_CAPACITY: usize = 10_000;
 const DEFAULT_RECORDER_CAPACITY: usize = 50_000;
+const DEFAULT_EVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub type PendingCallbacks = Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>;
 
@@ -31,12 +32,14 @@ pub struct VictauriState {
     pub pending_evals: PendingCallbacks,
     pub recorder: EventRecorder,
     pub privacy: privacy::PrivacyConfig,
+    pub eval_timeout: std::time::Duration,
 }
 
 pub struct VictauriBuilder {
     port: Option<u16>,
     event_capacity: usize,
     recorder_capacity: usize,
+    eval_timeout: std::time::Duration,
     auth_token: Option<String>,
     disabled_tools: Vec<String>,
     command_allowlist: Option<Vec<String>>,
@@ -52,6 +55,7 @@ impl Default for VictauriBuilder {
             port: None,
             event_capacity: DEFAULT_EVENT_CAPACITY,
             recorder_capacity: DEFAULT_RECORDER_CAPACITY,
+            eval_timeout: DEFAULT_EVAL_TIMEOUT,
             auth_token: None,
             disabled_tools: Vec::new(),
             command_allowlist: None,
@@ -80,6 +84,12 @@ impl VictauriBuilder {
 
     pub fn recorder_capacity(mut self, capacity: usize) -> Self {
         self.recorder_capacity = capacity;
+        self
+    }
+
+    /// Set the timeout for JavaScript eval operations (default: 30s).
+    pub fn eval_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.eval_timeout = timeout;
         self
     }
 
@@ -138,6 +148,14 @@ impl VictauriBuilder {
             .or_else(|| std::env::var("VICTAURI_AUTH_TOKEN").ok())
     }
 
+    fn resolve_eval_timeout(&self) -> std::time::Duration {
+        std::env::var("VICTAURI_EVAL_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(self.eval_timeout)
+    }
+
     fn build_privacy_config(&self) -> privacy::PrivacyConfig {
         if self.strict_privacy {
             let mut config = privacy::strict_privacy_config();
@@ -179,6 +197,7 @@ impl VictauriBuilder {
             let port = self.resolve_port();
             let event_capacity = self.event_capacity;
             let recorder_capacity = self.recorder_capacity;
+            let eval_timeout = self.resolve_eval_timeout();
             let auth_token = self.resolve_auth_token();
             let privacy_config = self.build_privacy_config();
 
@@ -194,6 +213,7 @@ impl VictauriBuilder {
                         pending_evals: Arc::new(Mutex::new(HashMap::new())),
                         recorder: EventRecorder::new(recorder_capacity),
                         privacy: privacy_config,
+                        eval_timeout,
                     });
 
                     app.manage(state.clone());
