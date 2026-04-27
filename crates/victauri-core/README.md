@@ -24,15 +24,21 @@ use victauri_core::{EventLog, CommandRegistry, CommandInfo};
 
 // Ring buffer with capacity 1000
 let log = EventLog::new(1000);
-log.push_ipc("greet".into(), serde_json::json!({"name": "world"}));
-assert_eq!(log.len(), 1);
+assert!(log.is_empty());
+assert_eq!(log.capacity(), 1000);
 
 // Command registry with search
-let mut registry = CommandRegistry::new();
+let registry = CommandRegistry::new();
 registry.register(CommandInfo {
-    name: "greet".into(),
-    description: Some("Greet the user".into()),
-    ..Default::default()
+    name: "greet".to_string(),
+    plugin: None,
+    description: Some("Greet the user".to_string()),
+    args: vec![],
+    return_type: None,
+    is_async: false,
+    intent: None,
+    category: None,
+    examples: vec![],
 });
 let results = registry.search("greet");
 assert_eq!(results.len(), 1);

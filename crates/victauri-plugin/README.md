@@ -28,13 +28,15 @@ Connect Claude Code (or any MCP client) to `http://127.0.0.1:7373/mcp`.
 
 Use `VictauriBuilder` for advanced setup:
 
-```rust
+```rust,ignore
 victauri_plugin::VictauriBuilder::new()
     .port(8080)
     .auth_token("my-secret-token")
-    .disable_tool("screenshot")
-    .redact_pattern(r"\b\d{3}-\d{2}-\d{4}\b")  // redact SSNs
+    .disable_tools(&["screenshot"])
+    .add_redaction_pattern(r"\b\d{3}-\d{2}-\d{4}\b")
+    .enable_redaction()
     .build()
+    .expect("valid config")
 ```
 
 ## Tools
