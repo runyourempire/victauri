@@ -18,9 +18,9 @@ authors = ["4DA Systems <hello@4da.ai>"]
 rust-version = "1.85"
 
 [workspace.dependencies]
-victauri-core = { path = "crates/victauri-core" }
-victauri-macros = { path = "crates/victauri-macros" }
-victauri-plugin = { path = "crates/victauri-plugin" }
+victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
+victauri-macros = { version = "0.1.0", path = "crates/victauri-macros" }
+victauri-plugin = { version = "0.1.0", path = "crates/victauri-plugin" }
 
 # Tauri
 tauri = { version = "2", default-features = false }

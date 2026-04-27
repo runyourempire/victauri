@@ -65,13 +65,13 @@ Connect Claude Code (or any MCP client):
 }
 ```
 
-## 55 MCP Tools
+## 58 MCP Tools
 
 | Category | Tools |
 |---|---|
 | **WebView** | `eval_js`, `dom_snapshot`, `click`, `double_click`, `hover`, `fill`, `type_text`, `press_key`, `select_option`, `scroll_to`, `focus_element` |
 | **Windows** | `get_window_state`, `list_windows`, `screenshot`, `manage_window`, `resize_window`, `move_window`, `set_window_title` |
-| **Backend** | `invoke_command`, `get_ipc_log`, `get_registry`, `get_memory_stats`, `get_console_logs` |
+| **Backend** | `invoke_command`, `get_ipc_log`, `get_registry`, `get_memory_stats`, `get_console_logs`, `slow_ipc_calls` |
 | **Network** | `get_network_log` |
 | **Storage** | `get_storage`, `set_storage`, `delete_storage`, `get_cookies` |
 | **Navigation** | `get_navigation_log`, `navigate`, `navigate_back` |
@@ -80,7 +80,7 @@ Connect Claude Code (or any MCP client):
 | **Streaming** | `get_event_stream` |
 | **Intent** | `resolve_command`, `assert_semantic` |
 | **Wait** | `wait_for` |
-| **Time-Travel** | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints` |
+| **Time-Travel** | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints`, `export_session`, `import_session` |
 | **CSS/Style** | `get_styles`, `get_bounding_boxes`, `inject_css`, `remove_injected_css` |
 | **Visual Debug** | `highlight_element`, `clear_highlights` |
 | **Accessibility** | `audit_accessibility` |
@@ -176,7 +176,7 @@ victauri/
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests (136)
+cargo test --workspace         # Run all tests (205)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check

@@ -5,18 +5,24 @@
 ```bash
 git clone https://github.com/runyourempire/victauri.git
 cd victauri
-cargo build
-cargo test
+cargo build --workspace
+cargo test --workspace
 ```
+
+Requires Rust 1.85+ (edition 2024).
 
 ## Running Tests
 
 ```bash
-cargo test                     # All tests (136)
-cargo test -p victauri-core    # Core crate only
-cargo test -p victauri-plugin  # Plugin crate only
-cargo bench -p victauri-core   # Criterion benchmarks
+cargo test --workspace          # All tests (205)
+cargo test -p victauri-core     # Core crate only
+cargo test -p victauri-plugin   # Plugin crate only
+cargo bench -p victauri-core    # Criterion benchmarks (13)
+cargo clippy --workspace -- -D warnings
+cargo fmt --all -- --check
 ```
+
+All three checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and macOS.
 
 ## Code Style
 
@@ -49,13 +55,16 @@ The demo app at `examples/demo-app/` exercises all command patterns. After chang
 cargo build -p demo-app
 ```
 
-## Reporting Issues
+## Publishing to crates.io
 
-Open an issue at https://github.com/runyourempire/victauri/issues with:
-- Tauri version
-- Victauri version
-- OS and architecture
-- Steps to reproduce
+Maintainers only. Publication order matters due to inter-crate dependencies:
+
+```bash
+cargo publish -p victauri-core
+cargo publish -p victauri-macros
+cargo publish -p victauri-plugin
+cargo publish -p victauri-watchdog
+```
 
 ## License
 
