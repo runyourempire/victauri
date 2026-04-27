@@ -404,11 +404,11 @@ impl VictauriBuilder {
                     Ok(())
                 })
                 .on_event(|app, event| {
-                    if let RunEvent::Exit = event {
-                        if let Some(state) = app.try_state::<Arc<VictauriState>>() {
-                            let _ = state.shutdown_tx.send(true);
-                            tracing::info!("Victauri shutdown signal sent");
-                        }
+                    if let RunEvent::Exit = event
+                        && let Some(state) = app.try_state::<Arc<VictauriState>>()
+                    {
+                        let _ = state.shutdown_tx.send(true);
+                        tracing::info!("Victauri shutdown signal sent");
                     }
                 })
                 .js_init_script(js_init)

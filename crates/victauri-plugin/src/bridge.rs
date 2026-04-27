@@ -42,10 +42,10 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
         let mut states = Vec::new();
 
         for (win_label, window) in &windows {
-            if let Some(filter) = label {
-                if win_label != filter {
-                    continue;
-                }
+            if let Some(filter) = label
+                && win_label != filter
+            {
+                continue;
             }
 
             let pos = window.outer_position().unwrap_or_default();

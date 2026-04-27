@@ -117,10 +117,10 @@ pub async fn victauri_get_window_state<R: Runtime>(
     let mut states = Vec::new();
 
     for (win_label, window) in &windows {
-        if let Some(ref filter) = label {
-            if win_label != filter {
-                continue;
-            }
+        if let Some(ref filter) = label
+            && win_label != filter
+        {
+            continue;
         }
 
         let pos = window.outer_position().unwrap_or_default();

@@ -119,15 +119,14 @@ impl VictauriClient {
         }
 
         let content = &body["result"]["content"];
-        if let Some(arr) = content.as_array() {
-            if let Some(first) = arr.first() {
-                if let Some(text) = first["text"].as_str() {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                        return Ok(parsed);
-                    }
-                    return Ok(Value::String(text.to_string()));
-                }
+        if let Some(arr) = content.as_array()
+            && let Some(first) = arr.first()
+            && let Some(text) = first["text"].as_str()
+        {
+            if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+                return Ok(parsed);
             }
+            return Ok(Value::String(text.to_string()));
         }
 
         Ok(body)
