@@ -142,6 +142,7 @@ pub struct GhostCommand {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum GhostSource {
     FrontendOnly,
     RegistryOnly,

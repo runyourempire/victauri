@@ -13,6 +13,10 @@ homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-watchdog"
 readme = "../../README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [[bin]]
 name = "victauri-watchdog"
 path = "src/main.rs"

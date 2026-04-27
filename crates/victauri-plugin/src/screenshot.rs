@@ -4,86 +4,118 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
-        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, ReleaseDC, SRCCOPY, SelectObject,
+        DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP, HDC, HGDIOBJ, ReleaseDC,
+        SRCCOPY, SelectObject,
     };
     use windows::Win32::Storage::Xps::{PW_CLIENTONLY, PrintWindow};
     use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
-    tokio::task::spawn_blocking(move || unsafe {
-        let hwnd = HWND(hwnd as *mut _);
-        let mut rect = std::mem::zeroed();
-        GetClientRect(hwnd, &mut rect)?;
+    /// RAII guard that releases GDI handles on drop, preventing leaks when
+    /// early returns (`?`) occur after handle acquisition.
+    struct GdiGuard {
+        hwnd: HWND,
+        hdc_screen: HDC,
+        hdc_mem: HDC,
+        hbmp: HBITMAP,
+        old: HGDIOBJ,
+    }
 
-        let width = rect.right - rect.left;
-        let height = rect.bottom - rect.top;
-        if width <= 0 || height <= 0 {
-            anyhow::bail!("window has zero area ({width}x{height})");
+    impl Drop for GdiGuard {
+        fn drop(&mut self) {
+            // SAFETY: All handles were acquired from valid Win32 GDI calls in
+            // the enclosing `capture_window` function. They must be released in
+            // reverse acquisition order: restore the original bitmap, delete the
+            // compatible bitmap, delete the memory DC, and release the screen DC.
+            unsafe {
+                SelectObject(self.hdc_mem, self.old);
+                let _ = DeleteObject(self.hbmp.into());
+                let _ = DeleteDC(self.hdc_mem);
+                ReleaseDC(Some(self.hwnd), self.hdc_screen);
+            }
         }
+    }
 
-        let hdc_screen = GetDC(Some(hwnd));
-        let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
-        let hbmp = CreateCompatibleBitmap(hdc_screen, width, height);
-        let old = SelectObject(hdc_mem, hbmp.into());
+    tokio::task::spawn_blocking(move || {
+        // SAFETY: All Win32 GDI calls operate on handles obtained from the
+        // provided `hwnd` window handle. The `GdiGuard` ensures every acquired
+        // handle is released even if an early `?` return occurs (e.g. BitBlt
+        // failure). The pixel buffer is correctly sized for the window
+        // dimensions before being passed to `GetDIBits`.
+        unsafe {
+            let hwnd = HWND(hwnd as *mut _);
+            let mut rect = std::mem::zeroed();
+            GetClientRect(hwnd, &mut rect)?;
 
-        let captured = PrintWindow(hwnd, hdc_mem, PW_CLIENTONLY);
-        if !captured.as_bool() {
-            BitBlt(
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+            if width <= 0 || height <= 0 {
+                anyhow::bail!("window has zero area ({width}x{height})");
+            }
+
+            let hdc_screen = GetDC(Some(hwnd));
+            let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
+            let hbmp = CreateCompatibleBitmap(hdc_screen, width, height);
+            let old = SelectObject(hdc_mem, hbmp.into());
+
+            let _guard = GdiGuard {
+                hwnd,
+                hdc_screen,
                 hdc_mem,
-                0,
-                0,
-                width,
-                height,
-                Some(hdc_screen),
-                0,
-                0,
-                SRCCOPY,
-            )?;
-        }
+                hbmp,
+                old,
+            };
 
-        let mut bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: -height, // top-down
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
+            let captured = PrintWindow(hwnd, hdc_mem, PW_CLIENTONLY);
+            if !captured.as_bool() {
+                BitBlt(
+                    hdc_mem,
+                    0,
+                    0,
+                    width,
+                    height,
+                    Some(hdc_screen),
+                    0,
+                    0,
+                    SRCCOPY,
+                )?;
+            }
+
+            let mut bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height, // top-down
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..std::mem::zeroed()
+                },
                 ..std::mem::zeroed()
-            },
-            ..std::mem::zeroed()
-        };
+            };
 
-        let row_bytes = (width as usize) * 4;
-        let mut pixels = vec![0u8; row_bytes * height as usize];
-        let rows = GetDIBits(
-            hdc_mem,
-            hbmp,
-            0,
-            height as u32,
-            Some(pixels.as_mut_ptr().cast()),
-            &mut bmi,
-            DIB_RGB_COLORS,
-        );
+            let row_bytes = (width as usize) * 4;
+            let mut pixels = vec![0u8; row_bytes * height as usize];
+            let rows = GetDIBits(
+                hdc_mem,
+                hbmp,
+                0,
+                height as u32,
+                Some(pixels.as_mut_ptr().cast()),
+                &mut bmi,
+                DIB_RGB_COLORS,
+            );
 
-        if rows == 0 {
-            SelectObject(hdc_mem, old);
-            let _ = DeleteObject(hbmp.into());
-            let _ = DeleteDC(hdc_mem);
-            ReleaseDC(Some(hwnd), hdc_screen);
-            anyhow::bail!("GetDIBits failed to read pixel data from window");
+            if rows == 0 {
+                anyhow::bail!("GetDIBits failed to read pixel data from window");
+            }
+
+            // BGRA → RGBA
+            for chunk in pixels.chunks_exact_mut(4) {
+                chunk.swap(0, 2);
+            }
+
+            encode_png(width as u32, height as u32, &pixels)
         }
-
-        // BGRA → RGBA
-        for chunk in pixels.chunks_exact_mut(4) {
-            chunk.swap(0, 2);
-        }
-
-        SelectObject(hdc_mem, old);
-        let _ = DeleteObject(hbmp.into());
-        let _ = DeleteDC(hdc_mem);
-        ReleaseDC(Some(hwnd), hdc_screen);
-
-        encode_png(width as u32, height as u32, &pixels)
     })
     .await?
 }

@@ -15,6 +15,10 @@ documentation = "https://docs.rs/victauri-plugin"
 readme = "../../README.md"
 exclude = ["tests/"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 victauri-core = { workspace = true }
 victauri-macros = { workspace = true }
@@ -26,6 +30,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }

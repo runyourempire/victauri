@@ -1,8 +1,10 @@
+#![deny(unsafe_code)]
 //! Core types and protocol for Victauri — full-stack introspection for Tauri apps via MCP.
 //!
 //! This crate provides the shared type system used by all Victauri crates.
 //! It has no Tauri dependency and can be used independently for testing.
 
+pub mod error;
 pub mod event;
 pub mod recording;
 pub mod registry;
@@ -10,6 +12,7 @@ pub mod snapshot;
 pub mod types;
 pub mod verification;
 
+pub use error::VictauriError;
 pub use event::{AppEvent, EventLog, IpcCall, IpcResult};
 pub use recording::{EventRecorder, RecordedEvent, RecordedSession, StateCheckpoint};
 pub use registry::{CommandArg, CommandInfo, CommandRegistry, ScoredCommand};

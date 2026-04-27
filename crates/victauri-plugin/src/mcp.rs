@@ -462,6 +462,10 @@ pub struct SlowIpcParams {
 
 // ── MCP Handler ──────────────────────────────────────────────────────────────
 
+/// Maximum number of in-flight JavaScript eval requests. Prevents unbounded
+/// growth of the `pending_evals` map if callbacks are never resolved.
+const MAX_PENDING_EVALS: usize = 100;
+
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
@@ -1405,14 +1409,18 @@ impl VictauriMcpHandler {
             .as_ref()
             .map(|v| js_string(v))
             .unwrap_or_else(|| "null".to_string());
-        let timeout = params.timeout_ms.unwrap_or(10000);
+        let timeout_ms = params.timeout_ms.unwrap_or(10000);
         let poll = params.poll_ms.unwrap_or(200);
         let code = format!(
-            "return window.__VICTAURI__?.waitFor({{ condition: {}, value: {value}, timeout_ms: {timeout}, poll_ms: {poll} }})",
+            "return window.__VICTAURI__?.waitFor({{ condition: {}, value: {value}, timeout_ms: {timeout_ms}, poll_ms: {poll} }})",
             js_string(&params.condition)
         );
+        // Give the Rust-side eval timeout extra headroom beyond the JS-side
+        // polling timeout so the JS promise has time to resolve or reject
+        // before we forcibly cancel it.
+        let eval_timeout = std::time::Duration::from_millis(timeout_ms + 5000);
         match self
-            .eval_with_return(&code, params.webview_label.as_deref())
+            .eval_with_return_timeout(&code, params.webview_label.as_deref(), eval_timeout)
             .await
         {
             Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1736,9 +1744,28 @@ impl VictauriMcpHandler {
         code: &str,
         webview_label: Option<&str>,
     ) -> Result<String, String> {
+        self.eval_with_return_timeout(code, webview_label, self.state.eval_timeout)
+            .await
+    }
+
+    async fn eval_with_return_timeout(
+        &self,
+        code: &str,
+        webview_label: Option<&str>,
+        timeout: std::time::Duration,
+    ) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.state.pending_evals.lock().await.insert(id.clone(), tx);
+
+        {
+            let mut pending = self.state.pending_evals.lock().await;
+            if pending.len() >= MAX_PENDING_EVALS {
+                return Err(format!(
+                    "too many concurrent eval requests (limit: {MAX_PENDING_EVALS})"
+                ));
+            }
+            pending.insert(id.clone(), tx);
+        }
 
         // Auto-prepend `return` so bare expressions produce a value.
         // Only skip for code that starts with a statement keyword where
@@ -1791,15 +1818,12 @@ impl VictauriMcpHandler {
             return Err(format!("eval injection failed: {e}"));
         }
 
-        match tokio::time::timeout(self.state.eval_timeout, rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {
                 self.state.pending_evals.lock().await.remove(&id);
-                Err(format!(
-                    "eval timed out after {}s",
-                    self.state.eval_timeout.as_secs()
-                ))
+                Err(format!("eval timed out after {}s", timeout.as_secs()))
             }
         }
     }
@@ -2081,7 +2105,11 @@ pub fn build_app_with_options(
         crate::auth::rate_limit,
     ));
 
-    router.route("/health", axum::routing::get(|| async { "ok" }))
+    router
+        .route("/health", axum::routing::get(|| async { "ok" }))
+        .layer(axum::middleware::from_fn(crate::auth::security_headers))
+        .layer(axum::middleware::from_fn(crate::auth::origin_guard))
+        .layer(axum::middleware::from_fn(crate::auth::dns_rebinding_guard))
 }
 
 pub mod tests_support {

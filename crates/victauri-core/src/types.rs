@@ -33,6 +33,7 @@ pub struct Divergence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum DivergenceSeverity {
     Info,
     Warning,

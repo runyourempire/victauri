@@ -15,6 +15,10 @@ fn process_memory_windows() -> serde_json::Value {
     use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use windows::Win32::System::Threading::GetCurrentProcess;
 
+    // SAFETY: `GetCurrentProcess()` returns a pseudo-handle that is always valid
+    // for the calling process. `PROCESS_MEMORY_COUNTERS` is a plain data struct
+    // that is safe to zero-initialize. `GetProcessMemoryInfo` reads into the
+    // provided buffer and does not take ownership of any resources.
     unsafe {
         let process = GetCurrentProcess();
         let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();

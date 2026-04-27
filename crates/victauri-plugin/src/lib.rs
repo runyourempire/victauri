@@ -32,6 +32,7 @@
 //! ```
 
 pub mod bridge;
+pub mod error;
 mod js_bridge;
 pub mod mcp;
 mod memory;

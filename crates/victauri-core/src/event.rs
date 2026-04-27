@@ -17,6 +17,7 @@ pub struct IpcCall {
 
 /// Outcome of an IPC call: pending, success with a JSON value, or error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum IpcResult {
     Pending,
     Ok(serde_json::Value),
@@ -26,6 +27,7 @@ pub enum IpcResult {
 /// Application event captured by the introspection layer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub enum AppEvent {
     Ipc(IpcCall),
     StateChange {

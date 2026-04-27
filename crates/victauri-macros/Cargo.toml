@@ -13,6 +13,10 @@ homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-macros"
 readme = "../../README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 proc-macro = true
 
