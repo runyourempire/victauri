@@ -21,10 +21,7 @@ impl VictauriClient {
     }
 
     /// Connect with an optional Bearer auth token.
-    pub async fn connect_with_token(
-        port: u16,
-        token: Option<&str>,
-    ) -> Result<Self, TestError> {
+    pub async fn connect_with_token(port: u16, token: Option<&str>) -> Result<Self, TestError> {
         let base_url = format!("http://127.0.0.1:{port}");
         let http = reqwest::Client::new();
 
@@ -90,11 +87,7 @@ impl VictauriClient {
     }
 
     /// Call an MCP tool by name and return the result content as JSON.
-    pub async fn call_tool(
-        &mut self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<Value, TestError> {
+    pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, TestError> {
         let id = self.next_id;
         self.next_id += 1;
 
@@ -173,10 +166,7 @@ impl VictauriClient {
     }
 
     /// Get the state of a specific window (or all windows).
-    pub async fn get_window_state(
-        &mut self,
-        label: Option<&str>,
-    ) -> Result<Value, TestError> {
+    pub async fn get_window_state(&mut self, label: Option<&str>) -> Result<Value, TestError> {
         let args = match label {
             Some(l) => json!({"label": l}),
             None => json!({}),
@@ -300,10 +290,7 @@ impl VictauriClient {
     }
 
     /// Start a time-travel recording session.
-    pub async fn start_recording(
-        &mut self,
-        session_id: Option<&str>,
-    ) -> Result<Value, TestError> {
+    pub async fn start_recording(&mut self, session_id: Option<&str>) -> Result<Value, TestError> {
         let args = match session_id {
             Some(id) => json!({"session_id": id}),
             None => json!({}),
@@ -391,10 +378,7 @@ pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb:
         );
     }
 
-    if let Some(heap) = metrics
-        .pointer("/js_heap/used_mb")
-        .and_then(|v| v.as_f64())
-    {
+    if let Some(heap) = metrics.pointer("/js_heap/used_mb").and_then(|v| v.as_f64()) {
         assert!(
             heap <= max_heap_mb,
             "JS heap is {heap}MB, budget is {max_heap_mb}MB"
