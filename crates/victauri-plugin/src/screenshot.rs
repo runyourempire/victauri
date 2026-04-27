@@ -310,6 +310,20 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
 #[cfg(target_os = "linux")]
 #[allow(dead_code)]
 pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
+    // Try X11 first (works on X11 and XWayland)
+    match capture_window_x11(window_id).await {
+        Ok(png) => return Ok(png),
+        Err(x11_err) => {
+            tracing::debug!("X11 screenshot failed, trying Wayland fallback: {x11_err}");
+        }
+    }
+
+    // Wayland fallback: use grim to capture the full screen
+    capture_window_wayland().await
+}
+
+#[cfg(target_os = "linux")]
+async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{ConnectionExt, ImageFormat};
 
@@ -364,6 +378,38 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         encode_png(width, height, &rgba)
     })
     .await?
+}
+
+/// Wayland fallback: captures the full screen using `grim`.
+///
+/// On pure Wayland (no XWayland), X11 window IDs cannot be mapped to Wayland
+/// surfaces, so per-window capture is not possible. This function captures the
+/// entire screen instead. The `grim` tool must be installed on the system.
+#[cfg(target_os = "linux")]
+async fn capture_window_wayland() -> anyhow::Result<Vec<u8>> {
+    use tokio::process::Command;
+
+    // grim outputs PNG to stdout when given "-" as the output path
+    let output = Command::new("grim")
+        .arg("-t")
+        .arg("png")
+        .arg("-")
+        .output()
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Wayland screenshot failed: grim not found ({e}). \
+                 Screenshot requires X11 or grim (Wayland). \
+                 Install grim: https://github.com/emersion/grim"
+            )
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("grim failed: {stderr}");
+    }
+
+    Ok(output.stdout)
 }
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]

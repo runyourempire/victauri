@@ -4,6 +4,7 @@ members = [
     "crates/victauri-plugin",
     "crates/victauri-macros",
     "crates/victauri-core",
+    "crates/victauri-test",
     "crates/victauri-watchdog",
     "examples/demo-app",
 ]
@@ -21,6 +22,7 @@ rust-version = "1.85"
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
 victauri-macros = { version = "0.1.0", path = "crates/victauri-macros" }
 victauri-plugin = { version = "0.1.0", path = "crates/victauri-plugin" }
+victauri-test = { version = "0.1.0", path = "crates/victauri-test" }
 
 # Tauri
 tauri = { version = "2", default-features = false }

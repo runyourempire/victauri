@@ -1,0 +1,25 @@
+[package]
+name = "victauri-test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Test assertion helpers for Victauri-powered Tauri app testing"
+authors.workspace = true
+rust-version.workspace = true
+keywords = ["tauri", "mcp", "testing", "assertions", "integration-test"]
+categories = ["development-tools::testing"]
+homepage = "https://github.com/runyourempire/victauri"
+documentation = "https://docs.rs/victauri-test"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
