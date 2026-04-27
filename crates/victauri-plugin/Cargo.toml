@@ -12,7 +12,7 @@ keywords = ["tauri", "mcp", "plugin", "testing", "ai-agent"]
 categories = ["development-tools::testing", "gui"]
 homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-plugin"
-readme = "../../README.md"
+readme = "README.md"
 exclude = ["tests/"]
 
 [package.metadata.docs.rs]
@@ -45,6 +45,11 @@ tauri-plugin = { version = "2", features = ["build"] }
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 uuid = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["composite"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

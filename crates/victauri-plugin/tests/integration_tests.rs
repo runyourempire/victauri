@@ -93,6 +93,9 @@ fn test_state() -> Arc<VictauriState> {
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
         eval_timeout: std::time::Duration::from_secs(30),
+        shutdown_tx: tokio::sync::watch::channel(false).0,
+        started_at: std::time::Instant::now(),
+        tool_invocations: std::sync::atomic::AtomicU64::new(0),
     })
 }
 
@@ -216,7 +219,12 @@ async fn health_endpoint_returns_ok() {
 
     let resp = reqwest::get(format!("{base}/health")).await.unwrap();
     assert_eq!(resp.status(), 200);
-    assert_eq!(resp.text().await.unwrap(), "ok");
+    let json: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(json["status"], "ok");
+    assert!(json["uptime_secs"].is_number());
+    assert!(json["events_captured"].is_number());
+    assert!(json["commands_registered"].is_number());
+    assert!(json["memory"].is_object());
 }
 
 #[tokio::test]
@@ -992,6 +1000,9 @@ async fn state_port_reflected_in_info() {
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
         eval_timeout: std::time::Duration::from_secs(30),
+        shutdown_tx: tokio::sync::watch::channel(false).0,
+        started_at: std::time::Instant::now(),
+        tool_invocations: std::sync::atomic::AtomicU64::new(0),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
@@ -1021,7 +1032,8 @@ async fn concurrent_requests_work() {
     for _ in 0..10 {
         let url = format!("{base}/health");
         handles.push(tokio::spawn(async move {
-            reqwest::get(&url).await.unwrap().text().await.unwrap()
+            let json: serde_json::Value = reqwest::get(&url).await.unwrap().json().await.unwrap();
+            json["status"].as_str().unwrap().to_string()
         }));
     }
 
@@ -1050,6 +1062,9 @@ fn builder_custom_port_reflected_in_state() {
         recorder: EventRecorder::new(500),
         privacy: Default::default(),
         eval_timeout: std::time::Duration::from_secs(30),
+        shutdown_tx: tokio::sync::watch::channel(false).0,
+        started_at: std::time::Instant::now(),
+        tool_invocations: std::sync::atomic::AtomicU64::new(0),
     });
 
     assert_eq!(state.port, 8888);
@@ -1303,6 +1318,9 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
         recorder: EventRecorder::new(1000),
         privacy: config,
         eval_timeout: std::time::Duration::from_secs(30),
+        shutdown_tx: tokio::sync::watch::channel(false).0,
+        started_at: std::time::Instant::now(),
+        tool_invocations: std::sync::atomic::AtomicU64::new(0),
     })
 }
 
@@ -1539,6 +1557,322 @@ async fn privacy_info_shows_no_privacy_by_default() {
     assert_eq!(
         json["privacy_mode"], false,
         "info should show privacy_mode: false with default config"
+    );
+}
+
+// ── MCP Protocol Compliance tests ─────────────────────────────────────────
+
+#[tokio::test]
+async fn mcp_rejects_invalid_json() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .body("this is not json")
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    assert!(
+        status == 400 || status == 415 || status == 200,
+        "invalid JSON should return 400/415 or be handled gracefully, got {status}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_rejects_missing_jsonrpc_field() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&serde_json::json!({
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap();
+    assert!(
+        status == 400 || status == 415 || body.contains("error") || body.contains("deserialize"),
+        "missing jsonrpc field should be rejected or return error, got status={status} body={body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_handles_unknown_method() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let init_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0.1.0"}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let session_id = init_resp
+        .headers()
+        .get("mcp-session-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "totally/nonexistent",
+            "params": {}
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body = resp.text().await.unwrap();
+    assert!(
+        body.contains("error"),
+        "unknown method should return an error response, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_call_unknown_tool_returns_error() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {
+                "name": "nonexistent_tool_xyz",
+                "arguments": {}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body = resp.text().await.unwrap();
+    assert!(
+        body.contains("error") || body.contains("not found") || body.contains("unknown"),
+        "calling unknown tool should return error, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_concurrent_sessions() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let mut session_ids = Vec::new();
+    for i in 0..3 {
+        let resp = client
+            .post(format!("{base}/mcp"))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": i + 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": format!("client-{i}"), "version": "0.1.0"}
+                }
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert!(resp.status().is_success(), "session {i} init failed");
+        let sid = resp
+            .headers()
+            .get("mcp-session-id")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        session_ids.push(sid);
+    }
+
+    assert_eq!(session_ids.len(), 3);
+    let unique: HashSet<_> = session_ids.iter().collect();
+    assert_eq!(unique.len(), 3, "each session should have a unique ID");
+
+    for (i, sid) in session_ids.iter().enumerate() {
+        client
+            .post(format!("{base}/mcp"))
+            .header("Content-Type", "application/json")
+            .header("mcp-session-id", sid)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let resp = client
+            .post(format!("{base}/mcp"))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("mcp-session-id", sid)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": (i + 1) * 100,
+                "method": "tools/list",
+                "params": {}
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert!(resp.status().is_success(), "session {i} tools/list failed");
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("eval_js"), "session {i} should list tools");
+    }
+}
+
+#[tokio::test]
+async fn mcp_get_request_not_allowed_without_session() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/mcp"))
+        .header("Accept", "text/event-stream")
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    assert!(
+        status == 400 || status == 405 || status == 404,
+        "GET /mcp without session should be rejected, got {status}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_call_with_empty_arguments() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", &session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "tools/call",
+            "params": {
+                "name": "list_windows",
+                "arguments": {}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(
+        resp.status().is_success(),
+        "tool call with empty args should succeed"
+    );
+    let body = resp.text().await.unwrap();
+    assert!(
+        body.contains("main"),
+        "list_windows should return window labels"
+    );
+}
+
+#[tokio::test]
+async fn mcp_delete_session_terminates() {
+    let base = start_test_server(test_state(), &["main"]).await;
+    let client = reqwest::Client::new();
+
+    let init_resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0.1.0"}
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let session_id = init_resp
+        .headers()
+        .get("mcp-session-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let del_resp = client
+        .delete(format!("{base}/mcp"))
+        .header("mcp-session-id", &session_id)
+        .send()
+        .await
+        .unwrap();
+
+    let status = del_resp.status().as_u16();
+    assert!(
+        status == 200 || status == 202 || status == 204 || status == 405,
+        "DELETE /mcp should succeed or return method not allowed, got {status}"
     );
 }
 

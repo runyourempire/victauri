@@ -11,7 +11,7 @@ keywords = ["tauri", "mcp", "watchdog", "health-check", "monitoring"]
 categories = ["development-tools::testing"]
 homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-watchdog"
-readme = "../../README.md"
+readme = "README.md"
 
 [package.metadata.docs.rs]
 all-features = true

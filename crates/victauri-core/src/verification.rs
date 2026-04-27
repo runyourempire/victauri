@@ -6,6 +6,16 @@ use serde::{Deserialize, Serialize};
 
 // ── Cross-boundary state verification ───────────────────────────────────────
 
+/// Compares frontend and backend state trees, returning all divergences found.
+///
+/// ```
+/// use victauri_core::verification::verify_state;
+/// use serde_json::json;
+///
+/// let result = verify_state(json!({"title": "App"}), json!({"title": "App"}));
+/// assert!(result.passed);
+/// assert!(result.divergences.is_empty());
+/// ```
 pub fn verify_state(
     frontend_state: serde_json::Value,
     backend_state: serde_json::Value,
@@ -127,27 +137,39 @@ fn classify_severity(
 
 // ── Ghost command detection ─────────────────────────────────────────────────
 
+/// Report of ghost commands -- commands that exist on only one side of the IPC boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GhostCommandReport {
+    /// Commands found on only the frontend or only the backend.
     pub ghost_commands: Vec<GhostCommand>,
+    /// Total unique commands observed from the frontend.
     pub total_frontend_commands: usize,
+    /// Total commands registered in the backend registry.
     pub total_registry_commands: usize,
 }
 
+/// A command that exists on only one side of the frontend/backend boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GhostCommand {
+    /// Command name as invoked or registered.
     pub name: String,
+    /// Which side the command was found on.
     pub source: GhostSource,
+    /// Optional description, if available from the registry.
     pub description: Option<String>,
 }
 
+/// Indicates which side of the IPC boundary a ghost command was found on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum GhostSource {
+    /// Command invoked from the frontend but not registered in the backend.
     FrontendOnly,
+    /// Command registered in the backend but never invoked from the frontend.
     RegistryOnly,
 }
 
+/// Detects commands that exist on only one side of the IPC boundary (frontend vs registry).
 pub fn detect_ghost_commands(
     frontend_commands: &[String],
     registry: &CommandRegistry,
@@ -193,35 +215,56 @@ pub fn detect_ghost_commands(
 
 // ── IPC round-trip integrity ────────────────────────────────────────────────
 
+/// Summary of IPC round-trip health: completed, pending, errored, and stale calls.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcIntegrityReport {
+    /// Total number of IPC calls analyzed.
     pub total_calls: usize,
+    /// Calls that completed successfully.
     pub completed: usize,
+    /// Calls still awaiting a response.
     pub pending: usize,
+    /// Calls that returned an error.
     pub errored: usize,
+    /// Pending calls that have exceeded the staleness threshold.
     pub stale_calls: Vec<StaleCall>,
+    /// Calls that resulted in errors.
     pub error_calls: Vec<ErrorCall>,
+    /// True if there are no stale or errored calls.
     pub healthy: bool,
 }
 
+/// An IPC call that has been pending longer than the staleness threshold.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StaleCall {
+    /// Unique call identifier.
     pub id: String,
+    /// Name of the invoked command.
     pub command: String,
+    /// When the call was initiated.
     pub timestamp: DateTime<Utc>,
+    /// How long the call has been pending, in milliseconds.
     pub age_ms: i64,
+    /// Webview that initiated the call.
     pub webview_label: String,
 }
 
+/// An IPC call that returned an error result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorCall {
+    /// Unique call identifier.
     pub id: String,
+    /// Name of the invoked command.
     pub command: String,
+    /// When the call was initiated.
     pub timestamp: DateTime<Utc>,
+    /// Error message returned by the backend.
     pub error: String,
+    /// Webview that initiated the call.
     pub webview_label: String,
 }
 
+/// Analyzes the event log for IPC health, flagging stale and errored calls.
 pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> IpcIntegrityReport {
     let now = Utc::now();
     let calls = event_log.ipc_calls();
@@ -276,22 +319,46 @@ pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> Ipc
 
 // ── Semantic test assertions ────────────────────────────────────────────────
 
+/// A declarative assertion to evaluate against a runtime value (e.g. "equals", "truthy").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticAssertion {
+    /// Human-readable label describing what is being asserted.
     pub label: String,
+    /// Condition operator: "equals", "contains", "greater_than", "truthy", etc.
     pub condition: String,
+    /// Expected value to compare against (interpretation depends on condition).
     pub expected: serde_json::Value,
 }
 
+/// Outcome of evaluating a semantic assertion against an actual value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssertionResult {
+    /// Label from the original assertion.
     pub label: String,
+    /// Whether the assertion passed.
     pub passed: bool,
+    /// The actual value that was evaluated.
     pub actual: serde_json::Value,
+    /// The expected value from the assertion.
     pub expected: serde_json::Value,
+    /// Failure message explaining why the assertion failed, if it did.
     pub message: Option<String>,
 }
 
+/// Evaluates a semantic assertion against an actual runtime value.
+///
+/// ```
+/// use victauri_core::verification::{evaluate_assertion, SemanticAssertion};
+/// use serde_json::json;
+///
+/// let assertion = SemanticAssertion {
+///     label: "check count".to_string(),
+///     condition: "equals".to_string(),
+///     expected: json!(42),
+/// };
+/// let result = evaluate_assertion(json!(42), &assertion);
+/// assert!(result.passed);
+/// ```
 pub fn evaluate_assertion(
     actual: serde_json::Value,
     assertion: &SemanticAssertion,

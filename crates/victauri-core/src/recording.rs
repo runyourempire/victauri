@@ -8,26 +8,39 @@ use crate::event::{AppEvent, IpcCall};
 /// A snapshot of application state taken at a specific point during recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateCheckpoint {
+    /// Unique identifier for this checkpoint.
     pub id: String,
+    /// Optional human-readable label for the checkpoint.
     pub label: Option<String>,
+    /// When the checkpoint was created.
     pub timestamp: DateTime<Utc>,
+    /// Serialized application state at the checkpoint.
     pub state: serde_json::Value,
+    /// Index into the event stream at the time of this checkpoint.
     pub event_index: usize,
 }
 
 /// A complete recorded session with events and state checkpoints. Serializable for export/import.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordedSession {
+    /// Unique session identifier (UUID).
     pub id: String,
+    /// When the recording session began.
     pub started_at: DateTime<Utc>,
+    /// All events captured during the session, in order.
     pub events: Vec<RecordedEvent>,
+    /// State checkpoints created during the session.
     pub checkpoints: Vec<StateCheckpoint>,
 }
 
+/// A single event captured during a recording session, with its sequence index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordedEvent {
+    /// Monotonically increasing sequence number within the recording session.
     pub index: usize,
+    /// When the event occurred.
     pub timestamp: DateTime<Utc>,
+    /// The captured application event.
     pub event: AppEvent,
 }
 
@@ -51,6 +64,15 @@ struct ActiveRecording {
 }
 
 impl EventRecorder {
+    /// Creates a new recorder with the given maximum event capacity.
+    ///
+    /// ```
+    /// use victauri_core::EventRecorder;
+    ///
+    /// let recorder = EventRecorder::new(1000);
+    /// assert!(!recorder.is_recording());
+    /// assert_eq!(recorder.event_count(), 0);
+    /// ```
     pub fn new(max_events: usize) -> Self {
         Self {
             recording: Arc::new(Mutex::new(None)),
@@ -58,6 +80,7 @@ impl EventRecorder {
         }
     }
 
+    /// Starts a new recording session; returns false if one is already active.
     pub fn start(&self, session_id: String) -> bool {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if rec.is_some() {
@@ -75,6 +98,7 @@ impl EventRecorder {
         true
     }
 
+    /// Stops the active recording and returns the completed session, or None if not recording.
     pub fn stop(&self) -> Option<RecordedSession> {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         rec.take().map(|r| RecordedSession {
@@ -85,6 +109,7 @@ impl EventRecorder {
         })
     }
 
+    /// Returns true if a recording session is currently active.
     pub fn is_recording(&self) -> bool {
         self.recording
             .lock()
@@ -92,6 +117,7 @@ impl EventRecorder {
             .is_some()
     }
 
+    /// Appends an event to the active recording, evicting the oldest if at capacity.
     pub fn record_event(&self, event: AppEvent) {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
@@ -111,6 +137,7 @@ impl EventRecorder {
         }
     }
 
+    /// Creates a named state checkpoint at the current event index; returns false if not recording.
     pub fn checkpoint(&self, id: String, label: Option<String>, state: serde_json::Value) -> bool {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
@@ -131,6 +158,7 @@ impl EventRecorder {
         }
     }
 
+    /// Returns the number of events recorded so far, or 0 if not recording.
     pub fn event_count(&self) -> usize {
         self.recording
             .lock()
@@ -140,6 +168,7 @@ impl EventRecorder {
             .unwrap_or(0)
     }
 
+    /// Returns the number of checkpoints created so far, or 0 if not recording.
     pub fn checkpoint_count(&self) -> usize {
         self.recording
             .lock()
@@ -149,6 +178,7 @@ impl EventRecorder {
             .unwrap_or(0)
     }
 
+    /// Returns all events with an index >= the given value.
     pub fn events_since(&self, index: usize) -> Vec<RecordedEvent> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -162,6 +192,7 @@ impl EventRecorder {
         }
     }
 
+    /// Returns events whose timestamps fall within the given inclusive range.
     pub fn events_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<RecordedEvent> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -175,6 +206,7 @@ impl EventRecorder {
         }
     }
 
+    /// Returns all checkpoints from the active recording session.
     pub fn get_checkpoints(&self) -> Vec<StateCheckpoint> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -183,6 +215,7 @@ impl EventRecorder {
         }
     }
 
+    /// Returns events recorded between two named checkpoints, or None if either ID is unknown.
     pub fn events_between_checkpoints(
         &self,
         from_checkpoint_id: &str,
@@ -218,6 +251,7 @@ impl EventRecorder {
         )
     }
 
+    /// Extracts IPC calls in order from the recording for replay.
     pub fn ipc_replay_sequence(&self) -> Vec<IpcCall> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {

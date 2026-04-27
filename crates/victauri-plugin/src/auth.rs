@@ -5,15 +5,19 @@ use axum::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Generate a random UUID v4 token suitable for Bearer authentication.
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// Shared authentication state holding the optional Bearer token for the MCP server.
 #[derive(Clone)]
 pub struct AuthState {
+    /// The expected Bearer token, or `None` if authentication is disabled.
     pub token: Option<String>,
 }
 
+/// Axum middleware that validates the `Authorization: Bearer <token>` header against [`AuthState`].
 pub async fn require_auth(
     axum::extract::State(auth): axum::extract::State<Arc<AuthState>>,
     request: Request,
@@ -45,7 +49,7 @@ pub async fn require_auth(
 
 // ── Rate Limiter ───────────────────────────────────────────────────────────
 
-/// Uses millisecond-precision timestamps for smooth token refill.
+/// Lock-free token-bucket rate limiter using millisecond-precision timestamps for smooth refill.
 pub struct RateLimiterState {
     tokens: AtomicU64,
     max_tokens: u64,
@@ -61,6 +65,7 @@ fn now_ms() -> u64 {
 }
 
 impl RateLimiterState {
+    /// Create a rate limiter with the given maximum requests per second.
     pub fn new(max_requests_per_sec: u64) -> Self {
         Self {
             tokens: AtomicU64::new(max_requests_per_sec),
@@ -70,6 +75,7 @@ impl RateLimiterState {
         }
     }
 
+    /// Atomically consume one token, returning `true` if the request is allowed.
     pub fn try_acquire(&self) -> bool {
         self.refill();
         loop {
@@ -118,6 +124,7 @@ impl RateLimiterState {
     }
 }
 
+/// Axum middleware that rejects requests with 429 when the token bucket is exhausted.
 pub async fn rate_limit(
     axum::extract::State(limiter): axum::extract::State<Arc<RateLimiterState>>,
     request: Request,
@@ -132,6 +139,7 @@ pub async fn rate_limit(
 
 const DEFAULT_RATE_LIMIT: u64 = 100;
 
+/// Create a rate limiter with the default capacity of 100 requests per second.
 pub fn default_rate_limiter() -> Arc<RateLimiterState> {
     Arc::new(RateLimiterState::new(DEFAULT_RATE_LIMIT))
 }
@@ -147,8 +155,12 @@ pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Respons
         .get("host")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let host_name = host.split(':').next().unwrap_or(host);
-    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1" | "[::1]" | "");
+    let host_name = if host.starts_with('[') {
+        host.split(']').next().map(|s| &s[1..]).unwrap_or(host)
+    } else {
+        host.split(':').next().unwrap_or(host)
+    };
+    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1" | "");
     if !is_allowed {
         tracing::warn!("DNS rebinding attempt blocked: Host={host}");
         return Err(StatusCode::FORBIDDEN);
@@ -201,6 +213,15 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::Router;
+    use axum::body::Body;
+    use axum::middleware;
+    use axum::routing::get;
+    use tower::ServiceExt; // for oneshot
+
+    async fn ok_handler() -> &'static str {
+        "ok"
+    }
 
     #[test]
     fn token_generation_is_unique() {
@@ -272,5 +293,198 @@ mod tests {
     fn rate_limiter_zero_capacity() {
         let limiter = RateLimiterState::new(0);
         assert!(!limiter.try_acquire());
+    }
+
+    // ── DNS Rebinding Guard tests ─────────────────────────────────────────
+
+    fn dns_rebinding_router() -> Router {
+        Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn(dns_rebinding_guard))
+    }
+
+    fn dns_request(host: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().uri("/test");
+        if let Some(h) = host {
+            builder = builder.header("host", h);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_localhost() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("localhost"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_127_0_0_1() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("127.0.0.1"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_ipv6_bracketed() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("[::1]"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_ipv6_bracketed_with_port() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("[::1]:7373"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_ipv6_bare() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("::1"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_allows_empty_host() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_blocks_evil_com() {
+        let app = dns_rebinding_router();
+        let resp = app.oneshot(dns_request(Some("evil.com"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_blocks_localhost_subdomain() {
+        let app = dns_rebinding_router();
+        let resp = app
+            .oneshot(dns_request(Some("localhost.evil.com")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn dns_rebinding_blocks_ip_subdomain() {
+        let app = dns_rebinding_router();
+        let resp = app
+            .oneshot(dns_request(Some("127.0.0.1.evil.com")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── Origin Guard tests ────────────────────────────────────────────────
+
+    fn origin_router() -> Router {
+        Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn(origin_guard))
+    }
+
+    fn origin_request(origin: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().uri("/test");
+        if let Some(o) = origin {
+            builder = builder.header("origin", o);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn origin_allows_no_origin() {
+        let app = origin_router();
+        let resp = app.oneshot(origin_request(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_allows_localhost_http() {
+        let app = origin_router();
+        let resp = app
+            .oneshot(origin_request(Some("http://localhost:3000")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_allows_127_0_0_1_https() {
+        let app = origin_router();
+        let resp = app
+            .oneshot(origin_request(Some("https://127.0.0.1:8080")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_allows_tauri_scheme() {
+        let app = origin_router();
+        let resp = app
+            .oneshot(origin_request(Some("tauri://localhost")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_allows_null() {
+        let app = origin_router();
+        let resp = app.oneshot(origin_request(Some("null"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn origin_blocks_evil_com() {
+        let app = origin_router();
+        let resp = app
+            .oneshot(origin_request(Some("http://evil.com")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── Security Headers tests ────────────────────────────────────────────
+
+    fn security_headers_router() -> Router {
+        Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn(security_headers))
+    }
+
+    #[tokio::test]
+    async fn security_headers_x_content_type_options() {
+        let app = security_headers_router();
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_headers_cache_control() {
+        let app = security_headers_router();
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("cache-control").unwrap(), "no-store");
+    }
+
+    #[tokio::test]
+    async fn security_headers_x_frame_options() {
+        let app = security_headers_router();
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
     }
 }

@@ -59,6 +59,7 @@ pub struct Redactor {
 }
 
 impl Redactor {
+    /// Build a redactor with custom patterns, returning an error if any pattern is invalid.
     pub fn try_new(custom_patterns: &[String]) -> Result<Self, regex::Error> {
         let builtin_set = RegexSet::new(BUILTIN_PATTERNS)?;
         let builtin_compiled: Vec<regex::Regex> = BUILTIN_PATTERNS
@@ -85,6 +86,7 @@ impl Redactor {
         })
     }
 
+    /// Build a redactor with custom patterns, logging a warning and skipping any invalid patterns.
     pub fn new(custom_patterns: &[String]) -> Self {
         let builtin_set =
             RegexSet::new(BUILTIN_PATTERNS).expect("builtin redaction patterns must compile");
@@ -119,6 +121,7 @@ impl Redactor {
         }
     }
 
+    /// Scrub sensitive data from `input` using regex patterns and JSON-key matching.
     pub fn redact(&self, input: &str) -> String {
         let mut output = self.redact_regex(input);
         output = self.redact_json_keys(&output);

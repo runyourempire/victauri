@@ -11,7 +11,7 @@ keywords = ["tauri", "mcp", "proc-macro", "introspection", "instrumentation"]
 categories = ["development-tools::testing", "development-tools::procedural-macro-helpers"]
 homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-macros"
-readme = "../../README.md"
+readme = "README.md"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -963,10 +963,11 @@ const INIT_SCRIPT_BODY: &str = r#"
 
     var mutationBatchCount = 0;
     var mutationBatchTimer = null;
+    var __mutationObserver = null;
 
     function startMutationObserver() {
         if (!document.documentElement) return false;
-        var observer = new MutationObserver(function(mutations) {
+        __mutationObserver = new MutationObserver(function(mutations) {
             mutationBatchCount += mutations.length;
             if (!mutationBatchTimer) {
                 mutationBatchTimer = setTimeout(function() {
@@ -977,7 +978,7 @@ const INIT_SCRIPT_BODY: &str = r#"
                 }, 100);
             }
         });
-        observer.observe(document.documentElement, {
+        __mutationObserver.observe(document.documentElement, {
             childList: true, subtree: true, attributes: true, characterData: true,
         });
         return true;
@@ -1086,6 +1087,24 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Dialog Capture ───────────────────────────────────────────────────────
 
     var dialogAutoResponses = { alert: { action: 'accept' }, confirm: { action: 'accept' }, prompt: { action: 'accept', text: '' } };
+
+    // ── Resource Cleanup ────────────────────────────────────────────────────
+
+    window.addEventListener('pagehide', function() {
+        if (__mutationObserver) { __mutationObserver.disconnect(); __mutationObserver = null; }
+        if (mutationBatchTimer) { clearTimeout(mutationBatchTimer); mutationBatchTimer = null; }
+        console.log = originalConsole.log;
+        console.warn = originalConsole.warn;
+        console.error = originalConsole.error;
+        console.info = originalConsole.info;
+        console.debug = originalConsole.debug;
+        consoleLogs.length = 0;
+        mutationLog.length = 0;
+        networkLog.length = 0;
+        navigationLog.length = 0;
+        dialogLog.length = 0;
+        refMap.clear();
+    });
 
     (function captureDialogs() {
         window.alert = function(msg) {

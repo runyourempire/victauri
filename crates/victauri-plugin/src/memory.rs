@@ -58,3 +58,45 @@ fn process_memory_fallback() -> serde_json::Value {
 
     serde_json::json!({ "error": "memory stats not available on this platform" })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_stats_returns_json_object() {
+        let stats = current_stats();
+        assert!(
+            stats.is_object(),
+            "current_stats() should return a JSON object"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_stats_has_working_set_key() {
+        let stats = current_stats();
+        assert!(
+            stats.get("working_set_bytes").is_some(),
+            "Windows stats should contain working_set_bytes"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_stats_values_are_reasonable() {
+        let stats = current_stats();
+        let working_set = stats["working_set_bytes"]
+            .as_u64()
+            .expect("working_set_bytes should be a u64");
+        let peak = stats["peak_working_set_bytes"]
+            .as_u64()
+            .expect("peak_working_set_bytes should be a u64");
+
+        assert!(working_set > 0, "working_set_bytes should be > 0");
+        assert!(
+            peak >= working_set,
+            "peak_working_set_bytes should be >= working_set_bytes"
+        );
+    }
+}

@@ -11,7 +11,7 @@ keywords = ["tauri", "mcp", "introspection", "testing", "desktop"]
 categories = ["development-tools::testing", "gui"]
 homepage = "https://github.com/runyourempire/victauri"
 documentation = "https://docs.rs/victauri-core"
-readme = "../../README.md"
+readme = "README.md"
 exclude = ["tests/", "benches/"]
 
 [package.metadata.docs.rs]

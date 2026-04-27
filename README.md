@@ -27,8 +27,6 @@ Playwright sees the DOM. Victauri sees the DOM, the IPC bridge, the command regi
 ## What It Doesn't Do (Yet)
 
 - **No multi-window orchestration** — tools operate on the primary webview
-- **No Linux screenshots** — Windows and macOS only
-- **No persistent recording** — sessions live in memory, lost on restart
 - **No production use** — gated behind `#[cfg(debug_assertions)]`, debug builds only
 - **No remote access** — localhost only, by design
 - **Early project** — API surface may change between versions
@@ -177,7 +175,7 @@ victauri/
 
 ```bash
 cargo build                    # Build all crates
-cargo test --workspace         # Run all tests (205)
+cargo test --workspace         # Run all tests (287)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
@@ -211,7 +209,7 @@ Because Victauri compiles away in release builds, CI runs debug builds to get in
 ## Roadmap
 
 - [ ] Multi-window tool targeting
-- [ ] Linux screenshot support
+- [x] Linux screenshot support (X11 via x11rb)
 - [x] Session persistence (`export_session` / `import_session` tools)
 - [x] Benchmark suite with real response time data
 - [x] IPC performance analysis (`slow_ipc_calls` tool)

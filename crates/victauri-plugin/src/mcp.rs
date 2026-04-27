@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
@@ -470,11 +471,14 @@ const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
 
+const BRIDGE_VERSION: &str = "0.2.0";
+
 #[derive(Clone)]
 pub struct VictauriMcpHandler {
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
     subscriptions: Arc<Mutex<HashSet<String>>>,
+    bridge_checked: Arc<AtomicBool>,
 }
 
 #[tool_router]
@@ -1697,7 +1701,8 @@ impl VictauriMcpHandler {
             .collect();
 
         let result = serde_json::json!({
-            "version": "0.1.0",
+            "version": env!("CARGO_PKG_VERSION"),
+            "bridge_version": BRIDGE_VERSION,
             "port": self.state.port,
             "tools": {
                 "total": all_tools.len(),
@@ -1717,6 +1722,8 @@ impl VictauriMcpHandler {
                 "eval_timeout_secs": self.state.eval_timeout.as_secs(),
             },
             "registered_commands": self.state.registry.count(),
+            "tool_invocations": self.state.tool_invocations.load(std::sync::atomic::Ordering::Relaxed),
+            "uptime_secs": self.state.started_at.elapsed().as_secs(),
         });
         match serde_json::to_string_pretty(&result) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -1731,6 +1738,7 @@ impl VictauriMcpHandler {
             state,
             bridge,
             subscriptions: Arc::new(Mutex::new(HashSet::new())),
+            bridge_checked: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1819,13 +1827,45 @@ impl VictauriMcpHandler {
         }
 
         match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(result)) => Ok(result),
+            Ok(Ok(result)) => {
+                self.check_bridge_version_once();
+                Ok(result)
+            }
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {
                 self.state.pending_evals.lock().await.remove(&id);
                 Err(format!("eval timed out after {}s", timeout.as_secs()))
             }
         }
+    }
+
+    fn check_bridge_version_once(&self) {
+        if self.bridge_checked.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let handler = self.clone();
+        tokio::spawn(async move {
+            match handler
+                .eval_with_return_timeout(
+                    "window.__VICTAURI__?.version",
+                    None,
+                    std::time::Duration::from_secs(5),
+                )
+                .await
+            {
+                Ok(v) => {
+                    let v = v.trim_matches('"');
+                    if v != BRIDGE_VERSION {
+                        tracing::warn!(
+                            "Bridge version mismatch: Rust expects {BRIDGE_VERSION}, JS reports {v}"
+                        );
+                    } else {
+                        tracing::debug!("Bridge version verified: {v}");
+                    }
+                }
+                Err(e) => tracing::debug!("Bridge version check skipped: {e}"),
+            }
+        });
     }
 }
 
@@ -1874,12 +1914,26 @@ impl ServerHandler for VictauriMcpHandler {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
-        let tool_name = request.name.as_ref();
-        if !self.state.privacy.is_tool_enabled(tool_name) {
-            return Ok(tool_disabled(tool_name));
+        let tool_name: String = request.name.as_ref().to_owned();
+        if !self.state.privacy.is_tool_enabled(&tool_name) {
+            tracing::debug!(tool = %tool_name, "tool call blocked by privacy config");
+            return Ok(tool_disabled(&tool_name));
         }
+        self.state
+            .tool_invocations
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let start = std::time::Instant::now();
+        tracing::debug!(tool = %tool_name, "tool invocation started");
         let ctx = ToolCallContext::new(self, request, context);
-        Self::tool_router().call(ctx).await
+        let result = Self::tool_router().call(ctx).await;
+        let elapsed = start.elapsed();
+        tracing::debug!(
+            tool = %tool_name,
+            elapsed_ms = elapsed.as_millis() as u64,
+            is_error = result.as_ref().map(|r| r.is_error.unwrap_or(false)).unwrap_or(true),
+            "tool invocation completed"
+        );
+        result
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {
@@ -2063,6 +2117,7 @@ pub fn build_app_with_options(
     let auth_state = Arc::new(crate::auth::AuthState {
         token: auth_token.clone(),
     });
+    let health_state = state.clone();
     let info_state = state.clone();
     let info_auth = auth_token.is_some();
 
@@ -2106,7 +2161,21 @@ pub fn build_app_with_options(
     ));
 
     router
-        .route("/health", axum::routing::get(|| async { "ok" }))
+        .route(
+            "/health",
+            axum::routing::get(move || {
+                let s = health_state.clone();
+                async move {
+                    axum::Json(serde_json::json!({
+                        "status": "ok",
+                        "uptime_secs": s.started_at.elapsed().as_secs(),
+                        "events_captured": s.event_log.len(),
+                        "commands_registered": s.registry.count(),
+                        "memory": crate::memory::current_stats(),
+                    }))
+                }
+            }),
+        )
         .layer(axum::middleware::from_fn(crate::auth::security_headers))
         .layer(axum::middleware::from_fn(crate::auth::origin_guard))
         .layer(axum::middleware::from_fn(crate::auth::dns_rebinding_guard))
@@ -2122,8 +2191,9 @@ pub async fn start_server<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: Arc<VictauriState>,
     port: u16,
+    shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
-    start_server_with_options(app_handle, state, port, None).await
+    start_server_with_options(app_handle, state, port, None, shutdown_rx).await
 }
 
 pub async fn start_server_with_options<R: Runtime>(
@@ -2131,6 +2201,7 @@ pub async fn start_server_with_options<R: Runtime>(
     state: Arc<VictauriState>,
     port: u16,
     auth_token: Option<String>,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
     let app = build_app_with_options(state, bridge, auth_token);
@@ -2138,7 +2209,12 @@ pub async fn start_server_with_options<R: Runtime>(
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
     tracing::info!("Victauri MCP server listening on 127.0.0.1:{port}");
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.wait_for(|&v| v).await;
+            tracing::info!("Victauri MCP server shutting down gracefully");
+        })
+        .await?;
     Ok(())
 }
 

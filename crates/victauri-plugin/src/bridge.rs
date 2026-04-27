@@ -1,14 +1,23 @@
 use tauri::{Manager, Runtime};
 use victauri_core::WindowState;
 
+/// Runtime-erased interface for webview access, allowing the MCP server to interact with Tauri windows without generic parameters.
 pub trait WebviewBridge: Send + Sync {
+    /// Execute JavaScript in the target webview (defaults to "main" or first visible window).
     fn eval_webview(&self, label: Option<&str>, script: &str) -> Result<(), String>;
+    /// Retrieve the state of one or all windows (position, size, visibility, focus, URL).
     fn get_window_states(&self, label: Option<&str>) -> Vec<WindowState>;
+    /// Return the labels of all open webview windows.
     fn list_window_labels(&self) -> Vec<String>;
+    /// Return the platform-native window handle (HWND on Windows) for screenshot capture.
     fn get_native_handle(&self, label: Option<&str>) -> Result<isize, String>;
+    /// Perform a window management action (minimize, maximize, close, show, hide, etc.).
     fn manage_window(&self, label: Option<&str>, action: &str) -> Result<String, String>;
+    /// Set the logical size of a window in device-independent pixels.
     fn resize_window(&self, label: Option<&str>, width: u32, height: u32) -> Result<(), String>;
+    /// Set the logical position of a window in device-independent pixels.
     fn move_window(&self, label: Option<&str>, x: i32, y: i32) -> Result<(), String>;
+    /// Set the title bar text of a window.
     fn set_window_title(&self, label: Option<&str>, title: &str) -> Result<(), String>;
 }
 

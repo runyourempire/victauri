@@ -45,10 +45,13 @@ pub mod auth;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use tauri::plugin::{Builder, TauriPlugin};
-use tauri::{Manager, Runtime};
-use tokio::sync::{Mutex, oneshot};
+use tauri::{Manager, RunEvent, Runtime};
+use tokio::sync::{Mutex, oneshot, watch};
 use victauri_core::{CommandRegistry, EventLog, EventRecorder};
+
+pub use error::BuilderError;
 
 pub use victauri_macros::inspectable;
 
@@ -77,6 +80,12 @@ pub struct VictauriState {
     pub privacy: privacy::PrivacyConfig,
     /// Timeout for JavaScript eval operations.
     pub eval_timeout: std::time::Duration,
+    /// Sends `true` to signal graceful MCP server shutdown.
+    pub shutdown_tx: watch::Sender<bool>,
+    /// Instant the plugin was initialized, for uptime tracking.
+    pub started_at: std::time::Instant,
+    /// Total number of MCP tool invocations since startup.
+    pub tool_invocations: AtomicU64,
 }
 
 /// Builder for configuring the Victauri plugin before adding it to a Tauri app.
@@ -274,14 +283,50 @@ impl VictauriBuilder {
         }
     }
 
-    pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
+    fn validate(&self) -> Result<(), BuilderError> {
+        let port = self.resolve_port();
+        if port == 0 {
+            return Err(BuilderError::InvalidPort {
+                port,
+                reason: "port 0 is reserved".to_string(),
+            });
+        }
+
+        if self.event_capacity == 0 || self.event_capacity > 1_000_000 {
+            return Err(BuilderError::InvalidEventCapacity {
+                capacity: self.event_capacity,
+                reason: "must be between 1 and 1,000,000".to_string(),
+            });
+        }
+
+        if self.recorder_capacity == 0 || self.recorder_capacity > 1_000_000 {
+            return Err(BuilderError::InvalidRecorderCapacity {
+                capacity: self.recorder_capacity,
+                reason: "must be between 1 and 1,000,000".to_string(),
+            });
+        }
+
+        let timeout = self.resolve_eval_timeout();
+        if timeout.as_secs() == 0 || timeout.as_secs() > 300 {
+            return Err(BuilderError::InvalidEvalTimeout {
+                timeout_secs: timeout.as_secs(),
+                reason: "must be between 1 and 300 seconds".to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub fn build<R: Runtime>(self) -> Result<TauriPlugin<R>, BuilderError> {
         #[cfg(not(debug_assertions))]
         {
-            Builder::new("victauri").build()
+            Ok(Builder::new("victauri").build())
         }
 
         #[cfg(debug_assertions)]
         {
+            self.validate()?;
+
             let port = self.resolve_port();
             let event_capacity = self.event_capacity;
             let recorder_capacity = self.recorder_capacity;
@@ -291,10 +336,11 @@ impl VictauriBuilder {
             let on_ready = self.on_ready;
             let js_init = js_bridge::init_script(&self.bridge_capacities);
 
-            Builder::new("victauri")
+            Ok(Builder::new("victauri")
                 .setup(move |app, _api| {
                     let event_log = EventLog::new(event_capacity);
                     let registry = CommandRegistry::new();
+                    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
                     let state = Arc::new(VictauriState {
                         event_log,
@@ -304,6 +350,9 @@ impl VictauriBuilder {
                         recorder: EventRecorder::new(recorder_capacity),
                         privacy: privacy_config,
                         eval_timeout,
+                        shutdown_tx,
+                        started_at: std::time::Instant::now(),
+                        tool_invocations: AtomicU64::new(0),
                     });
 
                     app.manage(state.clone());
@@ -318,13 +367,15 @@ impl VictauriBuilder {
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
                         match mcp::start_server_with_options(
-                            app_handle, state, port, auth_token,
+                            app_handle, state, port, auth_token, shutdown_rx,
                         )
                         .await
                         {
-                            Ok(()) => {}
+                            Ok(()) => {
+                                tracing::info!("Victauri MCP server stopped");
+                            }
                             Err(e) => {
-                                tracing::error!("Victauri MCP server failed to start: {e}");
+                                tracing::error!("Victauri MCP server failed: {e}");
                             }
                         }
                     });
@@ -352,6 +403,14 @@ impl VictauriBuilder {
                     tracing::info!("Victauri plugin initialized — MCP server on port {port}");
                     Ok(())
                 })
+                .on_event(|app, event| {
+                    if let RunEvent::Exit = event {
+                        if let Some(state) = app.try_state::<Arc<VictauriState>>() {
+                            let _ = state.shutdown_tx.send(true);
+                            tracing::info!("Victauri shutdown signal sent");
+                        }
+                    }
+                })
                 .js_init_script(js_init)
                 .invoke_handler(tauri::generate_handler![
                     tools::victauri_eval_js,
@@ -366,7 +425,7 @@ impl VictauriBuilder {
                     tools::victauri_detect_ghost_commands,
                     tools::victauri_check_ipc_integrity,
                 ])
-                .build()
+                .build())
         }
     }
 }
@@ -381,7 +440,9 @@ impl VictauriBuilder {
 ///
 /// For custom configuration, use `VictauriBuilder::new().port(8080).build()`.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
-    VictauriBuilder::new().build()
+    VictauriBuilder::new()
+        .build()
+        .expect("default Victauri configuration is always valid")
 }
 
 #[cfg(test)]
@@ -542,5 +603,69 @@ mod tests {
         assert!(script.contains("CAP_CONSOLE = 1000"));
         assert!(script.contains("CAP_NETWORK = 1000"));
         assert!(script.contains("window.__VICTAURI__"));
+    }
+
+    #[test]
+    fn builder_validates_defaults() {
+        let builder = VictauriBuilder::new();
+        assert!(builder.validate().is_ok());
+    }
+
+    #[test]
+    fn builder_rejects_zero_port() {
+        let builder = VictauriBuilder::new().port(0);
+        let err = builder.validate().unwrap_err();
+        assert!(matches!(err, BuilderError::InvalidPort { port: 0, .. }));
+    }
+
+    #[test]
+    fn builder_rejects_zero_event_capacity() {
+        let builder = VictauriBuilder::new().event_capacity(0);
+        let err = builder.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            BuilderError::InvalidEventCapacity { capacity: 0, .. }
+        ));
+    }
+
+    #[test]
+    fn builder_rejects_excessive_event_capacity() {
+        let builder = VictauriBuilder::new().event_capacity(2_000_000);
+        assert!(builder.validate().is_err());
+    }
+
+    #[test]
+    fn builder_rejects_zero_recorder_capacity() {
+        let builder = VictauriBuilder::new().recorder_capacity(0);
+        assert!(builder.validate().is_err());
+    }
+
+    #[test]
+    fn builder_rejects_zero_eval_timeout() {
+        let builder = VictauriBuilder::new().eval_timeout(std::time::Duration::from_secs(0));
+        assert!(builder.validate().is_err());
+    }
+
+    #[test]
+    fn builder_rejects_excessive_eval_timeout() {
+        let builder = VictauriBuilder::new().eval_timeout(std::time::Duration::from_secs(600));
+        assert!(builder.validate().is_err());
+    }
+
+    #[test]
+    fn builder_accepts_edge_values() {
+        let builder = VictauriBuilder::new()
+            .port(1)
+            .event_capacity(1)
+            .recorder_capacity(1)
+            .eval_timeout(std::time::Duration::from_secs(1));
+        assert!(builder.validate().is_ok());
+
+        let builder = VictauriBuilder::new()
+            .port(65535)
+            .event_capacity(1_000_000)
+            .recorder_capacity(1_000_000)
+            .eval_timeout(std::time::Duration::from_secs(300));
+        assert!(builder.validate().is_ok());
     }
 }

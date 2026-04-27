@@ -307,7 +307,66 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
     .await?
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt, ImageFormat};
+
+    tokio::task::spawn_blocking(move || {
+        let (conn, _screen_num) =
+            x11rb::connect(None).map_err(|e| anyhow::anyhow!("X11 connect failed: {e}"))?;
+
+        let window = window_id as u32;
+        let geom = conn
+            .get_geometry(window)
+            .map_err(|e| anyhow::anyhow!("get_geometry failed: {e}"))?
+            .reply()
+            .map_err(|e| anyhow::anyhow!("get_geometry reply failed: {e}"))?;
+
+        let width = geom.width as u32;
+        let height = geom.height as u32;
+        if width == 0 || height == 0 {
+            anyhow::bail!("window has zero area ({width}x{height})");
+        }
+
+        let image = conn
+            .get_image(
+                ImageFormat::Z_PIXMAP,
+                window,
+                0,
+                0,
+                geom.width,
+                geom.height,
+                !0,
+            )
+            .map_err(|e| anyhow::anyhow!("get_image failed: {e}"))?
+            .reply()
+            .map_err(|e| anyhow::anyhow!("get_image reply failed: {e}"))?;
+
+        let data = image.data;
+        let depth = image.depth;
+
+        let rgba = if depth == 32 || depth == 24 {
+            // X11 ZPixmap with depth 24/32 is typically BGRA or BGRx
+            let mut pixels = Vec::with_capacity(data.len());
+            for chunk in data.chunks_exact(4) {
+                pixels.push(chunk[2]); // R
+                pixels.push(chunk[1]); // G
+                pixels.push(chunk[0]); // B
+                pixels.push(if depth == 32 { chunk[3] } else { 255 }); // A
+            }
+            pixels
+        } else {
+            anyhow::bail!("unsupported X11 depth: {depth} (expected 24 or 32)");
+        };
+
+        encode_png(width, height, &rgba)
+    })
+    .await?
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 #[allow(dead_code)]
 pub async fn capture_window(_window_id: isize) -> anyhow::Result<Vec<u8>> {
     anyhow::bail!("screenshot capture not yet implemented for this platform")

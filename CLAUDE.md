@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests (157)
+cargo test                     # Run all tests (287)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
@@ -148,9 +148,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
-## Current State (2026-04-26)
+## Current State (2026-04-28)
 
-**All 8 phases complete.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 157 tests pass (70 core + 4 macro + 39 plugin unit + 44 plugin integration) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
+**All 8 phases complete + production hardening.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 287 tests pass (115 core + 4 macro + 105 plugin unit + 52 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
@@ -245,7 +245,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - **bridge.rs** — `WebviewBridge` trait (public) erases the Tauri `Runtime` generic, allowing the MCP handler (which can't be generic) to access webview windows via `Arc<dyn WebviewBridge>`. 8 methods: eval_webview, get_window_states, list_window_labels, get_native_handle, manage_window, resize_window, move_window, set_window_title. Impl provided for `AppHandle<R: Runtime>`. Testable via mock implementations.
 - **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `build_app()` constructs the axum `Router` independently of Tauri (testable). `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation. `VictauriMcpHandler::new()` public constructor for testing.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
-- **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Both use the same custom PNG encoder (raw zlib stored blocks + CRC32 + Adler32). Linux: returns error (not yet implemented).
+- **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Linux: X11 `GetImage` (BGRA ZPixmap) → RGBA via `x11rb`. All platforms use the same custom PNG encoder (raw zlib stored blocks + CRC32 + Adler32).
 - **auth.rs** — Optional Bearer token authentication. `require_auth` axum middleware skips `/health` but protects `/mcp` and `/info`. Token from `VictauriBuilder::auth_token()`, `generate_auth_token()`, or `VICTAURI_AUTH_TOKEN` env var.
 - **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.2.0 includes network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, and waitFor polling. Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
 - **IPC interception** — Tauri 2.0 freezes `__TAURI_INTERNALS__` and all its methods (`invoke`, `ipc`, `postMessage`) with `configurable:false, writable:false`. Plugin init scripts run AFTER Tauri's core init, so monkey-patching is impossible. Instead, IPC is derived from the network log: Tauri sends all IPC via `fetch()` to `http://ipc.localhost/<command>`, and our fetch interceptor captures these. `getIpcLog()` filters networkLog entries for `ipc.localhost` URLs, extracts command names from the URL path, and excludes `plugin:victauri|` calls. This approach is robust against Tauri version changes and works on all platforms.

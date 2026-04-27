@@ -6,12 +6,19 @@ use std::sync::{Arc, Mutex};
 /// A single Tauri IPC call with timing, result, and source webview.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcCall {
+    /// Unique call identifier for correlation.
     pub id: String,
+    /// Name of the Tauri command that was invoked.
     pub command: String,
+    /// When the call was initiated.
     pub timestamp: DateTime<Utc>,
+    /// Round-trip duration in milliseconds, if completed.
     pub duration_ms: Option<u64>,
+    /// Current outcome of the call (pending, ok, or error).
     pub result: IpcResult,
+    /// Size of the serialized arguments in bytes.
     pub arg_size_bytes: usize,
+    /// Label of the webview that initiated the call.
     pub webview_label: String,
 }
 
@@ -19,8 +26,11 @@ pub struct IpcCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum IpcResult {
+    /// Call is still in flight, awaiting a response.
     Pending,
+    /// Call completed successfully with a JSON return value.
     Ok(serde_json::Value),
+    /// Call failed with an error message.
     Err(String),
 }
 
@@ -29,20 +39,33 @@ pub enum IpcResult {
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum AppEvent {
+    /// An IPC call between webview and Rust backend.
     Ipc(IpcCall),
+    /// A change to application state in the backend.
     StateChange {
+        /// State key that changed.
         key: String,
+        /// When the change occurred.
         timestamp: DateTime<Utc>,
+        /// Command or action that triggered the change, if known.
         caused_by: Option<String>,
     },
+    /// A batch of DOM mutations observed in a webview.
     DomMutation {
+        /// Webview where the mutations were observed.
         webview_label: String,
+        /// When the mutations were observed.
         timestamp: DateTime<Utc>,
+        /// Number of individual DOM mutations in this batch.
         mutation_count: u32,
     },
+    /// A native window lifecycle event (e.g. focus, resize, close).
     WindowEvent {
+        /// Tauri window label that emitted the event.
         label: String,
+        /// Event name (e.g. "focus", "resize").
         event: String,
+        /// When the event occurred.
         timestamp: DateTime<Utc>,
     },
 }
@@ -56,6 +79,15 @@ pub struct EventLog {
 }
 
 impl EventLog {
+    /// Creates a new event log with the given maximum capacity.
+    ///
+    /// ```
+    /// use victauri_core::EventLog;
+    ///
+    /// let log = EventLog::new(100);
+    /// assert!(log.is_empty());
+    /// assert_eq!(log.capacity(), 100);
+    /// ```
     pub fn new(max_capacity: usize) -> Self {
         Self {
             events: Arc::new(Mutex::new(VecDeque::with_capacity(max_capacity))),
@@ -63,10 +95,12 @@ impl EventLog {
         }
     }
 
+    /// Returns the maximum number of events this log can hold.
     pub fn capacity(&self) -> usize {
         self.max_capacity
     }
 
+    /// Appends an event, evicting the oldest if at capacity.
     pub fn push(&self, event: AppEvent) {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         if events.len() >= self.max_capacity {
@@ -75,6 +109,7 @@ impl EventLog {
         events.push_back(event);
     }
 
+    /// Returns a clone of all events currently in the log.
     pub fn snapshot(&self) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -84,6 +119,7 @@ impl EventLog {
             .collect()
     }
 
+    /// Returns a paginated slice of events starting at `offset`, up to `limit` items.
     pub fn snapshot_range(&self, offset: usize, limit: usize) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -95,6 +131,7 @@ impl EventLog {
             .collect()
     }
 
+    /// Returns all events with a timestamp at or after the given time.
     pub fn since(&self, timestamp: DateTime<Utc>) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -110,6 +147,7 @@ impl EventLog {
             .collect()
     }
 
+    /// Returns all IPC call events, filtering out non-IPC events.
     pub fn ipc_calls(&self) -> Vec<IpcCall> {
         self.events
             .lock()
@@ -122,6 +160,7 @@ impl EventLog {
             .collect()
     }
 
+    /// Returns IPC calls with a timestamp at or after the given time.
     pub fn ipc_calls_since(&self, timestamp: DateTime<Utc>) -> Vec<IpcCall> {
         self.events
             .lock()
@@ -134,10 +173,12 @@ impl EventLog {
             .collect()
     }
 
+    /// Returns the number of events currently in the log.
     pub fn len(&self) -> usize {
         self.events.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
+    /// Returns true if the log contains no events.
     pub fn is_empty(&self) -> bool {
         self.events
             .lock()
@@ -145,6 +186,7 @@ impl EventLog {
             .is_empty()
     }
 
+    /// Removes all events from the log.
     pub fn clear(&self) {
         self.events
             .lock()

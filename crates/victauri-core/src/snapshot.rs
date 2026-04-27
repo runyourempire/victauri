@@ -1,51 +1,85 @@
 use serde::{Deserialize, Serialize};
 
+/// Current state of a Tauri window including geometry, visibility, and loaded URL.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowState {
+    /// Tauri window label (e.g. "main", "notification").
     pub label: String,
+    /// Window title bar text.
     pub title: String,
+    /// URL currently loaded in the webview.
     pub url: String,
+    /// Whether the window is visible on screen.
     pub visible: bool,
+    /// Whether the window currently has input focus.
     pub focused: bool,
+    /// Whether the window is maximized.
     pub maximized: bool,
+    /// Whether the window is minimized.
     pub minimized: bool,
+    /// Whether the window is in fullscreen mode.
     pub fullscreen: bool,
+    /// Window position as (x, y) in screen coordinates.
     pub position: (i32, i32),
+    /// Window dimensions as (width, height) in pixels.
     pub size: (u32, u32),
 }
 
+/// A point-in-time snapshot of the DOM accessible tree from a specific webview.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomSnapshot {
+    /// Label of the webview this snapshot was taken from.
     pub webview_label: String,
+    /// Top-level accessible elements in the DOM tree.
     pub elements: Vec<DomElement>,
+    /// Maps ref IDs to CSS selectors for element lookup.
     pub ref_map: std::collections::HashMap<String, String>,
 }
 
+/// A single element in the accessible DOM tree with semantic metadata and ref handle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomElement {
+    /// Unique ref handle for this element (e.g. "e3"), used to target interactions.
     pub ref_id: String,
+    /// HTML tag name (e.g. "div", "button").
     pub tag: String,
+    /// ARIA role if present (e.g. "button", "navigation").
     pub role: Option<String>,
+    /// Accessible name derived from aria-label, text content, or other heuristics.
     pub name: Option<String>,
+    /// Visible text content of the element.
     pub text: Option<String>,
+    /// Form input value, if applicable.
     pub value: Option<String>,
+    /// Whether the element is interactive (not disabled).
     pub enabled: bool,
+    /// Whether the element is visible in the viewport.
     pub visible: bool,
+    /// Whether the element can receive keyboard focus.
     pub focusable: bool,
+    /// Pixel-level bounding rectangle, if available.
     pub bounds: Option<ElementBounds>,
+    /// Nested child elements forming the accessible subtree.
     pub children: Vec<DomElement>,
+    /// Raw HTML attributes on the element.
     pub attributes: std::collections::HashMap<String, String>,
 }
 
+/// Pixel-level bounding rectangle of a DOM element relative to the viewport.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ElementBounds {
+    /// Left edge offset from viewport origin.
     pub x: f64,
+    /// Top edge offset from viewport origin.
     pub y: f64,
+    /// Element width in CSS pixels.
     pub width: f64,
+    /// Element height in CSS pixels.
     pub height: f64,
 }
 
 impl DomSnapshot {
+    /// Renders the snapshot as indented accessible text (roles, names, and ref handles).
     pub fn to_accessible_text(&self, indent: usize) -> String {
         let mut output = String::new();
         for element in &self.elements {

@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use victauri_core::*;
@@ -1755,4 +1755,858 @@ mod adversarial {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].command, "new_cmd");
     }
+}
+
+// ── Additional EventLog tests ─────────────────────────────────────────────
+
+fn make_ipc_at(id: &str, cmd: &str, ts: DateTime<Utc>) -> AppEvent {
+    AppEvent::Ipc(IpcCall {
+        id: id.to_string(),
+        command: cmd.to_string(),
+        timestamp: ts,
+        duration_ms: Some(1),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    })
+}
+
+fn make_ipc_simple(id: &str, cmd: &str) -> AppEvent {
+    AppEvent::Ipc(IpcCall {
+        id: id.to_string(),
+        command: cmd.to_string(),
+        timestamp: Utc::now(),
+        duration_ms: Some(1),
+        result: event::IpcResult::Ok(serde_json::json!("ok")),
+        arg_size_bytes: 0,
+        webview_label: "main".to_string(),
+    })
+}
+
+#[test]
+fn event_log_snapshot_range_offset_zero_full_limit() {
+    let log = EventLog::new(100);
+    for i in 0..5 {
+        log.push(make_ipc_simple(&i.to_string(), &format!("cmd_{i}")));
+    }
+
+    let page = log.snapshot_range(0, 5);
+    assert_eq!(page.len(), 5);
+    match &page[0] {
+        AppEvent::Ipc(call) => assert_eq!(call.id, "0"),
+        _ => panic!("expected IPC"),
+    }
+    match &page[4] {
+        AppEvent::Ipc(call) => assert_eq!(call.id, "4"),
+        _ => panic!("expected IPC"),
+    }
+}
+
+#[test]
+fn event_log_snapshot_range_offset_beyond_length() {
+    let log = EventLog::new(100);
+    for i in 0..5 {
+        log.push(make_ipc_simple(&i.to_string(), "cmd"));
+    }
+
+    let page = log.snapshot_range(10, 5);
+    assert!(page.is_empty());
+
+    let page = log.snapshot_range(5, 5);
+    assert!(page.is_empty());
+
+    let page = log.snapshot_range(100, 100);
+    assert!(page.is_empty());
+}
+
+#[test]
+fn event_log_snapshot_range_limit_zero() {
+    let log = EventLog::new(100);
+    for i in 0..5 {
+        log.push(make_ipc_simple(&i.to_string(), "cmd"));
+    }
+
+    let page = log.snapshot_range(0, 0);
+    assert!(page.is_empty());
+
+    let page = log.snapshot_range(2, 0);
+    assert!(page.is_empty());
+}
+
+#[test]
+fn event_log_snapshot_range_limit_one() {
+    let log = EventLog::new(100);
+    for i in 0..5 {
+        log.push(make_ipc_simple(&i.to_string(), &format!("cmd_{i}")));
+    }
+
+    let page = log.snapshot_range(2, 1);
+    assert_eq!(page.len(), 1);
+    match &page[0] {
+        AppEvent::Ipc(call) => assert_eq!(call.id, "2"),
+        _ => panic!("expected IPC"),
+    }
+}
+
+#[test]
+fn event_log_snapshot_range_limit_exceeds_remaining() {
+    let log = EventLog::new(100);
+    for i in 0..5 {
+        log.push(make_ipc_simple(&i.to_string(), &format!("cmd_{i}")));
+    }
+
+    // offset 3, limit 100 => only 2 events remain (indices 3 and 4)
+    let page = log.snapshot_range(3, 100);
+    assert_eq!(page.len(), 2);
+    match &page[0] {
+        AppEvent::Ipc(call) => assert_eq!(call.id, "3"),
+        _ => panic!("expected IPC"),
+    }
+    match &page[1] {
+        AppEvent::Ipc(call) => assert_eq!(call.id, "4"),
+        _ => panic!("expected IPC"),
+    }
+}
+
+#[test]
+fn event_log_since_with_varied_timestamps() {
+    let log = EventLog::new(100);
+    let t_old = Utc::now() - chrono::Duration::seconds(60);
+    let t_mid = Utc::now() - chrono::Duration::seconds(30);
+    let t_new = Utc::now() - chrono::Duration::seconds(5);
+
+    log.push(make_ipc_at("1", "old_cmd", t_old));
+    log.push(make_ipc_at("2", "mid_cmd", t_mid));
+    log.push(make_ipc_at("3", "new_cmd", t_new));
+
+    // Since a time before all events => get all
+    let all = log.since(t_old - chrono::Duration::seconds(1));
+    assert_eq!(all.len(), 3);
+
+    // Since mid => get mid and new
+    let recent = log.since(t_mid);
+    assert_eq!(recent.len(), 2);
+    match &recent[0] {
+        AppEvent::Ipc(call) => assert_eq!(call.command, "mid_cmd"),
+        _ => panic!("expected IPC"),
+    }
+    match &recent[1] {
+        AppEvent::Ipc(call) => assert_eq!(call.command, "new_cmd"),
+        _ => panic!("expected IPC"),
+    }
+
+    // Since a time after all events => get none
+    let none = log.since(Utc::now() + chrono::Duration::seconds(10));
+    assert!(none.is_empty());
+}
+
+#[test]
+fn event_log_since_filters_all_event_types() {
+    let log = EventLog::new(100);
+    let t_old = Utc::now() - chrono::Duration::seconds(60);
+    let t_new = Utc::now() + chrono::Duration::seconds(60);
+    let cutoff = Utc::now();
+
+    log.push(make_ipc_at("1", "old_ipc", t_old));
+    log.push(AppEvent::StateChange {
+        key: "old_state".to_string(),
+        timestamp: t_old,
+        caused_by: None,
+    });
+    log.push(AppEvent::DomMutation {
+        webview_label: "main".to_string(),
+        timestamp: t_old,
+        mutation_count: 5,
+    });
+    log.push(AppEvent::WindowEvent {
+        label: "main".to_string(),
+        event: "old_focus".to_string(),
+        timestamp: t_old,
+    });
+
+    log.push(make_ipc_at("2", "new_ipc", t_new));
+    log.push(AppEvent::StateChange {
+        key: "new_state".to_string(),
+        timestamp: t_new,
+        caused_by: None,
+    });
+    log.push(AppEvent::DomMutation {
+        webview_label: "main".to_string(),
+        timestamp: t_new,
+        mutation_count: 10,
+    });
+    log.push(AppEvent::WindowEvent {
+        label: "main".to_string(),
+        event: "new_focus".to_string(),
+        timestamp: t_new,
+    });
+
+    let recent = log.since(cutoff);
+    assert_eq!(recent.len(), 4);
+
+    // Verify each type is represented
+    let has_ipc = recent.iter().any(|e| matches!(e, AppEvent::Ipc(_)));
+    let has_state = recent
+        .iter()
+        .any(|e| matches!(e, AppEvent::StateChange { .. }));
+    let has_dom = recent
+        .iter()
+        .any(|e| matches!(e, AppEvent::DomMutation { .. }));
+    let has_window = recent
+        .iter()
+        .any(|e| matches!(e, AppEvent::WindowEvent { .. }));
+    assert!(has_ipc);
+    assert!(has_state);
+    assert!(has_dom);
+    assert!(has_window);
+}
+
+#[test]
+fn event_log_ipc_calls_returns_only_ipc_events() {
+    let log = EventLog::new(100);
+
+    log.push(make_ipc_simple("1", "save"));
+    log.push(AppEvent::StateChange {
+        key: "data".to_string(),
+        timestamp: Utc::now(),
+        caused_by: Some("save".to_string()),
+    });
+    log.push(AppEvent::DomMutation {
+        webview_label: "main".to_string(),
+        timestamp: Utc::now(),
+        mutation_count: 3,
+    });
+    log.push(AppEvent::WindowEvent {
+        label: "main".to_string(),
+        event: "resize".to_string(),
+        timestamp: Utc::now(),
+    });
+    log.push(make_ipc_simple("2", "load"));
+
+    assert_eq!(log.len(), 5);
+
+    let ipc = log.ipc_calls();
+    assert_eq!(ipc.len(), 2);
+    assert_eq!(ipc[0].command, "save");
+    assert_eq!(ipc[1].command, "load");
+}
+
+#[test]
+fn event_log_ipc_calls_empty_when_no_ipc_events() {
+    let log = EventLog::new(100);
+
+    log.push(AppEvent::StateChange {
+        key: "data".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+    log.push(AppEvent::DomMutation {
+        webview_label: "main".to_string(),
+        timestamp: Utc::now(),
+        mutation_count: 1,
+    });
+    log.push(AppEvent::WindowEvent {
+        label: "main".to_string(),
+        event: "focus".to_string(),
+        timestamp: Utc::now(),
+    });
+
+    assert_eq!(log.len(), 3);
+    assert!(log.ipc_calls().is_empty());
+}
+
+#[test]
+fn event_log_ipc_calls_since_filters_by_timestamp() {
+    let log = EventLog::new(100);
+    let t_old = Utc::now() - chrono::Duration::seconds(60);
+    let t_new = Utc::now() - chrono::Duration::seconds(1);
+    let cutoff = Utc::now() - chrono::Duration::seconds(30);
+
+    log.push(make_ipc_at("1", "old_cmd", t_old));
+    log.push(AppEvent::StateChange {
+        key: "k".to_string(),
+        timestamp: t_new,
+        caused_by: None,
+    });
+    log.push(make_ipc_at("2", "new_cmd", t_new));
+
+    let calls = log.ipc_calls_since(cutoff);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].command, "new_cmd");
+}
+
+#[test]
+fn event_log_ipc_calls_since_excludes_non_ipc() {
+    let log = EventLog::new(100);
+    let ts = Utc::now();
+
+    // Add non-IPC events with recent timestamps
+    log.push(AppEvent::StateChange {
+        key: "k".to_string(),
+        timestamp: ts,
+        caused_by: None,
+    });
+    log.push(AppEvent::WindowEvent {
+        label: "main".to_string(),
+        event: "focus".to_string(),
+        timestamp: ts,
+    });
+
+    let calls = log.ipc_calls_since(ts - chrono::Duration::seconds(1));
+    assert!(calls.is_empty());
+}
+
+#[test]
+fn event_log_is_empty_and_len_on_empty_log() {
+    let log = EventLog::new(100);
+    assert!(log.is_empty());
+    assert_eq!(log.len(), 0);
+}
+
+#[test]
+fn event_log_is_empty_and_len_after_pushes() {
+    let log = EventLog::new(100);
+    log.push(make_ipc_simple("1", "cmd1"));
+    assert!(!log.is_empty());
+    assert_eq!(log.len(), 1);
+
+    log.push(make_ipc_simple("2", "cmd2"));
+    assert!(!log.is_empty());
+    assert_eq!(log.len(), 2);
+}
+
+#[test]
+fn event_log_clear_empties_all_events() {
+    let log = EventLog::new(100);
+    for i in 0..10 {
+        log.push(make_ipc_simple(&i.to_string(), "cmd"));
+    }
+    assert_eq!(log.len(), 10);
+    assert!(!log.is_empty());
+
+    log.clear();
+    assert_eq!(log.len(), 0);
+    assert!(log.is_empty());
+    assert!(log.snapshot().is_empty());
+    assert!(log.ipc_calls().is_empty());
+}
+
+#[test]
+fn event_log_clear_then_push_works() {
+    let log = EventLog::new(100);
+    log.push(make_ipc_simple("1", "before_clear"));
+    log.clear();
+    log.push(make_ipc_simple("2", "after_clear"));
+
+    assert_eq!(log.len(), 1);
+    let calls = log.ipc_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].command, "after_clear");
+}
+
+#[test]
+fn event_log_ring_buffer_eviction_preserves_newest() {
+    let log = EventLog::new(5);
+
+    for i in 0..20 {
+        log.push(make_ipc_simple(&i.to_string(), &format!("cmd_{i}")));
+    }
+
+    assert_eq!(log.len(), 5);
+    let calls = log.ipc_calls();
+    assert_eq!(calls.len(), 5);
+    // Should have the last 5 (indices 15-19)
+    assert_eq!(calls[0].command, "cmd_15");
+    assert_eq!(calls[1].command, "cmd_16");
+    assert_eq!(calls[2].command, "cmd_17");
+    assert_eq!(calls[3].command, "cmd_18");
+    assert_eq!(calls[4].command, "cmd_19");
+}
+
+#[test]
+fn event_log_ring_buffer_eviction_at_exact_capacity() {
+    let log = EventLog::new(3);
+
+    // Push exactly capacity events
+    for i in 0..3 {
+        log.push(make_ipc_simple(&i.to_string(), &format!("cmd_{i}")));
+    }
+    assert_eq!(log.len(), 3);
+
+    // Push one more to trigger eviction
+    log.push(make_ipc_simple("3", "cmd_3"));
+    assert_eq!(log.len(), 3);
+
+    let calls = log.ipc_calls();
+    assert_eq!(calls[0].command, "cmd_1");
+    assert_eq!(calls[2].command, "cmd_3");
+}
+
+#[test]
+fn event_log_ring_buffer_eviction_mixed_event_types() {
+    let log = EventLog::new(3);
+
+    log.push(make_ipc_simple("1", "ipc_1"));
+    log.push(AppEvent::StateChange {
+        key: "state_1".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+    log.push(AppEvent::DomMutation {
+        webview_label: "main".to_string(),
+        timestamp: Utc::now(),
+        mutation_count: 1,
+    });
+
+    // At capacity. Push one more IPC to evict ipc_1.
+    log.push(make_ipc_simple("2", "ipc_2"));
+    assert_eq!(log.len(), 3);
+
+    // ipc_1 should be evicted; ipc_2 should remain
+    let ipc = log.ipc_calls();
+    assert_eq!(ipc.len(), 1);
+    assert_eq!(ipc[0].command, "ipc_2");
+}
+
+// ── Additional EventRecorder tests ────────────────────────────────────────
+
+#[test]
+fn recorder_events_between_checkpoints_with_multiple_events() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    // Events before first checkpoint
+    recorder.record_event(make_ipc_simple("0", "before_all"));
+    recorder.record_event(make_ipc_simple("1", "before_all_2"));
+
+    recorder.checkpoint(
+        "cp_start".to_string(),
+        Some("Start".to_string()),
+        serde_json::json!({"phase": "start"}),
+    );
+
+    // Events between checkpoints
+    recorder.record_event(make_ipc_simple("2", "between_1"));
+    recorder.record_event(make_ipc_simple("3", "between_2"));
+    recorder.record_event(make_ipc_simple("4", "between_3"));
+
+    recorder.checkpoint(
+        "cp_end".to_string(),
+        Some("End".to_string()),
+        serde_json::json!({"phase": "end"}),
+    );
+
+    // Events after second checkpoint
+    recorder.record_event(make_ipc_simple("5", "after_all"));
+
+    let between = recorder
+        .events_between_checkpoints("cp_start", "cp_end")
+        .unwrap();
+    assert_eq!(between.len(), 3);
+
+    // Verify it's the correct events (indices 2, 3, 4)
+    assert_eq!(between[0].index, 2);
+    assert_eq!(between[1].index, 3);
+    assert_eq!(between[2].index, 4);
+
+    // Verify event content
+    match &between[0].event {
+        AppEvent::Ipc(call) => assert_eq!(call.command, "between_1"),
+        _ => panic!("expected IPC"),
+    }
+    match &between[2].event {
+        AppEvent::Ipc(call) => assert_eq!(call.command, "between_3"),
+        _ => panic!("expected IPC"),
+    }
+}
+
+#[test]
+fn recorder_events_between_checkpoints_reversed_order() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.checkpoint("cp_a".to_string(), None, serde_json::json!(null));
+    recorder.record_event(make_ipc_simple("1", "mid"));
+    recorder.checkpoint("cp_b".to_string(), None, serde_json::json!(null));
+
+    // Reversed order: from cp_b to cp_a should still work (handled by min/max in source)
+    let between = recorder.events_between_checkpoints("cp_b", "cp_a").unwrap();
+    assert_eq!(between.len(), 1);
+    match &between[0].event {
+        AppEvent::Ipc(call) => assert_eq!(call.command, "mid"),
+        _ => panic!("expected IPC"),
+    }
+}
+
+#[test]
+fn recorder_events_between_checkpoints_same_checkpoint() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.record_event(make_ipc_simple("1", "before"));
+    recorder.checkpoint("cp_same".to_string(), None, serde_json::json!(null));
+    recorder.record_event(make_ipc_simple("2", "after"));
+
+    // Same checkpoint for both from and to => range is [idx, idx) which is empty
+    let between = recorder
+        .events_between_checkpoints("cp_same", "cp_same")
+        .unwrap();
+    assert!(between.is_empty());
+}
+
+#[test]
+fn recorder_events_between_checkpoints_nonexistent_from() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.checkpoint("cp_real".to_string(), None, serde_json::json!(null));
+
+    let result = recorder.events_between_checkpoints("nonexistent", "cp_real");
+    assert!(result.is_none());
+}
+
+#[test]
+fn recorder_events_between_checkpoints_nonexistent_to() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    recorder.checkpoint("cp_real".to_string(), None, serde_json::json!(null));
+
+    let result = recorder.events_between_checkpoints("cp_real", "nonexistent");
+    assert!(result.is_none());
+}
+
+#[test]
+fn recorder_events_between_checkpoints_both_nonexistent() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    let result = recorder.events_between_checkpoints("fake_a", "fake_b");
+    assert!(result.is_none());
+}
+
+#[test]
+fn recorder_events_between_checkpoints_not_recording() {
+    let recorder = EventRecorder::new(1000);
+    // Not recording, should return None
+    let result = recorder.events_between_checkpoints("cp1", "cp2");
+    assert!(result.is_none());
+}
+
+#[test]
+fn recorder_events_between_checkpoints_no_events_between() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+
+    // Two consecutive checkpoints with no events between
+    recorder.checkpoint("cp_a".to_string(), None, serde_json::json!(null));
+    recorder.checkpoint("cp_b".to_string(), None, serde_json::json!(null));
+
+    let between = recorder.events_between_checkpoints("cp_a", "cp_b").unwrap();
+    assert!(between.is_empty());
+}
+
+#[test]
+fn recorder_event_count_increments() {
+    let recorder = EventRecorder::new(1000);
+
+    // Not recording => 0
+    assert_eq!(recorder.event_count(), 0);
+
+    recorder.start("s1".to_string());
+    assert_eq!(recorder.event_count(), 0);
+
+    recorder.record_event(make_ipc_simple("1", "cmd1"));
+    assert_eq!(recorder.event_count(), 1);
+
+    recorder.record_event(make_ipc_simple("2", "cmd2"));
+    assert_eq!(recorder.event_count(), 2);
+
+    recorder.record_event(AppEvent::StateChange {
+        key: "k".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+    assert_eq!(recorder.event_count(), 3);
+}
+
+#[test]
+fn recorder_event_count_with_eviction() {
+    let recorder = EventRecorder::new(3);
+    recorder.start("s1".to_string());
+
+    for i in 0..10 {
+        recorder.record_event(make_ipc_simple(&i.to_string(), "cmd"));
+    }
+
+    // event_count returns events.len(), which is capped at max_events
+    assert_eq!(recorder.event_count(), 3);
+}
+
+#[test]
+fn recorder_is_recording_lifecycle() {
+    let recorder = EventRecorder::new(1000);
+
+    // Initially not recording
+    assert!(!recorder.is_recording());
+
+    // Start recording
+    recorder.start("s1".to_string());
+    assert!(recorder.is_recording());
+
+    // Record some events — still recording
+    recorder.record_event(make_ipc_simple("1", "cmd"));
+    assert!(recorder.is_recording());
+
+    // Stop recording
+    recorder.stop();
+    assert!(!recorder.is_recording());
+
+    // Can restart
+    recorder.start("s2".to_string());
+    assert!(recorder.is_recording());
+
+    recorder.stop();
+    assert!(!recorder.is_recording());
+}
+
+// ── Additional DomSnapshot tests ──────────────────────────────────────────
+
+#[test]
+fn dom_snapshot_accessible_text_nested_indentation() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![DomElement {
+            ref_id: "e0".to_string(),
+            tag: "div".to_string(),
+            role: Some("navigation".to_string()),
+            name: Some("Nav".to_string()),
+            text: None,
+            value: None,
+            enabled: true,
+            visible: true,
+            focusable: false,
+            bounds: None,
+            children: vec![DomElement {
+                ref_id: "e1".to_string(),
+                tag: "ul".to_string(),
+                role: Some("list".to_string()),
+                name: None,
+                text: None,
+                value: None,
+                enabled: true,
+                visible: true,
+                focusable: false,
+                bounds: None,
+                children: vec![DomElement {
+                    ref_id: "e2".to_string(),
+                    tag: "button".to_string(),
+                    role: Some("button".to_string()),
+                    name: Some("Home".to_string()),
+                    text: Some("Home".to_string()),
+                    value: None,
+                    enabled: true,
+                    visible: true,
+                    focusable: true,
+                    bounds: None,
+                    children: vec![],
+                    attributes: HashMap::new(),
+                }],
+                attributes: HashMap::new(),
+            }],
+            attributes: HashMap::new(),
+        }],
+        ref_map: HashMap::new(),
+    };
+
+    let text = snapshot.to_accessible_text(0);
+
+    // Root at indent 0
+    assert!(text.contains("- navigation \"Nav\""));
+    // Child at indent 1 (2 spaces)
+    assert!(text.contains("  - list"));
+    // Grandchild at indent 2 (4 spaces), button gets ref
+    assert!(text.contains("    - button \"Home\" [ref=e2]"));
+}
+
+#[test]
+fn dom_snapshot_accessible_text_skips_invisible_children() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![DomElement {
+            ref_id: "e0".to_string(),
+            tag: "div".to_string(),
+            role: None,
+            name: None,
+            text: None,
+            value: None,
+            enabled: true,
+            visible: true,
+            focusable: false,
+            bounds: None,
+            children: vec![
+                DomElement {
+                    ref_id: "e1".to_string(),
+                    tag: "button".to_string(),
+                    role: Some("button".to_string()),
+                    name: Some("Visible".to_string()),
+                    text: None,
+                    value: None,
+                    enabled: true,
+                    visible: true,
+                    focusable: true,
+                    bounds: None,
+                    children: vec![],
+                    attributes: HashMap::new(),
+                },
+                DomElement {
+                    ref_id: "e2".to_string(),
+                    tag: "button".to_string(),
+                    role: Some("button".to_string()),
+                    name: Some("Hidden".to_string()),
+                    text: None,
+                    value: None,
+                    enabled: true,
+                    visible: false,
+                    focusable: true,
+                    bounds: None,
+                    children: vec![],
+                    attributes: HashMap::new(),
+                },
+            ],
+            attributes: HashMap::new(),
+        }],
+        ref_map: HashMap::new(),
+    };
+
+    let text = snapshot.to_accessible_text(0);
+    assert!(text.contains("Visible"));
+    assert!(!text.contains("Hidden"));
+}
+
+#[test]
+fn dom_snapshot_accessible_text_ref_on_focusable_and_input() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![
+            DomElement {
+                ref_id: "e0".to_string(),
+                tag: "div".to_string(),
+                role: None,
+                name: Some("Container".to_string()),
+                text: None,
+                value: None,
+                enabled: true,
+                visible: true,
+                focusable: false, // not focusable, not button/input => no ref
+                bounds: None,
+                children: vec![],
+                attributes: HashMap::new(),
+            },
+            DomElement {
+                ref_id: "e1".to_string(),
+                tag: "input".to_string(),
+                role: Some("textbox".to_string()),
+                name: Some("Name".to_string()),
+                text: None,
+                value: None,
+                enabled: true,
+                visible: true,
+                focusable: false, // input tag => ref regardless of focusable
+                bounds: None,
+                children: vec![],
+                attributes: HashMap::new(),
+            },
+            DomElement {
+                ref_id: "e2".to_string(),
+                tag: "span".to_string(),
+                role: None,
+                name: Some("Label".to_string()),
+                text: None,
+                value: None,
+                enabled: true,
+                visible: true,
+                focusable: true, // focusable => ref
+                bounds: None,
+                children: vec![],
+                attributes: HashMap::new(),
+            },
+        ],
+        ref_map: HashMap::new(),
+    };
+
+    let text = snapshot.to_accessible_text(0);
+
+    // div: not focusable, not button/input => no ref
+    assert!(text.contains("div \"Container\""));
+    assert!(!text.contains("[ref=e0]"));
+
+    // input: gets ref because tag is "input"
+    assert!(text.contains("[ref=e1]"));
+
+    // focusable span: gets ref
+    assert!(text.contains("[ref=e2]"));
+}
+
+#[test]
+fn dom_snapshot_accessible_text_custom_starting_indent() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![DomElement {
+            ref_id: "e0".to_string(),
+            tag: "div".to_string(),
+            role: Some("main".to_string()),
+            name: None,
+            text: None,
+            value: None,
+            enabled: true,
+            visible: true,
+            focusable: false,
+            bounds: None,
+            children: vec![],
+            attributes: HashMap::new(),
+        }],
+        ref_map: HashMap::new(),
+    };
+
+    // Start at indent 3 => 6 spaces prefix
+    let text = snapshot.to_accessible_text(3);
+    assert!(text.starts_with("      - main\n"));
+}
+
+#[test]
+fn dom_snapshot_accessible_text_empty_elements() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![],
+        ref_map: HashMap::new(),
+    };
+
+    let text = snapshot.to_accessible_text(0);
+    assert!(text.is_empty());
+}
+
+#[test]
+fn dom_snapshot_accessible_text_uses_tag_when_no_role() {
+    let snapshot = DomSnapshot {
+        webview_label: "main".to_string(),
+        elements: vec![DomElement {
+            ref_id: "e0".to_string(),
+            tag: "section".to_string(),
+            role: None, // no role => falls back to tag name
+            name: Some("Content".to_string()),
+            text: None,
+            value: None,
+            enabled: true,
+            visible: true,
+            focusable: false,
+            bounds: None,
+            children: vec![],
+            attributes: HashMap::new(),
+        }],
+        ref_map: HashMap::new(),
+    };
+
+    let text = snapshot.to_accessible_text(0);
+    assert!(text.contains("- section \"Content\""));
 }

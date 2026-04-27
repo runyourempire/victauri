@@ -117,6 +117,14 @@ jobs:
       - name: Run audit
         run: cargo audit
 
+  deny:
+    name: Dependency Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   semver:
     name: Semver Checks
     runs-on: ubuntu-latest
