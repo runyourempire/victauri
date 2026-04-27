@@ -61,6 +61,10 @@ impl EventLog {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.max_capacity
+    }
+
     pub fn push(&self, event: AppEvent) {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         if events.len() >= self.max_capacity {

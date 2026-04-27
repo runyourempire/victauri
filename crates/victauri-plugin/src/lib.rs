@@ -1,7 +1,7 @@
 //! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
 //!
 //! Add this plugin to your Tauri app for AI-agent-driven testing and debugging:
-//! DOM snapshots, IPC tracing, cross-boundary verification, and 58 more tools —
+//! DOM snapshots, IPC tracing, cross-boundary verification, and 59 more tools —
 //! all accessible over the Model Context Protocol.
 //!
 //! # Quick Start

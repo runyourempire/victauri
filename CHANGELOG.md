@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 14 builder unit tests: defaults, port override, auth token, capacities, privacy config, strict mode
 - Criterion benchmark suite: 13 benchmarks across 5 groups (event log, registry, verification, recording, ghost commands)
 - Demo app frontend upgraded: full Todo list UI, Settings panel, Counter decrement/reset, debug state inspector (exercises all 12 backend commands)
+- `get_plugin_info` MCP tool — agents can query Victauri's own configuration, enabled tools, privacy settings
 - Honest README with limitations section, security model, privacy controls, roadmap
 
 ### Changed
@@ -37,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
 - Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
 - Test count: 110 -> 209
-- Tool count: 55 -> 58 (added `export_session`, `import_session`, `slow_ipc_calls`)
+- Tool count: 55 -> 59 (added `export_session`, `import_session`, `slow_ipc_calls`, `get_plugin_info`)
 
 ### Security
 

@@ -1656,6 +1656,65 @@ impl VictauriMcpHandler {
             Err(e) => tool_error(e),
         }
     }
+
+    #[tool(
+        description = "Inspect the Victauri plugin's own configuration: port, enabled/disabled tools, command filters, privacy settings, capacities, and version. Useful for agents to understand their capabilities before acting."
+    )]
+    async fn get_plugin_info(&self) -> CallToolResult {
+        let disabled: Vec<&str> = self
+            .state
+            .privacy
+            .disabled_tools
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        let blocklist: Vec<&str> = self
+            .state
+            .privacy
+            .command_blocklist
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        let allowlist: Option<Vec<&str>> = self
+            .state
+            .privacy
+            .command_allowlist
+            .as_ref()
+            .map(|s| s.iter().map(|s| s.as_str()).collect());
+        let all_tools = Self::tool_router().list_all();
+        let enabled_tools: Vec<&str> = all_tools
+            .iter()
+            .filter(|t| self.state.privacy.is_tool_enabled(t.name.as_ref()))
+            .map(|t| t.name.as_ref())
+            .collect();
+
+        let result = serde_json::json!({
+            "version": "0.1.0",
+            "port": self.state.port,
+            "tools": {
+                "total": all_tools.len(),
+                "enabled": enabled_tools.len(),
+                "enabled_list": enabled_tools,
+                "disabled_list": disabled,
+            },
+            "commands": {
+                "allowlist": allowlist,
+                "blocklist": blocklist,
+            },
+            "privacy": {
+                "redaction_enabled": self.state.privacy.redaction_enabled,
+            },
+            "capacities": {
+                "event_log": self.state.event_log.capacity(),
+                "eval_timeout_secs": self.state.eval_timeout.as_secs(),
+            },
+            "registered_commands": self.state.registry.count(),
+        });
+        match serde_json::to_string_pretty(&result) {
+            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+            Err(e) => tool_error(e.to_string()),
+        }
+    }
 }
 
 impl VictauriMcpHandler {

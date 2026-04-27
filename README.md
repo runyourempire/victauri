@@ -65,7 +65,7 @@ Connect Claude Code (or any MCP client):
 }
 ```
 
-## 58 MCP Tools
+## 59 MCP Tools
 
 | Category | Tools |
 |---|---|
@@ -85,6 +85,7 @@ Connect Claude Code (or any MCP client):
 | **Visual Debug** | `highlight_element`, `clear_highlights` |
 | **Accessibility** | `audit_accessibility` |
 | **Performance** | `get_performance_metrics` |
+| **Introspection** | `get_plugin_info` |
 
 ## How It Works
 
