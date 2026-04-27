@@ -1,12 +1,7 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "workspace"
-yanked = "warn"
-notice = "warn"
 ignore = []
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "Apache-2.0",
     "MIT",
