@@ -49,6 +49,13 @@ jobs:
       - name: Wait for crates.io index
         run: sleep 30
 
+      - name: Publish victauri-test
+        run: cargo publish -p victauri-test --no-verify
+        continue-on-error: true
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
       - name: Publish victauri-watchdog
         run: cargo publish -p victauri-watchdog --no-verify
         continue-on-error: true
