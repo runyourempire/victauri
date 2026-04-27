@@ -1,17 +1,15 @@
 # Victauri
 
-**Full-stack introspection for Tauri apps via MCP.**
+**X-ray vision and hands for AI agents inside Tauri apps.**
 
 [![CI](https://github.com/runyourempire/victauri/actions/workflows/ci.yml/badge.svg)](https://github.com/runyourempire/victauri/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/victauri-plugin.svg)](https://crates.io/crates/victauri-plugin)
+[![docs.rs](https://docs.rs/victauri-plugin/badge.svg)](https://docs.rs/victauri-plugin)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 
-Victauri is a Tauri 2.0 plugin that embeds an [MCP](https://modelcontextprotocol.io) server inside your app process. AI agents get direct access to the webview, Rust backend, IPC layer, and native window state — not through an external bridge, but from inside the process itself.
-
-## What It Does
-
-Playwright sees the DOM. Victauri sees the DOM, the IPC bridge, the command registry, backend state, and the gaps between them.
+Unlike Playwright (which sees only the browser glass), Victauri gives agents simultaneous access to the webview DOM, the Rust backend, the IPC layer, and native window state — all through a single [MCP](https://modelcontextprotocol.io) interface running inside the app process.
 
 | Capability | Playwright | Victauri |
 |---|---|---|
@@ -22,25 +20,19 @@ Playwright sees the DOM. Victauri sees the DOM, the IPC bridge, the command regi
 | Command registry introspection | No | **Yes** |
 | Cross-boundary state verification | No | **Yes** |
 | Ghost command detection | No | **Yes** |
+| Multi-window targeting | Limited | **Yes** |
 | Event recording & replay | No | **Yes** |
-
-## What It Doesn't Do (Yet)
-
-- **No multi-window orchestration** — tools operate on the primary webview
-- **No production use** — gated behind `#[cfg(debug_assertions)]`, debug builds only
-- **No remote access** — localhost only, by design
-- **Early project** — API surface may change between versions
 
 ## Quick Start
 
-Add to your Tauri app's `Cargo.toml`:
+**1. Add the plugin** (your Tauri app's `Cargo.toml`):
 
 ```toml
-[dependencies]
-victauri-plugin = { git = "https://github.com/runyourempire/victauri" }
+[dev-dependencies]
+victauri-plugin = "0.1"
 ```
 
-Wire it up:
+**2. Wire it up** (`src-tauri/src/main.rs`):
 
 ```rust
 tauri::Builder::default()
@@ -49,9 +41,9 @@ tauri::Builder::default()
     .expect("error while running tauri application");
 ```
 
-In release builds, `init()` returns a no-op plugin. Zero overhead, no conditional compilation needed.
+In release builds, `init()` returns a no-op plugin — zero overhead, no conditional compilation needed.
 
-Connect Claude Code (or any MCP client):
+**3. Connect your AI agent** (`.mcp.json` in your project root):
 
 ```json
 {
@@ -63,27 +55,28 @@ Connect Claude Code (or any MCP client):
 }
 ```
 
-## 59 MCP Tools
+That's it. Claude Code (or any MCP client) now has full-stack access to your running app.
+
+## 55 MCP Tools
 
 | Category | Tools |
 |---|---|
-| **WebView** | `eval_js`, `dom_snapshot`, `click`, `double_click`, `hover`, `fill`, `type_text`, `press_key`, `select_option`, `scroll_to`, `focus_element` |
-| **Windows** | `get_window_state`, `list_windows`, `screenshot`, `manage_window`, `resize_window`, `move_window`, `set_window_title` |
-| **Backend** | `invoke_command`, `get_ipc_log`, `get_registry`, `get_memory_stats`, `get_console_logs`, `slow_ipc_calls` |
-| **Network** | `get_network_log` |
-| **Storage** | `get_storage`, `set_storage`, `delete_storage`, `get_cookies` |
-| **Navigation** | `get_navigation_log`, `navigate`, `navigate_back` |
-| **Dialogs** | `get_dialog_log`, `set_dialog_response` |
-| **Verification** | `verify_state`, `detect_ghost_commands`, `check_ipc_integrity` |
-| **Streaming** | `get_event_stream` |
-| **Intent** | `resolve_command`, `assert_semantic` |
-| **Wait** | `wait_for` |
-| **Time-Travel** | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints`, `export_session`, `import_session` |
-| **CSS/Style** | `get_styles`, `get_bounding_boxes`, `inject_css`, `remove_injected_css` |
-| **Visual Debug** | `highlight_element`, `clear_highlights` |
-| **Accessibility** | `audit_accessibility` |
-| **Performance** | `get_performance_metrics` |
-| **Introspection** | `get_plugin_info` |
+| **WebView** (11) | `eval_js`, `dom_snapshot`, `click`, `double_click`, `hover`, `fill`, `type_text`, `press_key`, `select_option`, `scroll_to`, `focus_element` |
+| **Windows** (7) | `get_window_state`, `list_windows`, `screenshot`, `manage_window`, `resize_window`, `move_window`, `set_window_title` |
+| **Backend** (5) | `invoke_command`, `get_ipc_log`, `get_registry`, `get_memory_stats`, `get_console_logs` |
+| **Network** (1) | `get_network_log` |
+| **Storage** (4) | `get_storage`, `set_storage`, `delete_storage`, `get_cookies` |
+| **Navigation** (3) | `get_navigation_log`, `navigate`, `navigate_back` |
+| **Dialogs** (2) | `get_dialog_log`, `set_dialog_response` |
+| **Verification** (3) | `verify_state`, `detect_ghost_commands`, `check_ipc_integrity` |
+| **Streaming** (1) | `get_event_stream` |
+| **Intent** (2) | `resolve_command`, `assert_semantic` |
+| **Wait** (1) | `wait_for` |
+| **Time-Travel** (7) | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints` |
+| **CSS/Style** (4) | `get_styles`, `get_bounding_boxes`, `inject_css`, `remove_injected_css` |
+| **Visual Debug** (2) | `highlight_element`, `clear_highlights` |
+| **Accessibility** (1) | `audit_accessibility` |
+| **Performance** (1) | `get_performance_metrics` |
 
 ## How It Works
 
@@ -94,12 +87,40 @@ MCP Client <-> HTTP/SSE on :7373 <-> Victauri Plugin (in-process)
                                         '-- Backend: state, memory, events
 ```
 
-The MCP server runs inside the Tauri process. No external sidecar, no CDP, no WebDriver. Direct `AppHandle` access means tool calls resolve in the same process as your app.
+The MCP server runs inside the Tauri process. No external sidecar, no CDP, no WebDriver. Direct `AppHandle` access means sub-millisecond tool response times.
+
+## Test Assertions
+
+The `victauri-test` crate provides a typed HTTP client and assertion helpers for CI testing:
+
+```rust
+use victauri_test::{VictauriClient, assert_json_eq, assert_ipc_healthy};
+use serde_json::json;
+
+#[tokio::test]
+async fn app_loads_correctly() {
+    let mut client = VictauriClient::connect(7373).await.unwrap();
+
+    let title = client.eval_js("document.title").await.unwrap();
+    assert_eq!(title.as_str(), Some("My App"));
+
+    let state = client.get_window_state(Some("main")).await.unwrap();
+    assert_json_eq(&state, "/visible", &json!(true));
+
+    let integrity = client.check_ipc_integrity().await.unwrap();
+    assert_ipc_healthy(&integrity);
+}
+```
+
+```toml
+[dev-dependencies]
+victauri-test = "0.1"
+```
 
 ## Instrument Your Commands
 
 ```rust
-use victauri_plugin::inspectable;
+use victauri_macros::inspectable;
 
 #[tauri::command]
 #[inspectable(
@@ -117,8 +138,6 @@ async fn save_api_key(provider: String, key: String) -> Result<(), String> {
 
 ## Authentication
 
-By default, the MCP endpoint is open to localhost. To restrict access:
-
 ```rust
 VictauriBuilder::new()
     .generate_auth_token()  // prints token to logs on startup
@@ -127,36 +146,12 @@ VictauriBuilder::new()
 
 Or via environment variable: `VICTAURI_AUTH_TOKEN=my-secret-token`.
 
-```json
-{
-  "mcpServers": {
-    "my-app": {
-      "url": "http://127.0.0.1:7373/mcp",
-      "headers": {
-        "Authorization": "Bearer <token-from-logs>"
-      }
-    }
-  }
-}
-```
-
 ## Privacy Controls
-
-Victauri includes a privacy layer for controlling what tools and commands are exposed:
 
 - **Command allowlists/blocklists** — restrict which Tauri commands are invokable
 - **Tool disabling** — hide specific MCP tools (e.g., `eval_js`, `screenshot`)
-- **Output redaction** — automatic regex-based redaction of API keys, JWTs, emails, credit card numbers, and sensitive JSON fields
+- **Output redaction** — automatic regex-based redaction of API keys, JWTs, emails, and sensitive JSON fields
 - **Strict mode** — one-call preset that disables all mutating tools and enables full redaction
-
-## Security Model
-
-- Localhost only — no remote access, no forwarding
-- Auth tokens are optional but recommended for shared machines
-- Rate limiting (100 req/sec default, configurable)
-- All tools compile away in release builds
-- `eval_js` executes arbitrary JavaScript in the webview — treat it like a browser devtools console
-- IPC interception is read-only (monitors `fetch` to `ipc.localhost`)
 
 ## Architecture
 
@@ -166,10 +161,20 @@ victauri/
 │   ├── victauri-core/       # Types: events, registry, snapshots, verification
 │   ├── victauri-macros/     # #[inspectable] proc macro
 │   ├── victauri-plugin/     # Tauri plugin: MCP server + JS bridge
+│   ├── victauri-test/       # Test client + assertion helpers
 │   └── victauri-watchdog/   # Health-check sidecar
 └── examples/
     └── demo-app/            # Minimal Tauri app with Victauri wired up
 ```
+
+## Security Model
+
+- Localhost only — no remote access, no forwarding
+- DNS rebinding protection
+- Auth tokens optional but recommended for shared machines
+- Rate limiting (100 req/sec default, configurable)
+- All tools compile away in release builds
+- `eval_js` executes arbitrary JavaScript — treat it like browser devtools
 
 ## Development
 
@@ -181,40 +186,11 @@ cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
 ```
 
-## CI Integration
+## What It Doesn't Do
 
-Run Victauri-powered checks in GitHub Actions:
-
-```yaml
-- name: Build app (debug)
-  run: cargo build -p my-app
-
-- name: Start app in background
-  run: cargo run -p my-app &
-  env:
-    VICTAURI_AUTH_TOKEN: ${{ secrets.VICTAURI_TOKEN }}
-
-- name: Wait for MCP server
-  run: |
-    for i in $(seq 1 30); do
-      curl -sf http://127.0.0.1:7373/mcp && break || sleep 1
-    done
-
-- name: Run MCP-based checks
-  run: node tests/mcp-checks.js
-```
-
-Because Victauri compiles away in release builds, CI runs debug builds to get introspection. The MCP server starts automatically with the app — no separate process to manage.
-
-## Roadmap
-
-- [ ] Multi-window tool targeting
-- [x] Linux screenshot support (X11 via x11rb)
-- [x] Session persistence (`export_session` / `import_session` tools)
-- [x] Benchmark suite with real response time data
-- [x] IPC performance analysis (`slow_ipc_calls` tool)
-- [ ] Test assertion helpers as a standalone crate
-- [ ] crates.io publication
+- **No production use** — gated behind `#[cfg(debug_assertions)]`, debug builds only
+- **No remote access** — localhost only, by design
+- **Early project** — API surface may change before 1.0
 
 ## License
 

@@ -185,7 +185,7 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         };
 
         #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
+        unsafe extern "C" {
             fn CGWindowListCreateImage(
                 screenBounds: CGRect,
                 listOption: CGWindowListOption,
@@ -216,7 +216,7 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         }
 
         #[link(name = "CoreFoundation", kind = "framework")]
-        extern "C" {
+        unsafe extern "C" {
             fn CFDataGetBytePtr(theData: CFDataRef) -> *const u8;
             fn CFDataGetLength(theData: CFDataRef) -> isize;
             fn CFRelease(cf: CFTypeRef);

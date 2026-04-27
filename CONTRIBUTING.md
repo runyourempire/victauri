@@ -14,7 +14,7 @@ Requires Rust 1.85+ (edition 2024).
 ## Running Tests
 
 ```bash
-cargo test --workspace          # All tests (205)
+cargo test --workspace          # All tests (287)
 cargo test -p victauri-core     # Core crate only
 cargo test -p victauri-plugin   # Plugin crate only
 cargo bench -p victauri-core    # Criterion benchmarks (13)
@@ -22,7 +22,7 @@ cargo clippy --workspace -- -D warnings
 cargo fmt --all -- --check
 ```
 
-All three checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and macOS.
+All checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and macOS.
 
 ## Code Style
 
@@ -38,6 +38,7 @@ All three checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, 
 | `victauri-core` | Types, events, verification, registry — no Tauri dependency |
 | `victauri-macros` | `#[inspectable]` proc macro |
 | `victauri-plugin` | Tauri plugin: MCP server, JS bridge, auth, privacy |
+| `victauri-test` | Typed MCP HTTP client + assertion helpers for CI testing |
 | `victauri-watchdog` | Health-check sidecar |
 
 ## Adding MCP Tools
@@ -57,13 +58,10 @@ cargo build -p demo-app
 
 ## Publishing to crates.io
 
-Maintainers only. Publication order matters due to inter-crate dependencies:
+Maintainers only. Push a `v*` tag and the release workflow handles publication in dependency order:
 
-```bash
-cargo publish -p victauri-core
-cargo publish -p victauri-macros
-cargo publish -p victauri-plugin
-cargo publish -p victauri-watchdog
+```
+victauri-core -> victauri-macros -> victauri-plugin -> victauri-test -> victauri-watchdog
 ```
 
 ## License

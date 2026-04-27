@@ -7,79 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [0.1.0] - 2026-04-28
 
-- All 30+ `.lock().unwrap()` / `.read().unwrap()` calls replaced with mutex poisoning recovery
-- `unreachable!()` panic in verification array comparison (now silent no-op)
-- Float comparison silently coercing unparseable numbers to `0.0` in severity classification
-- Unknown assertion conditions silently returning `false` (now returns explicit error message)
-- NaN sort poisoning in registry `resolve()` (`partial_cmp` -> `total_cmp`)
-- Case-insensitive Bearer token matching in auth middleware (RFC 7235)
-- Eval timeout error message now uses `EVAL_TIMEOUT` constant instead of hardcoded "10s"
+Initial public release.
 
 ### Added
 
-- Shadow DOM traversal in `walkDom()` — Web Components are now visible in DOM snapshots
-- Shadow DOM text search in `waitFor` conditions
-- `type()` uses native value setter via `Object.getOwnPropertyDescriptor` + `InputEvent` dispatch (React/Vue compatible)
-- `PartialEq` derives on all core types (`VerificationResult`, `Divergence`, `DivergenceSeverity`, `WindowState`, `DomSnapshot`, `DomElement`, `ElementBounds`)
-- `Default` impl for `EventRecorder` (50K event capacity)
-- Checkpoint capacity limit (1000, was unbounded)
-- 26 adversarial tests: mutex poisoning recovery, concurrent access, ring buffer edge cases, verification edge cases, ghost command edge cases, assertion edge cases
-- 8 auth unit tests: token generation, rate limiter budget exhaustion, concurrent acquire, zero capacity
-- 14 builder unit tests: defaults, port override, auth token, capacities, privacy config, strict mode
-- Criterion benchmark suite: 13 benchmarks across 5 groups (event log, registry, verification, recording, ghost commands)
-- Demo app frontend upgraded: full Todo list UI, Settings panel, Counter decrement/reset, debug state inspector (exercises all 12 backend commands)
-- `get_plugin_info` MCP tool — agents can query Victauri's own configuration, enabled tools, privacy settings
-- Honest README with limitations section, security model, privacy controls, roadmap
-
-### Changed
-
-- README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
-- Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
-- Test count: 110 -> 209
-- Tool count: 55 -> 59 (added `export_session`, `import_session`, `slow_ipc_calls`, `get_plugin_info`)
-
-### Security
-
-- **JS injection fix**: All 22 manual string escaping sites replaced with `serde_json::to_string()` via `js_string()` helper. Eliminates entire class of injection through newlines, null bytes, unicode separators, template literals.
-- **URL validation**: Switched from blocklist to scheme allowlist (http/https/file only) using the `url` crate parser. Blocks javascript:, data:, vbscript:, and all other schemes.
-- **Screenshot error handling**: `GetDIBits()` return value checked on Windows — prevents silent all-black screenshots.
-
-### API
-
-- Configurable eval timeout via `VictauriBuilder::eval_timeout()` and `VICTAURI_EVAL_TIMEOUT` env var
-- Configurable JS bridge log capacities: `console_log_capacity()`, `network_log_capacity()`, `navigation_log_capacity()`
-- `VictauriBuilder::on_ready(callback)` — notification when MCP server is listening
-- `EventLog::snapshot_range(offset, limit)` for paginated event access
-- `EventLog::ipc_calls_since(timestamp)` for filtered IPC queries
-- `Redactor::try_new()` returns `Result` for pattern compilation error handling
-- Doc comments on all public types and builder methods
-- Crate-level doc comments with Quick Start and Configuration examples
-- Cargo.toml metadata (homepage, documentation, readme, exclude) for all 4 crates
-
-## [0.1.0] - 2026-04-26
-
-### Added
-
-- Workspace with 4 crates: victauri-core, victauri-macros, victauri-plugin, victauri-watchdog
+- Workspace with 5 crates: victauri-core, victauri-macros, victauri-plugin, victauri-test, victauri-watchdog
 - 55 MCP tools across 16 categories (WebView, Windows, Backend, Network, Storage, Navigation, Dialogs, Verification, Streaming, Intent, Wait, Time-Travel, CSS/Style, Visual Debug, Accessibility, Performance)
 - 3 MCP resources: victauri://ipc-log, victauri://windows, victauri://state
 - `#[inspectable]` proc macro for Tauri command instrumentation with JSON schema generation
-- JS bridge with DOM walking, ref handles, console capture, mutation observer, network interception
+- JS bridge v0.2.0 with DOM walking, ref handles, console capture, mutation observer, network interception, navigation tracking, dialog capture, waitFor polling
 - IPC interception via `fetch` monkey-patching (Tauri 2.0 `ipc.localhost` protocol)
 - Privacy layer: command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode
 - Rate limiting (100 req/sec default, token bucket with AtomicU64)
 - `VictauriBuilder` for port/auth/capacity configuration
 - `VICTAURI_PORT` and `VICTAURI_AUTH_TOKEN` environment variable support
 - Release-safe: zero overhead in release builds via `#[cfg(debug_assertions)]`
-- Cross-platform CI (Linux, Windows, macOS)
-- 110 tests (44 core + 4 macro + 18 plugin unit + 44 plugin integration)
+- Cross-platform CI (Linux, Windows, macOS) with clippy, tests, docs, MSRV, security audit, dependency checks, semver checks
+- 287 tests (115 core + 4 macro + 105 plugin unit + 52 plugin integration + 5 watchdog + 6 doctests)
+- 13 Criterion benchmarks across 5 groups
 - Windows screenshot via `PrintWindow` + custom PNG encoder (no external dependencies)
 - macOS screenshot via `CGWindowListCreateImage` + alpha un-premultiply
+- Linux screenshot via X11 `GetImage` (x11rb) with Wayland fallback via `grim`
 - OS-level process memory stats (Windows `GetProcessMemoryInfo`, Linux `/proc/self/statm`)
-- victauri-watchdog crash-recovery sidecar
-- Demo app example with 12 instrumented commands
+- victauri-watchdog crash-recovery sidecar with configurable recovery commands
+- victauri-test crate: typed MCP HTTP client (`VictauriClient`) with session management and assertion helpers (`assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`)
+- Demo app example with 12 instrumented commands (greet, counter CRUD, todo CRUD, settings, state dump)
+- Shadow DOM traversal in DOM snapshots
+- Cross-boundary state verification, ghost command detection, IPC integrity checking
+- Event recording with checkpoints, export/import, and replay sequences
+- CSS inspection, visual debug overlays, accessibility auditing, performance profiling
+- Tag-triggered release workflow for crates.io publishing
+
+### Security
+
+- JS injection prevention: all manual string escaping replaced with `serde_json::to_string()` via `js_string()` helper
+- URL validation via scheme allowlist (http/https/file only) using the `url` crate parser
+- DNS rebinding protection for localhost server
+- Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
+- Screenshot error handling: `GetDIBits()` return value checked on Windows
 
 [Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/runyourempire/victauri/releases/tag/v0.1.0
