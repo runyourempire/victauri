@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README rewritten: removed unverified performance claims, added "What It Doesn't Do (Yet)" section
 - Checkpoints use `VecDeque` with bounded capacity instead of unbounded `Vec`
-- Test count: 110 -> 205
+- Test count: 110 -> 209
 - Tool count: 55 -> 58 (added `export_session`, `import_session`, `slow_ipc_calls`)
 
 ### Security
@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### API
 
 - Configurable eval timeout via `VictauriBuilder::eval_timeout()` and `VICTAURI_EVAL_TIMEOUT` env var
+- Configurable JS bridge log capacities: `console_log_capacity()`, `network_log_capacity()`, `navigation_log_capacity()`
+- `VictauriBuilder::on_ready(callback)` — notification when MCP server is listening
 - `EventLog::snapshot_range(offset, limit)` for paginated event access
 - `EventLog::ipc_calls_since(timestamp)` for filtered IPC queries
 - `Redactor::try_new()` returns `Result` for pattern compilation error handling

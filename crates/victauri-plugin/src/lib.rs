@@ -1,7 +1,7 @@
 //! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
 //!
 //! Add this plugin to your Tauri app for AI-agent-driven testing and debugging:
-//! DOM snapshots, IPC tracing, cross-boundary verification, and 55 more tools —
+//! DOM snapshots, IPC tracing, cross-boundary verification, and 58 more tools —
 //! all accessible over the Model Context Protocol.
 //!
 //! # Quick Start
@@ -95,6 +95,8 @@ pub struct VictauriBuilder {
     redaction_patterns: Vec<String>,
     redaction_enabled: bool,
     strict_privacy: bool,
+    bridge_capacities: js_bridge::BridgeCapacities,
+    on_ready: Option<Box<dyn FnOnce(u16) + Send + 'static>>,
 }
 
 impl Default for VictauriBuilder {
@@ -111,6 +113,8 @@ impl Default for VictauriBuilder {
             redaction_patterns: Vec::new(),
             redaction_enabled: false,
             strict_privacy: false,
+            bridge_capacities: js_bridge::BridgeCapacities::default(),
+            on_ready: None,
         }
     }
 }
@@ -194,6 +198,31 @@ impl VictauriBuilder {
         self
     }
 
+    /// Set the maximum console log entries kept in the JS bridge (default: 1000).
+    pub fn console_log_capacity(mut self, capacity: usize) -> Self {
+        self.bridge_capacities.console_logs = capacity;
+        self
+    }
+
+    /// Set the maximum network log entries kept in the JS bridge (default: 1000).
+    pub fn network_log_capacity(mut self, capacity: usize) -> Self {
+        self.bridge_capacities.network_log = capacity;
+        self
+    }
+
+    /// Set the maximum navigation log entries kept in the JS bridge (default: 200).
+    pub fn navigation_log_capacity(mut self, capacity: usize) -> Self {
+        self.bridge_capacities.navigation_log = capacity;
+        self
+    }
+
+    /// Register a callback invoked once the MCP server is listening.
+    /// The callback receives the port number.
+    pub fn on_ready(mut self, f: impl FnOnce(u16) + Send + 'static) -> Self {
+        self.on_ready = Some(Box::new(f));
+        self
+    }
+
     fn resolve_port(&self) -> u16 {
         self.port
             .or_else(|| std::env::var("VICTAURI_PORT").ok()?.parse().ok())
@@ -258,6 +287,8 @@ impl VictauriBuilder {
             let eval_timeout = self.resolve_eval_timeout();
             let auth_token = self.resolve_auth_token();
             let privacy_config = self.build_privacy_config();
+            let on_ready = self.on_ready;
+            let js_init = js_bridge::init_script(&self.bridge_capacities);
 
             Builder::new("victauri")
                 .setup(move |app, _api| {
@@ -285,18 +316,42 @@ impl VictauriBuilder {
 
                     let app_handle = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            mcp::start_server_with_options(app_handle, state, port, auth_token)
-                                .await
+                        match mcp::start_server_with_options(
+                            app_handle, state, port, auth_token,
+                        )
+                        .await
                         {
-                            tracing::error!("Victauri MCP server failed to start: {e}");
+                            Ok(()) => {}
+                            Err(e) => {
+                                tracing::error!("Victauri MCP server failed to start: {e}");
+                            }
                         }
                     });
+
+                    if let Some(cb) = on_ready {
+                        let ready_port = port;
+                        tauri::async_runtime::spawn(async move {
+                            for _ in 0..50 {
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                if tokio::net::TcpStream::connect(format!(
+                                    "127.0.0.1:{ready_port}"
+                                ))
+                                .await
+                                .is_ok()
+                                {
+                                    cb(ready_port);
+                                    return;
+                                }
+                            }
+                            tracing::warn!("Victauri on_ready: server did not become ready within 5s");
+                            cb(ready_port);
+                        });
+                    }
 
                     tracing::info!("Victauri plugin initialized — MCP server on port {port}");
                     Ok(())
                 })
-                .js_init_script(js_bridge::INIT_SCRIPT.to_string())
+                .js_init_script(js_init)
                 .invoke_handler(tauri::generate_handler![
                     tools::victauri_eval_js,
                     tools::victauri_eval_callback,
@@ -439,5 +494,52 @@ mod tests {
         let config = builder.build_privacy_config();
         assert!(config.command_blocklist.contains("extra_dangerous"));
         assert!(config.disabled_tools.contains("eval_js"));
+    }
+
+    #[test]
+    fn builder_bridge_capacities() {
+        let builder = VictauriBuilder::new()
+            .console_log_capacity(5000)
+            .network_log_capacity(2000)
+            .navigation_log_capacity(500);
+        assert_eq!(builder.bridge_capacities.console_logs, 5000);
+        assert_eq!(builder.bridge_capacities.network_log, 2000);
+        assert_eq!(builder.bridge_capacities.navigation_log, 500);
+        assert_eq!(builder.bridge_capacities.mutation_log, 500);
+        assert_eq!(builder.bridge_capacities.dialog_log, 100);
+    }
+
+    #[test]
+    fn builder_on_ready_sets_callback() {
+        let builder = VictauriBuilder::new().on_ready(|_port| {});
+        assert!(builder.on_ready.is_some());
+    }
+
+    #[test]
+    fn init_script_contains_custom_capacities() {
+        let caps = js_bridge::BridgeCapacities {
+            console_logs: 3000,
+            mutation_log: 750,
+            network_log: 5000,
+            navigation_log: 400,
+            dialog_log: 250,
+            long_tasks: 200,
+        };
+        let script = js_bridge::init_script(&caps);
+        assert!(script.contains("CAP_CONSOLE = 3000"));
+        assert!(script.contains("CAP_MUTATION = 750"));
+        assert!(script.contains("CAP_NETWORK = 5000"));
+        assert!(script.contains("CAP_NAVIGATION = 400"));
+        assert!(script.contains("CAP_DIALOG = 250"));
+        assert!(script.contains("CAP_LONG_TASKS = 200"));
+    }
+
+    #[test]
+    fn init_script_default_contains_standard_capacities() {
+        let caps = js_bridge::BridgeCapacities::default();
+        let script = js_bridge::init_script(&caps);
+        assert!(script.contains("CAP_CONSOLE = 1000"));
+        assert!(script.contains("CAP_NETWORK = 1000"));
+        assert!(script.contains("window.__VICTAURI__"));
     }
 }

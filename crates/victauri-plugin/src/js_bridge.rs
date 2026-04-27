@@ -1,7 +1,51 @@
-pub const INIT_SCRIPT: &str = r#"
-(function() {
-    if (window.__VICTAURI__) return;
+/// JS bridge log capacity configuration.
+pub struct BridgeCapacities {
+    pub console_logs: usize,
+    pub mutation_log: usize,
+    pub network_log: usize,
+    pub navigation_log: usize,
+    pub dialog_log: usize,
+    pub long_tasks: usize,
+}
 
+impl Default for BridgeCapacities {
+    fn default() -> Self {
+        Self {
+            console_logs: 1000,
+            mutation_log: 500,
+            network_log: 1000,
+            navigation_log: 200,
+            dialog_log: 100,
+            long_tasks: 100,
+        }
+    }
+}
+
+/// Generate the JS init script with custom log capacities.
+pub fn init_script(caps: &BridgeCapacities) -> String {
+    format!(
+        "\n(function() {{\
+        \n    if (window.__VICTAURI__) return;\
+        \n\
+        \n    var CAP_CONSOLE = {console_logs};\
+        \n    var CAP_MUTATION = {mutation_log};\
+        \n    var CAP_NETWORK = {network_log};\
+        \n    var CAP_NAVIGATION = {navigation_log};\
+        \n    var CAP_DIALOG = {dialog_log};\
+        \n    var CAP_LONG_TASKS = {long_tasks};\
+        \n",
+        console_logs = caps.console_logs,
+        mutation_log = caps.mutation_log,
+        network_log = caps.network_log,
+        navigation_log = caps.navigation_log,
+        dialog_log = caps.dialog_log,
+        long_tasks = caps.long_tasks,
+    ) + INIT_SCRIPT_BODY
+}
+
+/// The body of the init script (after capacity variable declarations).
+/// Uses CAP_* variables for all log limits.
+const INIT_SCRIPT_BODY: &str = r#"
     var refMap = new Map();
     var refCounter = 0;
     var consoleLogs = [];
@@ -778,7 +822,7 @@ pub const INIT_SCRIPT: &str = r#"
             var entries = list.getEntries();
             for (var i = 0; i < entries.length; i++) {
                 window.__VICTAURI__._longTasks.push({ duration: entries[i].duration, startTime: entries[i].startTime });
-                if (window.__VICTAURI__._longTasks.length > 100) window.__VICTAURI__._longTasks.shift();
+                if (window.__VICTAURI__._longTasks.length > CAP_LONG_TASKS) window.__VICTAURI__._longTasks.shift();
             }
         });
         ltObserver.observe({ type: 'longtask', buffered: true });
@@ -904,7 +948,7 @@ pub const INIT_SCRIPT: &str = r#"
         console[level] = function() {
             var args = Array.prototype.slice.call(arguments);
             consoleLogs.push({ level: level, message: args.map(String).join(' '), timestamp: Date.now() });
-            if (consoleLogs.length > 1000) consoleLogs.shift();
+            if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
             originalConsole[level].apply(console, args);
         };
     }
@@ -927,7 +971,7 @@ pub const INIT_SCRIPT: &str = r#"
             if (!mutationBatchTimer) {
                 mutationBatchTimer = setTimeout(function() {
                     mutationLog.push({ count: mutationBatchCount, timestamp: Date.now() });
-                    if (mutationLog.length > 500) mutationLog.shift();
+                    if (mutationLog.length > CAP_MUTATION) mutationLog.shift();
                     mutationBatchCount = 0;
                     mutationBatchTimer = null;
                 }, 100);
@@ -961,7 +1005,7 @@ pub const INIT_SCRIPT: &str = r#"
                 var method = (init && init.method) || (input && input.method) || 'GET';
                 var entry = { id: id, method: method.toUpperCase(), url: url, timestamp: Date.now(), status: 'pending', duration_ms: null };
                 networkLog.push(entry);
-                if (networkLog.length > 1000) networkLog.shift();
+                if (networkLog.length > CAP_NETWORK) networkLog.shift();
 
                 return origFetch.call(this, input, init).then(function(response) {
                     entry.status = response.status;
@@ -996,7 +1040,7 @@ pub const INIT_SCRIPT: &str = r#"
                     duration_ms: null,
                 };
                 networkLog.push(entry);
-                if (networkLog.length > 1000) networkLog.shift();
+                if (networkLog.length > CAP_NETWORK) networkLog.shift();
                 var self = this;
                 this.addEventListener('load', function() {
                     entry.status = self.status;
@@ -1022,13 +1066,13 @@ pub const INIT_SCRIPT: &str = r#"
         history.pushState = function() {
             var result = origPushState.apply(this, arguments);
             navigationLog.push({ url: window.location.href, timestamp: Date.now(), type: 'pushState' });
-            if (navigationLog.length > 200) navigationLog.shift();
+            if (navigationLog.length > CAP_NAVIGATION) navigationLog.shift();
             return result;
         };
         history.replaceState = function() {
             var result = origReplaceState.apply(this, arguments);
             navigationLog.push({ url: window.location.href, timestamp: Date.now(), type: 'replaceState' });
-            if (navigationLog.length > 200) navigationLog.shift();
+            if (navigationLog.length > CAP_NAVIGATION) navigationLog.shift();
             return result;
         };
         window.addEventListener('popstate', function() {
@@ -1046,20 +1090,20 @@ pub const INIT_SCRIPT: &str = r#"
     (function captureDialogs() {
         window.alert = function(msg) {
             dialogLog.push({ type: 'alert', message: String(msg || ''), timestamp: Date.now() });
-            if (dialogLog.length > 100) dialogLog.shift();
+            if (dialogLog.length > CAP_DIALOG) dialogLog.shift();
         };
         window.confirm = function(msg) {
             var resp = dialogAutoResponses.confirm;
             var result = resp.action === 'accept';
             dialogLog.push({ type: 'confirm', message: String(msg || ''), timestamp: Date.now(), result: result });
-            if (dialogLog.length > 100) dialogLog.shift();
+            if (dialogLog.length > CAP_DIALOG) dialogLog.shift();
             return result;
         };
         window.prompt = function(msg, defaultValue) {
             var resp = dialogAutoResponses.prompt;
             var result = resp.action === 'accept' ? (resp.text || defaultValue || '') : null;
             dialogLog.push({ type: 'prompt', message: String(msg || ''), timestamp: Date.now(), result: result });
-            if (dialogLog.length > 100) dialogLog.shift();
+            if (dialogLog.length > CAP_DIALOG) dialogLog.shift();
             return result;
         };
     })();
