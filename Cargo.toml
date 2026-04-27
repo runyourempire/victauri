@@ -16,7 +16,7 @@ license = "Apache-2.0"
 repository = "https://github.com/runyourempire/victauri"
 description = "Verified Introspection & Control for Tauri Applications"
 authors = ["4DA Systems <hello@4da.ai>"]
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }

@@ -9,7 +9,7 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Requires Rust 1.85+ (edition 2024).
+Requires Rust 1.88+ (edition 2024).
 
 ## Running Tests
 
