@@ -324,7 +324,6 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
 
 #[cfg(target_os = "linux")]
 async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
-    use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{ConnectionExt, ImageFormat};
 
     tokio::task::spawn_blocking(move || {

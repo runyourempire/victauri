@@ -971,7 +971,7 @@ impl VictauriMcpHandler {
             .into_iter()
             .filter(|c| c.duration_ms.unwrap_or(0) > params.threshold_ms)
             .collect();
-        calls.sort_by(|a, b| b.duration_ms.cmp(&a.duration_ms));
+        calls.sort_by_key(|c| std::cmp::Reverse(c.duration_ms));
         calls.truncate(limit);
 
         let result = serde_json::json!({

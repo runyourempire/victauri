@@ -6,7 +6,7 @@
 
 X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which sees only the browser glass), Victauri gives agents simultaneous access to the webview DOM, the Rust backend, the IPC layer, the database, and native window state — all through a single MCP interface.
 
-**Stack:** Pure Rust workspace (4 crates) | **Target:** Tauri 2.0 applications
+**Stack:** Pure Rust workspace (5 crates) | **Target:** Tauri 2.0 applications
 
 ## Commands
 
@@ -27,6 +27,7 @@ victauri/
 │   ├── victauri-core/       # Shared types: events, registry, snapshots, verification
 │   ├── victauri-macros/     # Proc macros: #[inspectable] for command instrumentation
 │   ├── victauri-plugin/     # Tauri plugin: embedded MCP server + JS bridge + tools
+│   ├── victauri-test/       # Test client + assertion helpers for CI testing
 │   └── victauri-watchdog/   # Crash-recovery sidecar (monitors plugin health)
 └── examples/
     └── demo-app/            # Minimal Tauri app with Victauri wired up
@@ -71,6 +72,12 @@ The main crate. Tauri plugin + embedded MCP server.
 - Tools (`tools.rs`) — Tauri commands for eval, window state, IPC log, registry, memory
 - Screenshot (`screenshot.rs`) — platform-native window capture
 - Memory (`memory.rs`) — atomic allocation tracking
+
+### victauri-test
+Standalone test crate. No Tauri dependency — only reqwest + serde_json.
+- `VictauriClient` — typed HTTP client with auto-session lifecycle
+- Convenience methods for all common MCP tool calls
+- Assertion helpers for DOM, IPC, accessibility, performance, state verification
 
 ### victauri-watchdog
 Standalone binary. Monitors the MCP server health endpoint.
@@ -150,7 +157,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-28)
 
-**All 8 phases complete + production hardening.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 287 tests pass (115 core + 4 macro + 105 plugin unit + 52 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0.
+**All 8 phases complete + production hardening. v0.1.0 released.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 287 tests pass (115 core + 4 macro + 105 plugin unit + 52 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. GitHub Release created, crates.io publish pending `CARGO_REGISTRY_TOKEN` secret.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
@@ -237,6 +244,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
   - **Accessibility (1)**: audit_accessibility
   - **Performance (1)**: get_performance_metrics
   Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge v0.2.0 with IPC interception, network monitoring, storage access, navigation tracking, dialog capture, extended interactions, and waitFor. `EventRecorder` with 50,000 event capacity. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. `VictauriBuilder` for port/capacity/auth configuration + `VICTAURI_PORT`/`VICTAURI_AUTH_TOKEN` env vars. Bearer token auth middleware (opt-in, case-insensitive per RFC 7235). Token-bucket rate limiter (AtomicU64, 100 req/sec default). Privacy layer with command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode. Tool enable/disable via builder. 39 unit tests (8 auth + 8 privacy + 10 redaction + 14 builder) + 44 integration tests.
+- **victauri-test**: Typed MCP HTTP client (`VictauriClient`) with auto-session management (initialize + notifications/initialized). 23 convenience methods for tool calls (eval_js, dom_snapshot, click, fill, etc). 6 assertion helpers: `assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`. Supports Bearer token auth via `connect_with_token`. Published to crates.io as standalone crate.
 - **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
 - **demo-app**: Tauri 2 app in `examples/demo-app/` with Victauri wired up. 12 commands (greet, counter CRUD, todo CRUD, settings, app state dump) all decorated with `#[inspectable]` including intent, category, examples. Frontend exercises all 12 commands: greet form, counter with +/−/reset, todo list with add/toggle/delete, settings panel (theme/notifications/language), debug state inspector. Includes `.mcp.json` for immediate Claude Code connection.
 - **CI**: GitHub Actions workflow (`ci.yml`) — clippy + tests + docs on Linux/Windows/macOS, format check on Linux. All crate code passes `cargo fmt --check`.
@@ -245,7 +253,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - **bridge.rs** — `WebviewBridge` trait (public) erases the Tauri `Runtime` generic, allowing the MCP handler (which can't be generic) to access webview windows via `Arc<dyn WebviewBridge>`. 8 methods: eval_webview, get_window_states, list_window_labels, get_native_handle, manage_window, resize_window, move_window, set_window_title. Impl provided for `AppHandle<R: Runtime>`. Testable via mock implementations.
 - **mcp.rs** — rmcp `#[tool_router]` + `#[tool_handler]` macros generate the MCP server. `build_app()` constructs the axum `Router` independently of Tauri (testable). `StreamableHttpService` serves on `/mcp`. Health/info endpoints on `/health` and `/info`. Parameter structs derive `schemars::JsonSchema` for automatic MCP tool schema generation. `VictauriMcpHandler::new()` public constructor for testing.
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
-- **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Linux: X11 `GetImage` (BGRA ZPixmap) → RGBA via `x11rb`. All platforms use the same custom PNG encoder (raw zlib stored blocks + CRC32 + Adler32).
+- **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → stored-deflate PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Linux: X11 `GetImage` (BGRA ZPixmap) → RGBA via `x11rb`, with Wayland fallback via `grim` subprocess (full-screen capture). All platforms use the same custom PNG encoder (raw zlib stored blocks + CRC32 + Adler32).
 - **auth.rs** — Optional Bearer token authentication. `require_auth` axum middleware skips `/health` but protects `/mcp` and `/info`. Token from `VictauriBuilder::auth_token()`, `generate_auth_token()`, or `VICTAURI_AUTH_TOKEN` env var.
 - **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.2.0 includes network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, and waitFor polling. Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
 - **IPC interception** — Tauri 2.0 freezes `__TAURI_INTERNALS__` and all its methods (`invoke`, `ipc`, `postMessage`) with `configurable:false, writable:false`. Plugin init scripts run AFTER Tauri's core init, so monkey-patching is impossible. Instead, IPC is derived from the network log: Tauri sends all IPC via `fetch()` to `http://ipc.localhost/<command>`, and our fetch interceptor captures these. `getIpcLog()` filters networkLog entries for `ipc.localhost` URLs, extracts command names from the URL path, and excludes `plugin:victauri|` calls. This approach is robust against Tauri version changes and works on all platforms.
