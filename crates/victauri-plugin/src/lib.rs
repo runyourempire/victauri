@@ -18,12 +18,14 @@
 //!
 //! # Configuration
 //!
+//! Authentication is enabled by default with an auto-generated token (printed to logs).
+//! Use `.auth_disabled()` to opt out, or `.auth_token("...")` to set a specific token.
+//!
 //! ```ignore
 //! tauri::Builder::default()
 //!     .plugin(
 //!         victauri_plugin::VictauriBuilder::new()
 //!             .port(8080)
-//!             .generate_auth_token()
 //!             .strict_privacy_mode()
 //!             .build(),
 //!     )
@@ -93,12 +95,18 @@ pub struct VictauriState {
 /// Supports port selection, authentication, privacy controls, output redaction,
 /// and capacity tuning. All settings have sensible defaults and can be overridden
 /// via environment variables.
+///
+/// **Authentication is enabled by default.** If no explicit token is set and no
+/// `VICTAURI_AUTH_TOKEN` env var exists, a random UUID token is auto-generated
+/// and printed to the log. Call [`auth_disabled()`](VictauriBuilder::auth_disabled)
+/// to explicitly opt out of authentication.
 pub struct VictauriBuilder {
     port: Option<u16>,
     event_capacity: usize,
     recorder_capacity: usize,
     eval_timeout: std::time::Duration,
     auth_token: Option<String>,
+    auth_explicitly_disabled: bool,
     disabled_tools: Vec<String>,
     command_allowlist: Option<Vec<String>>,
     command_blocklist: Vec<String>,
@@ -117,6 +125,7 @@ impl Default for VictauriBuilder {
             recorder_capacity: DEFAULT_RECORDER_CAPACITY,
             eval_timeout: DEFAULT_EVAL_TIMEOUT,
             auth_token: None,
+            auth_explicitly_disabled: false,
             disabled_tools: Vec::new(),
             command_allowlist: None,
             command_blocklist: Vec::new(),
@@ -167,6 +176,17 @@ impl VictauriBuilder {
     /// Generate a random UUID v4 auth token.
     pub fn generate_auth_token(mut self) -> Self {
         self.auth_token = Some(auth::generate_token());
+        self
+    }
+
+    /// Explicitly disable authentication. By default, Victauri auto-generates a
+    /// token if none is provided. Call this method to opt out of auth entirely.
+    ///
+    /// **Warning:** Without authentication, any process on localhost can access
+    /// the MCP server. Only use this in trusted environments.
+    pub fn auth_disabled(mut self) -> Self {
+        self.auth_explicitly_disabled = true;
+        self.auth_token = None;
         self
     }
 
@@ -240,9 +260,13 @@ impl VictauriBuilder {
     }
 
     fn resolve_auth_token(&self) -> Option<String> {
+        if self.auth_explicitly_disabled {
+            return None;
+        }
         self.auth_token
             .clone()
             .or_else(|| std::env::var("VICTAURI_AUTH_TOKEN").ok())
+            .or_else(|| Some(auth::generate_token()))
     }
 
     fn resolve_eval_timeout(&self) -> std::time::Duration {
@@ -357,9 +381,13 @@ impl VictauriBuilder {
 
                     app.manage(state.clone());
 
-                    if auth_token.is_some() {
+                    if let Some(ref token) = auth_token {
                         tracing::info!(
-                            "Victauri MCP server auth enabled (token via VICTAURI_AUTH_TOKEN env var or on_ready callback)"
+                            "Victauri MCP server auth enabled — token: {token}"
+                        );
+                    } else {
+                        tracing::warn!(
+                            "Victauri MCP server auth DISABLED — any localhost process can access the MCP server"
                         );
                     }
 
@@ -453,7 +481,16 @@ mod tests {
         let builder = VictauriBuilder::new();
         assert_eq!(builder.event_capacity, DEFAULT_EVENT_CAPACITY);
         assert_eq!(builder.recorder_capacity, DEFAULT_RECORDER_CAPACITY);
+        // Raw field is None, but resolve_auth_token() auto-generates a token
         assert!(builder.auth_token.is_none());
+        assert!(!builder.auth_explicitly_disabled);
+        let resolved = builder.resolve_auth_token();
+        assert!(resolved.is_some(), "auth should be enabled by default");
+        assert_eq!(
+            resolved.unwrap().len(),
+            36,
+            "auto-generated token should be a UUID"
+        );
         assert!(builder.disabled_tools.is_empty());
         assert!(builder.command_allowlist.is_none());
         assert!(builder.command_blocklist.is_empty());
@@ -486,6 +523,27 @@ mod tests {
         let builder = VictauriBuilder::new().generate_auth_token();
         let token = builder.resolve_auth_token().unwrap();
         assert_eq!(token.len(), 36);
+    }
+
+    #[test]
+    fn builder_auth_disabled() {
+        let builder = VictauriBuilder::new().auth_disabled();
+        assert!(builder.auth_explicitly_disabled);
+        assert!(
+            builder.resolve_auth_token().is_none(),
+            "auth_disabled should opt out of auto-generated token"
+        );
+    }
+
+    #[test]
+    fn builder_auth_disabled_overrides_explicit_token() {
+        let builder = VictauriBuilder::new()
+            .auth_token("my-secret")
+            .auth_disabled();
+        assert!(
+            builder.resolve_auth_token().is_none(),
+            "auth_disabled should override explicit token"
+        );
     }
 
     #[test]

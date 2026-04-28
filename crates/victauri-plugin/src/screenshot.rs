@@ -490,30 +490,13 @@ fn png_crc32(data: &[u8]) -> u32 {
 
 #[allow(dead_code)]
 fn deflate_compress(data: &[u8]) -> Vec<u8> {
-    let num_blocks = data.len().div_ceil(65535);
-    let mut out = Vec::with_capacity(2 + num_blocks * 5 + data.len() + 4);
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write;
 
-    // zlib header: CM=8 (deflate), CINFO=7 (32K window)
-    out.push(0x78);
-    out.push(0x01); // FCHECK for low compression
-
-    // Emit stored (uncompressed) deflate blocks
-    let max_block = 65535;
-    let chunks: Vec<&[u8]> = data.chunks(max_block).collect();
-    for (i, chunk) in chunks.iter().enumerate() {
-        let is_last = i == chunks.len() - 1;
-        out.push(if is_last { 0x01 } else { 0x00 });
-        let len = chunk.len() as u16;
-        out.extend_from_slice(&len.to_le_bytes());
-        out.extend_from_slice(&(!len).to_le_bytes());
-        out.extend_from_slice(chunk);
-    }
-
-    // Adler-32 checksum
-    let adler = adler32(data);
-    out.extend_from_slice(&adler.to_be_bytes());
-
-    out
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(data).expect("zlib write failed");
+    encoder.finish().expect("zlib finish failed")
 }
 
 #[allow(dead_code)]
@@ -592,27 +575,28 @@ mod tests {
     fn deflate_compress_roundtrip_structure() {
         let data = b"hello world";
         let compressed = deflate_compress(data);
-        // zlib header
+        // zlib header: CMF=0x78 (deflate, 32K window)
         assert_eq!(compressed[0], 0x78);
-        assert_eq!(compressed[1], 0x01);
-        // Last 4 bytes should be adler32 in big-endian
-        let len = compressed.len();
-        let adler = u32::from_be_bytes([
-            compressed[len - 4],
-            compressed[len - 3],
-            compressed[len - 2],
-            compressed[len - 1],
-        ]);
-        assert_eq!(adler, adler32(data));
+        // Must decompress back to original
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+        let mut decoder = ZlibDecoder::new(&compressed[..]);
+        let mut decompressed = Vec::new();
+        decoder.read_to_end(&mut decompressed).unwrap();
+        assert_eq!(&decompressed, data);
     }
 
     #[test]
-    fn deflate_compress_large_data_multi_block() {
-        // Data larger than 65535 bytes should produce multiple stored blocks
+    fn deflate_compress_large_data_compresses() {
         let data = vec![0u8; 100_000];
         let compressed = deflate_compress(&data);
-        // Should have 2 blocks (65535 + 34465)
-        assert!(compressed.len() > 100_000); // stored blocks add overhead
+        // Uniform data should compress significantly
+        assert!(
+            compressed.len() < data.len() / 2,
+            "expected significant compression, got {} -> {}",
+            data.len(),
+            compressed.len()
+        );
     }
 
     #[test]

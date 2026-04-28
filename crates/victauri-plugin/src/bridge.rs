@@ -9,7 +9,8 @@ pub trait WebviewBridge: Send + Sync {
     fn get_window_states(&self, label: Option<&str>) -> Vec<WindowState>;
     /// Return the labels of all open webview windows.
     fn list_window_labels(&self) -> Vec<String>;
-    /// Return the platform-native window handle (HWND on Windows) for screenshot capture.
+    /// Return the platform-native window handle for screenshot capture.
+    /// Windows: HWND, macOS: CGWindowID (window number), Linux: X11 window ID.
     fn get_native_handle(&self, label: Option<&str>) -> Result<isize, String>;
     /// Perform a window management action (minimize, maximize, close, show, hide, etc.).
     fn manage_window(&self, label: Option<&str>, action: &str) -> Result<String, String>;
@@ -83,19 +84,22 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
         let windows = self.webview_windows();
         let _webview = find_window(&windows, label)?;
 
-        #[cfg(windows)]
-        {
-            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-            let handle = _webview.window_handle().map_err(|e| e.to_string())?;
-            match handle.as_raw() {
-                RawWindowHandle::Win32(h) => Ok(h.hwnd.get()),
-                _ => Err("unexpected window handle type".to_string()),
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let handle = _webview.window_handle().map_err(|e| e.to_string())?;
+        match handle.as_raw() {
+            #[cfg(windows)]
+            RawWindowHandle::Win32(h) => Ok(h.hwnd.get()),
+            #[cfg(target_os = "macos")]
+            RawWindowHandle::AppKit(h) => {
+                // CGWindowListCreateImage needs CGWindowID (the window number),
+                // not the NSView pointer. Extract via Objective-C runtime.
+                macos_window_number(h.ns_view.as_ptr())
             }
-        }
-
-        #[cfg(not(windows))]
-        {
-            Err("native handle not yet supported on this platform".to_string())
+            #[cfg(target_os = "linux")]
+            RawWindowHandle::Xlib(h) => Ok(h.window as isize),
+            #[cfg(target_os = "linux")]
+            RawWindowHandle::Xcb(h) => Ok(h.window.get() as isize),
+            _ => Err("unsupported window handle type on this platform".to_string()),
         }
     }
 
@@ -145,5 +149,31 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
         let window = find_window(&windows, label)?;
 
         window.set_title(title).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_window_number(ns_view: *mut std::ffi::c_void) -> Result<isize, String> {
+    extern "C" {
+        fn objc_msgSend(obj: *mut std::ffi::c_void, sel: *mut std::ffi::c_void) -> isize;
+        fn sel_registerName(name: *const std::ffi::c_char) -> *mut std::ffi::c_void;
+    }
+
+    if ns_view.is_null() {
+        return Err("null NSView handle".to_string());
+    }
+
+    unsafe {
+        let sel_window = sel_registerName(b"window\0".as_ptr().cast());
+        let ns_window = objc_msgSend(ns_view, sel_window) as *mut std::ffi::c_void;
+        if ns_window.is_null() {
+            return Err("NSView has no parent NSWindow".to_string());
+        }
+        let sel_window_number = sel_registerName(b"windowNumber\0".as_ptr().cast());
+        let window_number = objc_msgSend(ns_window as *mut std::ffi::c_void, sel_window_number);
+        if window_number <= 0 {
+            return Err(format!("invalid CGWindowID: {window_number}"));
+        }
+        Ok(window_number)
     }
 }

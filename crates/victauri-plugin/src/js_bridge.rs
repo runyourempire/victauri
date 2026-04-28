@@ -55,6 +55,17 @@ const INIT_SCRIPT_BODY: &str = r#"
     var navigationLog = [];
     var dialogLog = [];
 
+    function checkActionable(el) {
+        if (el.disabled) return 'element is disabled';
+        var cs = window.getComputedStyle(el);
+        if (cs.display === 'none') return 'element is not visible (display: none)';
+        if (cs.visibility === 'hidden') return 'element is not visible (visibility: hidden)';
+        if (cs.opacity === '0') return 'element is not visible (opacity: 0)';
+        var rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return 'element has zero size';
+        return null;
+    }
+
     // ── Public API ───────────────────────────────────────────────────────────
 
     window.__VICTAURI__ = {
@@ -77,6 +88,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         click: function(refId) {
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
+            var check = checkActionable(el);
+            if (check) return { ok: false, error: check };
             el.click();
             return { ok: true };
         },
@@ -84,6 +97,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         doubleClick: function(refId) {
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
+            var check = checkActionable(el);
+            if (check) return { ok: false, error: check };
             el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
             return { ok: true };
         },
@@ -91,6 +106,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         hover: function(refId) {
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
+            var check = checkActionable(el);
+            if (check) return { ok: false, error: check };
             el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
             el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
             return { ok: true };
@@ -99,6 +116,11 @@ const INIT_SCRIPT_BODY: &str = r#"
         fill: function(refId, value) {
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
+            var check = checkActionable(el);
+            if (check) return { ok: false, error: check };
+            if (!el.matches('input, textarea, [contenteditable="true"]')) {
+                return { ok: false, error: 'element is not fillable (not input, textarea, or contenteditable): ' + (el.tagName || '').toLowerCase() };
+            }
             var proto = el instanceof HTMLTextAreaElement
                 ? HTMLTextAreaElement.prototype
                 : HTMLInputElement.prototype;
@@ -116,6 +138,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         type: function(refId, text) {
             var el = refMap.get(refId);
             if (!el) return { ok: false, error: 'ref not found: ' + refId };
+            var check = checkActionable(el);
+            if (check) return { ok: false, error: check };
             el.focus();
             var proto = el instanceof HTMLTextAreaElement
                 ? HTMLTextAreaElement.prototype
