@@ -155,6 +155,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<WindowStateParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         let states = self.bridge.get_window_states(params.label.as_deref());
         match serde_json::to_string_pretty(&states) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -164,6 +165,7 @@ impl VictauriMcpHandler {
 
     #[tool(description = "List all Tauri window labels.")]
     async fn list_windows(&self) -> CallToolResult {
+        self.track_tool_call();
         let labels = self.bridge.list_window_labels();
         match serde_json::to_string_pretty(&labels) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -194,6 +196,7 @@ impl VictauriMcpHandler {
         description = "List or search all registered Tauri commands with their argument schemas."
     )]
     async fn get_registry(&self, Parameters(params): Parameters<RegistryParams>) -> CallToolResult {
+        self.track_tool_call();
         let commands = match params.query {
             Some(q) => self.state.registry.search(&q),
             None => self.state.registry.list(),
@@ -208,6 +211,7 @@ impl VictauriMcpHandler {
         description = "Get real-time process memory statistics from the OS (working set, page file usage). On Windows returns detailed metrics; on Linux returns virtual/resident size."
     )]
     async fn get_memory_stats(&self) -> CallToolResult {
+        self.track_tool_call();
         let stats = crate::memory::current_stats();
         match serde_json::to_string_pretty(&stats) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -343,6 +347,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<ResolveCommandParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         let limit = params.limit.unwrap_or(5);
         let mut results = self.state.registry.resolve(&params.query);
         results.truncate(limit);
@@ -393,6 +398,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<StartRecordingParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         let session_id = params
             .session_id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -408,6 +414,7 @@ impl VictauriMcpHandler {
         description = "Stop the current recording and return the full recorded session with all events and checkpoints."
     )]
     async fn stop_recording(&self) -> CallToolResult {
+        self.track_tool_call();
         match self.state.recorder.stop() {
             Some(session) => match serde_json::to_string_pretty(&session) {
                 Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -421,6 +428,7 @@ impl VictauriMcpHandler {
         description = "Create a state checkpoint during recording. Associates the current event index with a state snapshot for later comparison."
     )]
     async fn checkpoint(&self, Parameters(params): Parameters<CheckpointParams>) -> CallToolResult {
+        self.track_tool_call();
         let created = self
             .state
             .recorder
@@ -439,6 +447,7 @@ impl VictauriMcpHandler {
 
     #[tool(description = "Get all checkpoints from the current recording session.")]
     async fn list_checkpoints(&self) -> CallToolResult {
+        self.track_tool_call();
         let checkpoints = self.state.recorder.get_checkpoints();
         match serde_json::to_string_pretty(&checkpoints) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -450,6 +459,7 @@ impl VictauriMcpHandler {
         description = "Get the IPC replay sequence: all IPC calls recorded in order, suitable for replaying the session."
     )]
     async fn get_replay_sequence(&self) -> CallToolResult {
+        self.track_tool_call();
         let calls = self.state.recorder.ipc_replay_sequence();
         match serde_json::to_string_pretty(&calls) {
             Ok(json) => CallToolResult::success(vec![Content::text(json)]),
@@ -464,6 +474,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<ReplayParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         let events = self
             .state
             .recorder
@@ -479,6 +490,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<EventsBetweenCheckpointsParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         match self
             .state
             .recorder
@@ -496,6 +508,7 @@ impl VictauriMcpHandler {
         description = "Export the current recording session as a JSON string. The session can be saved externally and later imported with import_session. Does NOT stop the recording."
     )]
     async fn export_session(&self) -> CallToolResult {
+        self.track_tool_call();
         match self.state.recorder.export() {
             Some(s) => {
                 let json = serde_json::to_string_pretty(&s)
@@ -513,6 +526,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<ImportSessionParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         let session: victauri_core::RecordedSession =
             match serde_json::from_str(&params.session_json) {
                 Ok(s) => s,
@@ -586,6 +600,7 @@ impl VictauriMcpHandler {
         description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error."
     )]
     async fn screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> CallToolResult {
+        self.track_tool_call();
         if !self.state.privacy.is_tool_enabled("screenshot") {
             return tool_disabled("screenshot");
         }
@@ -1010,6 +1025,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<ManageWindowParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         match self
             .bridge
             .manage_window(params.label.as_deref(), &params.action)
@@ -1024,6 +1040,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<ResizeWindowParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         match self
             .bridge
             .resize_window(params.label.as_deref(), params.width, params.height)
@@ -1044,6 +1061,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<MoveWindowParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         match self
             .bridge
             .move_window(params.label.as_deref(), params.x, params.y)
@@ -1061,6 +1079,7 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<SetWindowTitleParams>,
     ) -> CallToolResult {
+        self.track_tool_call();
         match self
             .bridge
             .set_window_title(params.label.as_deref(), &params.title)
@@ -1242,6 +1261,7 @@ impl VictauriMcpHandler {
         description = "Inspect the Victauri plugin's own configuration: port, enabled/disabled tools, command filters, privacy settings, capacities, and version. Useful for agents to understand their capabilities before acting."
     )]
     async fn get_plugin_info(&self) -> CallToolResult {
+        self.track_tool_call();
         let disabled: Vec<&str> = self
             .state
             .privacy
@@ -1311,6 +1331,10 @@ impl VictauriMcpHandler {
         }
     }
 
+    fn track_tool_call(&self) {
+        self.state.tool_invocations.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn redact_result(&self, output: String) -> CallToolResult {
         let redacted = self.state.privacy.redact_output(&output);
         CallToolResult::success(vec![Content::text(redacted)])
@@ -1331,6 +1355,7 @@ impl VictauriMcpHandler {
         webview_label: Option<&str>,
         timeout: std::time::Duration,
     ) -> Result<String, String> {
+        self.track_tool_call();
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
 

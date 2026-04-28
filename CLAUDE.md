@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests (294)
+cargo test                     # Run all tests (314)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
@@ -157,7 +157,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-28)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.0 released.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 294 tests pass (120 core + 4 macro + 107 plugin unit + 52 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. GitHub Release created, crates.io publish pending `CARGO_REGISTRY_TOKEN` secret.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.0 released.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 314 tests pass (120 core + 4 macro + 107 plugin unit + 72 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. GitHub Release created, crates.io publish pending `CARGO_REGISTRY_TOKEN` secret.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
