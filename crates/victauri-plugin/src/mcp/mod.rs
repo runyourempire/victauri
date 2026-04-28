@@ -2131,4 +2131,91 @@ mod tests {
         remove_port_file();
         assert!(!port_file_path().exists());
     }
+
+    // ── CSS color sanitization tests ───────────────────────────────────────
+
+    #[test]
+    fn css_color_valid_hex() {
+        assert_eq!(sanitize_css_color("#ff0000").unwrap(), "#ff0000");
+        assert_eq!(sanitize_css_color("#FFF").unwrap(), "#FFF");
+        assert_eq!(sanitize_css_color("#12345678").unwrap(), "#12345678");
+    }
+
+    #[test]
+    fn css_color_valid_rgb() {
+        assert_eq!(
+            sanitize_css_color("rgb(255, 0, 0)").unwrap(),
+            "rgb(255, 0, 0)"
+        );
+        assert_eq!(
+            sanitize_css_color("rgba(0, 0, 0, 0.5)").unwrap(),
+            "rgba(0, 0, 0, 0.5)"
+        );
+    }
+
+    #[test]
+    fn css_color_valid_named() {
+        assert_eq!(sanitize_css_color("red").unwrap(), "red");
+        assert_eq!(sanitize_css_color("transparent").unwrap(), "transparent");
+    }
+
+    #[test]
+    fn css_color_valid_hsl() {
+        assert_eq!(
+            sanitize_css_color("hsl(120, 50%, 50%)").unwrap(),
+            "hsl(120, 50%, 50%)"
+        );
+    }
+
+    #[test]
+    fn css_color_rejects_too_long() {
+        let long = "a".repeat(101);
+        assert!(sanitize_css_color(&long).is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_backslash_escapes() {
+        assert!(sanitize_css_color(r"red\00").is_err());
+        assert!(sanitize_css_color(r"\72\65\64").is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_url_injection() {
+        assert!(sanitize_css_color("url(http://evil.com)").is_err());
+        assert!(sanitize_css_color("URL(http://evil.com)").is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_expression_injection() {
+        assert!(sanitize_css_color("expression(alert(1))").is_err());
+        assert!(sanitize_css_color("EXPRESSION(alert(1))").is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_import() {
+        assert!(sanitize_css_color("@import url(evil.css)").is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_semicolons_and_braces() {
+        assert!(sanitize_css_color("red; background: url(evil)").is_err());
+        assert!(sanitize_css_color("red} body { color: blue").is_err());
+    }
+
+    #[test]
+    fn css_color_rejects_special_chars() {
+        assert!(sanitize_css_color("red<script>").is_err());
+        assert!(sanitize_css_color("red\"onload=alert").is_err());
+        assert!(sanitize_css_color("red'onclick=alert").is_err());
+    }
+
+    #[test]
+    fn css_color_trims_whitespace() {
+        assert_eq!(sanitize_css_color("  red  ").unwrap(), "red");
+    }
+
+    #[test]
+    fn css_color_empty_string() {
+        assert_eq!(sanitize_css_color("").unwrap(), "");
+    }
 }

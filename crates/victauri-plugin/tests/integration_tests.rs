@@ -2609,3 +2609,1029 @@ async fn callback_mock_get_performance_metrics() {
         "get_performance_metrics should return mocked metrics, got: {body}"
     );
 }
+
+// ── Adversarial: Eval-Dependent Tools ──────────────────────────────────────
+
+// ── 1. Happy-path coverage for untested eval-dependent tools ───────────────
+
+#[tokio::test]
+async fn adversarial_double_click_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("doubleClick") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "double_click",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "double_click should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_hover_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("hover") && !code.contains("doubleClick") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "hover",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(body.contains("ok"), "hover should return ok, got: {body}");
+}
+
+#[tokio::test]
+async fn adversarial_select_option_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("selectOption") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "select_option",
+        serde_json::json!({"ref_id": "e1", "values": ["opt1"]}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "select_option should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_scroll_to_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("scrollTo") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "scroll_to",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "scroll_to should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_focus_element_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("focusElement") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "focus_element",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "focus_element should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_storage_returns_data() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("Storage") {
+            r#"{"items":{"key":"value"}}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_storage",
+        serde_json::json!({"storage_type": "local"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("items"),
+        "get_storage should return storage data, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_set_storage_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("Storage") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "set_storage",
+        serde_json::json!({"storage_type": "local", "key": "test", "value": "val"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "set_storage should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_delete_storage_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("Storage") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "delete_storage",
+        serde_json::json!({"storage_type": "local", "key": "test"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "delete_storage should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_cookies_returns_data() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getCookies") {
+            r#""a=1; b=2""#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_cookies",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("a=1"),
+        "get_cookies should return cookie data, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_navigation_log_returns_entries() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getNavigationLog") {
+            r#"[{"url":"http://localhost","type":"initial"}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_navigation_log",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("http://localhost"),
+        "get_navigation_log should return navigation entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_navigate_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("navigate") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "navigate",
+        serde_json::json!({"url": "http://localhost:4444"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "navigate should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_navigate_back_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("navigateBack") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "navigate_back",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "navigate_back should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_dialog_log_returns_entries() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getDialogLog") {
+            "[]".to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_dialog_log",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("[]"),
+        "get_dialog_log should return empty array, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_set_dialog_response_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("setDialogAutoResponse") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "set_dialog_response",
+        serde_json::json!({"dialog_type": "confirm", "action": "accept"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "set_dialog_response should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_styles_returns_css() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getStyles") {
+            r#"{"display":"block","color":"red"}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_styles",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("display"),
+        "get_styles should return CSS properties, got: {body}"
+    );
+    assert!(
+        body.contains("block"),
+        "get_styles should return display:block, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_bounding_boxes_returns_rects() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getBoundingBoxes") {
+            r#"[{"ref_id":"e1","x":0,"y":0,"width":100,"height":50}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_bounding_boxes",
+        serde_json::json!({"ref_ids": ["e1", "e2"]}),
+    )
+    .await;
+
+    assert!(
+        body.contains("width"),
+        "get_bounding_boxes should return bounding rect data, got: {body}"
+    );
+    assert!(
+        body.contains("100"),
+        "get_bounding_boxes should contain width 100, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_highlight_element_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("highlightElement") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "highlight_element",
+        serde_json::json!({"ref_id": "e1", "color": "red"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "highlight_element should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_clear_highlights_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("clearHighlights") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "clear_highlights",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "clear_highlights should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_inject_css_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("injectCss") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "inject_css",
+        serde_json::json!({"css": "body { color: red }"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "inject_css should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_remove_injected_css_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("removeInjectedCss") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "remove_injected_css",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "remove_injected_css should return ok, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_slow_ipc_calls_returns_data() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("duration_ms") {
+            r#"{"threshold_ms":100,"count":0,"calls":[]}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "slow_ipc_calls",
+        serde_json::json!({"threshold_ms": 100}),
+    )
+    .await;
+
+    assert!(
+        body.contains("threshold_ms"),
+        "slow_ipc_calls should return threshold data, got: {body}"
+    );
+    assert!(
+        body.contains("count"),
+        "slow_ipc_calls should return count, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_invoke_command_succeeds() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("__TAURI__") && code.contains("invoke") {
+            r#""Hello, test!""#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "invoke_command",
+        serde_json::json!({"command": "greet", "args": {"name": "test"}}),
+    )
+    .await;
+
+    assert!(
+        body.contains("Hello, test!"),
+        "invoke_command should return greeting, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_get_plugin_info_returns_config() {
+    let state = test_state();
+    let base = start_test_server(state, &["main"]).await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_plugin_info",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("version"),
+        "get_plugin_info should return version, got: {body}"
+    );
+    assert!(
+        body.contains("tools"),
+        "get_plugin_info should return tools, got: {body}"
+    );
+}
+
+// ── 2. Adversarial / edge-case tests ──────────────────────────────────────
+
+#[tokio::test]
+async fn adversarial_eval_js_empty_code() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_code| "undefined".to_string()).await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": ""}),
+    )
+    .await;
+
+    assert!(
+        !body.contains("\"isError\":true"),
+        "eval_js with empty code should not return an error, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_eval_js_syntax_error() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_code| {
+        r#"{"__error":"Unexpected token"}"#.to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": "function("}),
+    )
+    .await;
+
+    assert!(
+        body.contains("__error") || body.contains("Unexpected"),
+        "eval_js with syntax error should surface the error, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_eval_js_returns_null() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_code| "null".to_string()).await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": "null"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("null"),
+        "eval_js returning null should contain null, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_eval_js_returns_large_output() {
+    let large = "x".repeat(50000);
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], move |_code| large.clone()).await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": "big"}),
+    )
+    .await;
+
+    assert!(
+        body.len() > 40000,
+        "eval_js with large output should return large body, got length: {}",
+        body.len()
+    );
+}
+
+#[tokio::test]
+async fn adversarial_navigate_blocks_javascript_url() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "navigate",
+        serde_json::json!({"url": "javascript:alert(1)"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("not allowed") || body.contains("scheme"),
+        "navigate should block javascript: URLs, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_navigate_blocks_data_url() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "navigate",
+        serde_json::json!({"url": "data:text/html,<script>"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("not allowed") || body.contains("scheme"),
+        "navigate should block data: URLs, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_invoke_command_blocklisted() {
+    let mut config = PrivacyConfig::default();
+    config.command_blocklist.insert("secret_cmd".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "invoke_command",
+        serde_json::json!({"command": "secret_cmd"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("blocked"),
+        "invoke_command should block blocklisted commands, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_fill_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("fill".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "fill",
+        serde_json::json!({"ref_id": "e1", "value": "test"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "fill should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_type_text_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("type_text".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "type_text",
+        serde_json::json!({"ref_id": "e1", "text": "hello"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "type_text should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_screenshot_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("screenshot".to_string());
+    let state = privacy_state(config);
+    let base = start_test_server(state, &["main"]).await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "screenshot",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "screenshot should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_set_storage_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("set_storage".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "set_storage",
+        serde_json::json!({"storage_type": "local", "key": "test", "value": "val"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "set_storage should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_delete_storage_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("delete_storage".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "delete_storage",
+        serde_json::json!({"storage_type": "local", "key": "test"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "delete_storage should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_set_dialog_response_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config
+        .disabled_tools
+        .insert("set_dialog_response".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "set_dialog_response",
+        serde_json::json!({"dialog_type": "confirm", "action": "accept"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "set_dialog_response should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_inject_css_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("inject_css".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "inject_css",
+        serde_json::json!({"css": "body { color: red }"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "inject_css should be blocked by privacy config, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn adversarial_navigate_privacy_disabled() {
+    let mut config = PrivacyConfig::default();
+    config.disabled_tools.insert("navigate".to_string());
+    let state = privacy_state(config);
+    let base = start_callback_server(state, &["main"], |_code| {
+        "should not reach eval".to_string()
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "navigate",
+        serde_json::json!({"url": "http://localhost:4444"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("disabled") || body.contains("privacy"),
+        "navigate should be blocked by privacy config, got: {body}"
+    );
+}
