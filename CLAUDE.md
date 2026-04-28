@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests (314)
+cargo test                     # Run all tests (317)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
@@ -155,9 +155,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
-## Current State (2026-04-28)
+## Current State (2026-04-29)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.0 released.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 314 tests pass (120 core + 4 macro + 107 plugin unit + 72 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. GitHub Release created, crates.io publish pending `CARGO_REGISTRY_TOKEN` secret.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.0 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 317 tests pass (120 core + 4 macro + 110 plugin unit + 72 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
@@ -255,14 +255,14 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Linux: X11 `GetImage` (BGRA ZPixmap) → RGBA via `x11rb`, with Wayland fallback via `grim` subprocess (full-screen capture). All platforms use the same custom PNG encoder with flate2 zlib compression (CRC32 + Adler32).
 - **auth.rs** — Bearer token authentication, **enabled by default**. Auto-generates UUID token on startup if none provided (token logged for user). `auth_disabled()` builder method to explicitly opt out. `require_auth` axum middleware skips `/health` but protects `/mcp` and `/info`. Token from `VictauriBuilder::auth_token()`, `generate_auth_token()`, or `VICTAURI_AUTH_TOKEN` env var.
-- **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.2.0 includes network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, waitFor polling, and Playwright-style actionability checks (visible, enabled, non-zero size) for click/doubleClick/hover/fill/type. Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
+- **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.2.0 includes network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, waitFor polling, Playwright-style actionability checks (visible, enabled, non-zero size) for click/doubleClick/hover/fill/type, and **global error capture** (`window.onerror` + `unhandledrejection` → consoleLogs with `[uncaught]` prefix). Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
 - **IPC interception** — Tauri 2.0 freezes `__TAURI_INTERNALS__` and all its methods (`invoke`, `ipc`, `postMessage`) with `configurable:false, writable:false`. Plugin init scripts run AFTER Tauri's core init, so monkey-patching is impossible. Instead, IPC is derived from the network log: Tauri sends all IPC via `fetch()` to `http://ipc.localhost/<command>`, and our fetch interceptor captures these. `getIpcLog()` filters networkLog entries for `ipc.localhost` URLs, extracts command names from the URL path, and excludes `plugin:victauri|` calls. This approach is robust against Tauri version changes and works on all platforms.
 - **eval auto-return** — `eval_with_return()` auto-prepends `return` to bare expressions (e.g. `document.title` → `return document.title`). Only checks `starts_with("return ")` — NOT `contains("return ")` — so IIFEs with internal returns are handled correctly. Skips statement keywords (`if`, `for`, `const`, etc.).
 - **Multi-window safety** — Default window selection prefers "main" → first visible → any, avoiding silent failures when hidden windows lack plugin capabilities.
 - **CSP compatibility** — `eval()` cannot be used inside injected scripts when CSP has `script-src 'self'` without `'unsafe-eval'`. The eval wrapper uses direct `(async () => { ... })()` pattern instead.
 
 ### Key technical decisions already made:
-- MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373`
+- MCP server is EMBEDDED in Tauri process (not separate), via axum on `:7373` with **port fallback** (tries :7374-7383 if taken, writes `victauri.port` to temp dir for client discovery)
 - `rmcp` v1.5.0 is the MCP SDK, feature `transport-streamable-http-server`
 - JS bridge uses ref handles (Playwright pattern), not CSS selectors
 - All plugin code gated behind `#[cfg(debug_assertions)]` — `init()` returns no-op plugin in release builds
@@ -273,6 +273,8 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - `build_app()` separated from `start_server()` — router construction is testable without Tauri runtime
 - IPC data pipeline derives from network log — `get_ipc_log`, `detect_ghost_commands`, `check_ipc_integrity` all call `__VICTAURI__` methods via `eval_with_return()`. IPC entries are extracted from networkLog by filtering `http://ipc.localhost/` URLs (Tauri's fetch-based IPC transport)
 - Eval timeout is 30s (not 10s) to support `wait_for` tool's configurable polling timeout
+- **Auto-event recording** — background `event_drain_loop` polls `getEventStream()` every 1s while recording is active, converting JS events (console, mutation, IPC, network, navigation) into `AppEvent` variants and feeding them into `EventRecorder`. Time-travel now works automatically without manual tool calls.
+- **Port fallback** — `try_bind()` tries preferred port, then +1 through +10. Writes `<temp>/victauri.port` file for client discovery, removes on shutdown. `VictauriState.port` is `AtomicU16` updated to actual bound port.
 
 ### Relationship to 4DA:
 Victauri is a standalone open-source project. 4DA has `victauri-plugin` as a path dependency (`path = "../../runyourempire/victauri/crates/victauri-plugin"` in `src-tauri/Cargo.toml`), with `victauri:default` in capabilities and `.mcp.json` configured. They share no code. The 4DA repo is at `D:\4DA`, this repo is at `D:\runyourempire\victauri`.

@@ -47,7 +47,7 @@ pub mod auth;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU16, AtomicU64};
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, RunEvent, Runtime};
 use tokio::sync::{Mutex, oneshot, watch};
@@ -72,8 +72,8 @@ pub struct VictauriState {
     pub event_log: EventLog,
     /// Registry of all discovered Tauri commands with metadata.
     pub registry: CommandRegistry,
-    /// TCP port the MCP server listens on.
-    pub port: u16,
+    /// TCP port the MCP server listens on (may differ from configured port if fallback was used).
+    pub port: AtomicU16,
     /// Pending JavaScript eval callbacks awaiting webview responses.
     pub pending_evals: PendingCallbacks,
     /// Session recorder for time-travel debugging.
@@ -369,7 +369,7 @@ impl VictauriBuilder {
                     let state = Arc::new(VictauriState {
                         event_log,
                         registry,
-                        port,
+                        port: AtomicU16::new(port),
                         pending_evals: Arc::new(Mutex::new(HashMap::new())),
                         recorder: EventRecorder::new(recorder_capacity),
                         privacy: privacy_config,
@@ -392,6 +392,7 @@ impl VictauriBuilder {
                     }
 
                     let app_handle = app.clone();
+                    let ready_state = state.clone();
                     tauri::async_runtime::spawn(async move {
                         match mcp::start_server_with_options(
                             app_handle, state, port, auth_token, shutdown_rx,
@@ -408,22 +409,23 @@ impl VictauriBuilder {
                     });
 
                     if let Some(cb) = on_ready {
-                        let ready_port = port;
                         tauri::async_runtime::spawn(async move {
                             for _ in 0..50 {
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                let actual_port = ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
                                 if tokio::net::TcpStream::connect(format!(
-                                    "127.0.0.1:{ready_port}"
+                                    "127.0.0.1:{actual_port}"
                                 ))
                                 .await
                                 .is_ok()
                                 {
-                                    cb(ready_port);
+                                    cb(actual_port);
                                     return;
                                 }
                             }
+                            let actual_port = ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
                             tracing::warn!("Victauri on_ready: server did not become ready within 5s");
-                            cb(ready_port);
+                            cb(actual_port);
                         });
                     }
 

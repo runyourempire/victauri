@@ -983,6 +983,21 @@ const INIT_SCRIPT_BODY: &str = r#"
     hookConsole('info');
     hookConsole('debug');
 
+    // ── Global Error Capture ────────────────────────────────────────────────
+
+    window.addEventListener('error', function(e) {
+        var msg = e.message || 'Unknown error';
+        if (e.filename) msg += ' at ' + e.filename + ':' + e.lineno + ':' + e.colno;
+        consoleLogs.push({ level: 'error', message: '[uncaught] ' + msg, timestamp: Date.now() });
+        if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
+    });
+
+    window.addEventListener('unhandledrejection', function(e) {
+        var msg = e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled promise rejection';
+        consoleLogs.push({ level: 'error', message: '[unhandled rejection] ' + msg, timestamp: Date.now() });
+        if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
+    });
+
     // ── Mutation Observer (deferred) ─────────────────────────────────────────
 
     var mutationBatchCount = 0;

@@ -209,7 +209,7 @@ fn test_state() -> Arc<VictauriState> {
     Arc::new(VictauriState {
         event_log: EventLog::new(1000),
         registry: CommandRegistry::new(),
-        port: 0,
+        port: std::sync::atomic::AtomicU16::new(0),
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
@@ -1164,7 +1164,7 @@ async fn state_port_reflected_in_info() {
     let state = Arc::new(VictauriState {
         event_log: EventLog::new(1000),
         registry: CommandRegistry::new(),
-        port: 9999,
+        port: std::sync::atomic::AtomicU16::new(9999),
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: Default::default(),
@@ -1226,7 +1226,7 @@ fn builder_custom_port_reflected_in_state() {
     let state = Arc::new(VictauriState {
         event_log: EventLog::new(500),
         registry: CommandRegistry::new(),
-        port: 8888,
+        port: std::sync::atomic::AtomicU16::new(8888),
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(500),
         privacy: Default::default(),
@@ -1236,7 +1236,7 @@ fn builder_custom_port_reflected_in_state() {
         tool_invocations: std::sync::atomic::AtomicU64::new(0),
     });
 
-    assert_eq!(state.port, 8888);
+    assert_eq!(state.port.load(std::sync::atomic::Ordering::Relaxed), 8888);
     assert_eq!(state.event_log.len(), 0);
 }
 
@@ -1482,7 +1482,7 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
     Arc::new(VictauriState {
         event_log: EventLog::new(1000),
         registry: CommandRegistry::new(),
-        port: 0,
+        port: std::sync::atomic::AtomicU16::new(0),
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
         privacy: config,
