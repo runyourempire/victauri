@@ -21,7 +21,10 @@ use syn::{ItemFn, parse_macro_input};
 #[proc_macro_attribute]
 pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
-    let attrs = parse_attrs(attr);
+    let attrs = match parse_attrs(attr) {
+        Ok(a) => a,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
     let fn_name = &input.sig.ident;
     let fn_name_str = fn_name.to_string();
@@ -94,7 +97,7 @@ struct InspectableAttrs {
     examples: Vec<String>,
 }
 
-fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
+fn parse_attrs(attr: TokenStream) -> syn::Result<InspectableAttrs> {
     let mut attrs = InspectableAttrs {
         description: None,
         intent: None,
@@ -119,8 +122,8 @@ fn parse_attrs(attr: TokenStream) -> InspectableAttrs {
         Ok(())
     });
 
-    syn::parse::Parser::parse(parser, attr).expect("failed to parse #[inspectable] attributes");
-    attrs
+    syn::parse::Parser::parse(parser, attr)?;
+    Ok(attrs)
 }
 
 fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
@@ -133,18 +136,15 @@ fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
                     _ => return None,
                 };
 
-                // Skip tauri framework types
                 let ty = &*pat_type.ty;
                 let type_str = quote!(#ty).to_string();
-                if type_str.contains("AppHandle")
-                    || type_str.contains("State")
-                    || type_str.contains("Window")
-                    || type_str.contains("Webview")
-                {
+                if is_tauri_framework_type(&type_str) {
                     return None;
                 }
 
-                let is_option = type_str.contains("Option");
+                let is_option = type_str.starts_with("Option")
+                    || type_str.starts_with("Option <")
+                    || type_str.contains(":: Option");
                 let type_name = type_str;
 
                 Some((name, type_name, !is_option))
@@ -153,6 +153,19 @@ fn extract_args(sig: &syn::Signature) -> Vec<(String, String, bool)> {
             }
         })
         .collect()
+}
+
+fn is_tauri_framework_type(type_str: &str) -> bool {
+    const FRAMEWORK_TYPES: &[&str] = &["AppHandle", "State", "Window", "Webview", "WebviewWindow"];
+    let last_segment = type_str
+        .rsplit("::")
+        .next()
+        .unwrap_or(type_str)
+        .split('<')
+        .next()
+        .unwrap_or(type_str)
+        .trim();
+    FRAMEWORK_TYPES.contains(&last_segment)
 }
 
 fn extract_return_type(sig: &syn::Signature) -> String {

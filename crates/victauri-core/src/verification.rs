@@ -127,7 +127,7 @@ fn classify_severity(
         (serde_json::Value::Null, _) | (_, serde_json::Value::Null) => DivergenceSeverity::Warning,
         (serde_json::Value::Number(f), serde_json::Value::Number(b)) => {
             match (f.as_f64(), b.as_f64()) {
-                (Some(fv), Some(bv)) if (fv - bv).abs() < f64::EPSILON => DivergenceSeverity::Info,
+                (Some(fv), Some(bv)) if (fv - bv).abs() < 1e-9 => DivergenceSeverity::Info,
                 _ => DivergenceSeverity::Error,
             }
         }
@@ -379,23 +379,18 @@ pub fn evaluate_assertion(
             (Some(a), Some(e)) => a < e,
             _ => false,
         },
-        "truthy" => {
-            matches!(
-                &actual,
-                serde_json::Value::Bool(true)
-                    | serde_json::Value::Number(_)
-                    | serde_json::Value::String(_)
-                    | serde_json::Value::Array(_)
-                    | serde_json::Value::Object(_)
-            ) && actual != serde_json::Value::String(String::new())
-        }
-        "falsy" => {
-            matches!(
-                &actual,
-                serde_json::Value::Null | serde_json::Value::Bool(false)
-            ) || actual == serde_json::Value::String(String::new())
-                || actual == serde_json::json!(0)
-        }
+        "truthy" => match &actual {
+            serde_json::Value::Null | serde_json::Value::Bool(false) => false,
+            serde_json::Value::String(s) => !s.is_empty(),
+            serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+            _ => true,
+        },
+        "falsy" => match &actual {
+            serde_json::Value::Null | serde_json::Value::Bool(false) => true,
+            serde_json::Value::String(s) => s.is_empty(),
+            serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) == 0.0,
+            _ => false,
+        },
         "exists" => actual != serde_json::Value::Null,
         "type_is" => {
             let type_name = assertion.expected.as_str().unwrap_or("");

@@ -11,6 +11,7 @@ pub struct VictauriClient {
     base_url: String,
     session_id: String,
     next_id: u64,
+    auth_token: Option<String>,
 }
 
 impl VictauriClient {
@@ -23,7 +24,11 @@ impl VictauriClient {
     /// Connect with an optional Bearer auth token.
     pub async fn connect_with_token(port: u16, token: Option<&str>) -> Result<Self, TestError> {
         let base_url = format!("http://127.0.0.1:{port}");
-        let http = reqwest::Client::new();
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| TestError::Connection(e.to_string()))?;
 
         let mut init_req = http
             .post(format!("{base_url}/mcp"))
@@ -83,6 +88,7 @@ impl VictauriClient {
             base_url,
             session_id,
             next_id: 10,
+            auth_token: token.map(String::from),
         })
     }
 
@@ -91,7 +97,7 @@ impl VictauriClient {
         let id = self.next_id;
         self.next_id += 1;
 
-        let resp = self
+        let mut req = self
             .http
             .post(format!("{}/mcp", self.base_url))
             .header("Content-Type", "application/json")
@@ -105,9 +111,11 @@ impl VictauriClient {
                     "name": name,
                     "arguments": arguments
                 }
-            }))
-            .send()
-            .await?;
+            }));
+        if let Some(ref t) = self.auth_token {
+            req = req.header("Authorization", format!("Bearer {t}"));
+        }
+        let resp = req.send().await?;
 
         let body: Value = resp.json().await?;
 
@@ -368,7 +376,7 @@ pub fn assert_no_a11y_violations(audit: &Value) {
 /// Assert that all performance metrics are within budget.
 pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb: f64) {
     if let Some(load) = metrics
-        .pointer("/navigation/load_event_end")
+        .pointer("/navigation/load_event_ms")
         .and_then(|v| v.as_f64())
     {
         assert!(

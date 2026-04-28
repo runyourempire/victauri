@@ -181,8 +181,7 @@ pub async fn origin_guard(request: Request, next: Next) -> Result<Response, Stat
             || origin.starts_with("https://127.0.0.1")
             || origin.starts_with("http://[::1]")
             || origin.starts_with("https://[::1]")
-            || origin.starts_with("tauri://")
-            || origin == "null";
+            || origin.starts_with("tauri://");
         if !allowed {
             tracing::warn!("Cross-origin request blocked: Origin={origin}");
             return Err(StatusCode::FORBIDDEN);
@@ -434,10 +433,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn origin_allows_null() {
+    async fn origin_blocks_null() {
         let app = origin_router();
         let resp = app.oneshot(origin_request(Some("null"))).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

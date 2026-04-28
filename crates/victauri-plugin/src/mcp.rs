@@ -918,18 +918,13 @@ impl VictauriMcpHandler {
         description = "Export the current recording session as a JSON string. The session can be saved externally and later imported with import_session. Does NOT stop the recording."
     )]
     async fn export_session(&self) -> CallToolResult {
-        let rec = self.state.recorder.clone();
-        if !rec.is_recording() {
-            return tool_error("no recording is active — start one first");
-        }
-        let session = rec.stop();
-        match session {
+        match self.state.recorder.export() {
             Some(s) => {
                 let json = serde_json::to_string_pretty(&s)
                     .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"));
                 CallToolResult::success(vec![Content::text(json)])
             }
-            None => tool_error("failed to export session"),
+            None => tool_error("no recording is active — start one first"),
         }
     }
 
@@ -953,6 +948,7 @@ impl VictauriMcpHandler {
             "checkpoint_count": session.checkpoints.len(),
             "started_at": session.started_at.to_rfc3339(),
         });
+        self.state.recorder.import(session);
         CallToolResult::success(vec![Content::text(result.to_string())])
     }
 
@@ -964,24 +960,19 @@ impl VictauriMcpHandler {
         Parameters(params): Parameters<SlowIpcParams>,
     ) -> CallToolResult {
         let limit = params.limit.unwrap_or(20);
-        let mut calls: Vec<_> = self
-            .state
-            .event_log
-            .ipc_calls()
-            .into_iter()
-            .filter(|c| c.duration_ms.unwrap_or(0) > params.threshold_ms)
-            .collect();
-        calls.sort_by_key(|c| std::cmp::Reverse(c.duration_ms));
-        calls.truncate(limit);
-
-        let result = serde_json::json!({
-            "threshold_ms": params.threshold_ms,
-            "count": calls.len(),
-            "calls": calls,
-        });
-        match serde_json::to_string_pretty(&result) {
-            Ok(json) => self.redact_result(json),
-            Err(e) => tool_error(e.to_string()),
+        let code = format!(
+            r#"return (function() {{
+                var log = window.__VICTAURI__?.getIpcLog() || [];
+                var slow = log.filter(function(c) {{ return (c.duration_ms || 0) > {threshold}; }});
+                slow.sort(function(a, b) {{ return (b.duration_ms || 0) - (a.duration_ms || 0); }});
+                return {{ threshold_ms: {threshold}, count: Math.min(slow.length, {limit}), calls: slow.slice(0, {limit}) }};
+            }})()"#,
+            threshold = params.threshold_ms,
+            limit = limit,
+        );
+        match self.eval_with_return(&code, None).await {
+            Ok(result) => self.redact_result(result),
+            Err(e) => tool_error(e),
         }
     }
 
@@ -1981,9 +1972,17 @@ impl ServerHandler for VictauriMcpHandler {
         let uri = &request.uri;
         let json = match uri.as_str() {
             RESOURCE_URI_IPC_LOG => {
-                let calls = self.state.event_log.ipc_calls();
-                serde_json::to_string_pretty(&calls)
-                    .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+                match self
+                    .eval_with_return("return window.__VICTAURI__?.getIpcLog()", None)
+                    .await
+                {
+                    Ok(json) => json,
+                    Err(_) => {
+                        let calls = self.state.event_log.ipc_calls();
+                        serde_json::to_string_pretty(&calls)
+                            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
+                    }
+                }
             }
             RESOURCE_URI_WINDOWS => {
                 let states = self.bridge.get_window_states(None);
@@ -2181,6 +2180,7 @@ pub fn build_app_with_options(
         .layer(axum::middleware::from_fn(crate::auth::dns_rebinding_guard))
 }
 
+#[doc(hidden)]
 pub mod tests_support {
     pub fn get_memory_stats() -> serde_json::Value {
         crate::memory::current_stats()

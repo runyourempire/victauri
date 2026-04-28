@@ -21,19 +21,26 @@ pub trait WebviewBridge: Send + Sync {
     fn set_window_title(&self, label: Option<&str>, title: &str) -> Result<(), String>;
 }
 
+fn find_window<'a, R: Runtime>(
+    windows: &'a std::collections::HashMap<String, tauri::WebviewWindow<R>>,
+    label: Option<&str>,
+) -> Result<&'a tauri::WebviewWindow<R>, String> {
+    match label {
+        Some(l) => windows
+            .get(l)
+            .ok_or_else(|| format!("window not found: {l}")),
+        None => windows
+            .get("main")
+            .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
+            .or_else(|| windows.values().next())
+            .ok_or_else(|| "no window available".to_string()),
+    }
+}
+
 impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
     fn eval_webview(&self, label: Option<&str>, script: &str) -> Result<(), String> {
         let windows = self.webview_windows();
-        let webview = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no webview available".to_string())?,
-        };
+        let webview = find_window(&windows, label)?;
         webview.eval(script).map_err(|e| e.to_string())
     }
 
@@ -74,16 +81,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 
     fn get_native_handle(&self, label: Option<&str>) -> Result<isize, String> {
         let windows = self.webview_windows();
-        let _webview = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no webview available".to_string())?,
-        };
+        let _webview = find_window(&windows, label)?;
 
         #[cfg(windows)]
         {
@@ -103,16 +101,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 
     fn manage_window(&self, label: Option<&str>, action: &str) -> Result<String, String> {
         let windows = self.webview_windows();
-        let window = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no window available".to_string())?,
-        };
+        let window = find_window(&windows, label)?;
 
         match action {
             "minimize" => window.minimize().map_err(|e| e.to_string())?,
@@ -135,16 +124,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 
     fn resize_window(&self, label: Option<&str>, width: u32, height: u32) -> Result<(), String> {
         let windows = self.webview_windows();
-        let window = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no window available".to_string())?,
-        };
+        let window = find_window(&windows, label)?;
 
         window
             .set_size(tauri::LogicalSize::new(width, height))
@@ -153,16 +133,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 
     fn move_window(&self, label: Option<&str>, x: i32, y: i32) -> Result<(), String> {
         let windows = self.webview_windows();
-        let window = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no window available".to_string())?,
-        };
+        let window = find_window(&windows, label)?;
 
         window
             .set_position(tauri::LogicalPosition::new(x, y))
@@ -171,16 +142,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 
     fn set_window_title(&self, label: Option<&str>, title: &str) -> Result<(), String> {
         let windows = self.webview_windows();
-        let window = match label {
-            Some(l) => windows
-                .get(l)
-                .ok_or_else(|| format!("window not found: {l}"))?,
-            None => windows
-                .get("main")
-                .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)))
-                .or_else(|| windows.values().next())
-                .ok_or_else(|| "no window available".to_string())?,
-        };
+        let window = find_window(&windows, label)?;
 
         window.set_title(title).map_err(|e| e.to_string())
     }

@@ -251,6 +251,33 @@ impl EventRecorder {
         )
     }
 
+    /// Snapshot the current recording as a session WITHOUT stopping it.
+    pub fn export(&self) -> Option<RecordedSession> {
+        let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
+        rec.as_ref().map(|r| RecordedSession {
+            id: r.session_id.clone(),
+            started_at: r.started_at,
+            events: r.events.iter().cloned().collect(),
+            checkpoints: r.checkpoints.iter().cloned().collect(),
+        })
+    }
+
+    /// Import a previously exported session, replacing any active recording.
+    pub fn import(&self, session: RecordedSession) {
+        let event_counter = session.events.last().map(|e| e.index + 1).unwrap_or(0);
+        let max_events = self.max_events;
+        let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
+        *rec = Some(ActiveRecording {
+            session_id: session.id,
+            started_at: session.started_at,
+            events: session.events.into_iter().collect(),
+            checkpoints: session.checkpoints.into_iter().collect(),
+            event_counter,
+            max_events,
+            max_checkpoints: 1000,
+        });
+    }
+
     /// Extracts IPC calls in order from the recording for replay.
     pub fn ipc_replay_sequence(&self) -> Vec<IpcCall> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());

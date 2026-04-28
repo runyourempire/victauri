@@ -357,11 +357,10 @@ impl VictauriBuilder {
 
                     app.manage(state.clone());
 
-                    if let Some(ref token) = auth_token {
+                    if auth_token.is_some() {
                         tracing::info!(
-                            "Victauri MCP server auth token: [REDACTED] (check VICTAURI_AUTH_TOKEN env var)"
+                            "Victauri MCP server auth enabled (token via VICTAURI_AUTH_TOKEN env var or on_ready callback)"
                         );
-                        tracing::debug!("Auth token value: {token}");
                     }
 
                     let app_handle = app.clone();

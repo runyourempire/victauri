@@ -387,10 +387,10 @@ fn verify_state_type_mismatch() {
 
     assert!(!result.passed);
     assert_eq!(result.divergences.len(), 1);
-    matches!(
+    assert!(matches!(
         result.divergences[0].severity,
         victauri_core::types::DivergenceSeverity::Error
-    );
+    ));
 }
 
 // ── Phase 2: Ghost command detection ────────────────────────────────────────
@@ -449,10 +449,10 @@ fn ghost_commands_frontend_only() {
 
     assert_eq!(report.ghost_commands.len(), 1);
     assert_eq!(report.ghost_commands[0].name, "unknown_cmd");
-    matches!(
+    assert!(matches!(
         report.ghost_commands[0].source,
         victauri_core::GhostSource::FrontendOnly
-    );
+    ));
 }
 
 #[test]
@@ -486,10 +486,10 @@ fn ghost_commands_registry_only() {
 
     assert_eq!(report.ghost_commands.len(), 1);
     assert_eq!(report.ghost_commands[0].name, "unused_cmd");
-    matches!(
+    assert!(matches!(
         report.ghost_commands[0].source,
         victauri_core::GhostSource::RegistryOnly
-    );
+    ));
 }
 
 #[test]
@@ -1118,6 +1118,143 @@ fn recorder_not_recording_returns_empty() {
     assert!(recorder.stop().is_none());
 }
 
+#[test]
+fn recorder_export_does_not_stop_recording() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("s1".to_string());
+    recorder.record_event(AppEvent::StateChange {
+        key: "k".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+
+    let exported = recorder.export();
+    assert!(exported.is_some());
+    let session = exported.unwrap();
+    assert_eq!(session.id, "s1");
+    assert_eq!(session.events.len(), 1);
+
+    assert!(
+        recorder.is_recording(),
+        "export must not stop the recording"
+    );
+    assert_eq!(recorder.event_count(), 1);
+
+    recorder.record_event(AppEvent::StateChange {
+        key: "k2".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+    assert_eq!(recorder.event_count(), 2);
+}
+
+#[test]
+fn recorder_export_returns_none_when_not_recording() {
+    let recorder = EventRecorder::new(1000);
+    assert!(recorder.export().is_none());
+}
+
+#[test]
+fn recorder_import_replaces_active_recording() {
+    let recorder = EventRecorder::new(1000);
+    recorder.start("original".to_string());
+    recorder.record_event(AppEvent::StateChange {
+        key: "k".to_string(),
+        timestamp: Utc::now(),
+        caused_by: None,
+    });
+
+    let session = victauri_core::RecordedSession {
+        id: "imported".to_string(),
+        started_at: Utc::now(),
+        events: vec![
+            victauri_core::RecordedEvent {
+                index: 0,
+                timestamp: Utc::now(),
+                event: AppEvent::StateChange {
+                    key: "a".to_string(),
+                    timestamp: Utc::now(),
+                    caused_by: None,
+                },
+            },
+            victauri_core::RecordedEvent {
+                index: 1,
+                timestamp: Utc::now(),
+                event: AppEvent::StateChange {
+                    key: "b".to_string(),
+                    timestamp: Utc::now(),
+                    caused_by: None,
+                },
+            },
+        ],
+        checkpoints: vec![],
+    };
+
+    recorder.import(session);
+    assert!(recorder.is_recording());
+    assert_eq!(recorder.event_count(), 2);
+
+    let stopped = recorder.stop().unwrap();
+    assert_eq!(stopped.id, "imported");
+    assert_eq!(stopped.events.len(), 2);
+}
+
+#[test]
+fn recorder_import_when_not_recording() {
+    let recorder = EventRecorder::new(1000);
+    assert!(!recorder.is_recording());
+
+    let session = victauri_core::RecordedSession {
+        id: "fresh".to_string(),
+        started_at: Utc::now(),
+        events: vec![],
+        checkpoints: vec![],
+    };
+
+    recorder.import(session);
+    assert!(recorder.is_recording());
+    assert_eq!(recorder.event_count(), 0);
+}
+
+#[test]
+fn truthy_falsy_are_never_both_true() {
+    use victauri_core::verification;
+    let truthy = verification::SemanticAssertion {
+        label: "t".to_string(),
+        condition: "truthy".to_string(),
+        expected: serde_json::Value::Null,
+    };
+    let falsy = verification::SemanticAssertion {
+        label: "f".to_string(),
+        condition: "falsy".to_string(),
+        expected: serde_json::Value::Null,
+    };
+    let test_values = vec![
+        serde_json::json!(null),
+        serde_json::json!(true),
+        serde_json::json!(false),
+        serde_json::json!(0),
+        serde_json::json!(1),
+        serde_json::json!(-1),
+        serde_json::json!(0.0),
+        serde_json::json!(42),
+        serde_json::json!(""),
+        serde_json::json!("hello"),
+        serde_json::json!([]),
+        serde_json::json!([1]),
+        serde_json::json!({}),
+        serde_json::json!({"k": "v"}),
+    ];
+    for val in test_values {
+        let is_truthy = verification::evaluate_assertion(val.clone(), &truthy).passed;
+        let is_falsy = verification::evaluate_assertion(val.clone(), &falsy).passed;
+        assert!(
+            is_truthy != is_falsy,
+            "value {val} is both truthy={is_truthy} and falsy={is_falsy} — contradiction"
+        );
+    }
+}
+
 // ── Adversarial Tests ─────────────────────────────────────────────────────
 
 mod adversarial {
@@ -1404,8 +1541,9 @@ mod adversarial {
             condition: "truthy".to_string(),
             expected: serde_json::json!(null),
         };
-        // Numbers are truthy (including 0 — this is Rust semantics, not JS)
-        assert!(verification::evaluate_assertion(serde_json::json!(0), &truthy).passed);
+        // 0 is falsy (JS semantics — Victauri evaluates JS expressions)
+        assert!(!verification::evaluate_assertion(serde_json::json!(0), &truthy).passed);
+        // Non-zero numbers are truthy
         assert!(verification::evaluate_assertion(serde_json::json!(42), &truthy).passed);
         // Empty string is falsy
         assert!(!verification::evaluate_assertion(serde_json::json!(""), &truthy).passed);

@@ -193,10 +193,10 @@ const INIT_SCRIPT_BODY: &str = r#"
                     command: command,
                     args: {},
                     timestamp: n.timestamp,
-                    status: n.status === 200 ? 'ok' : (n.status === 0 ? 'pending' : 'error'),
+                    status: n.status === 200 ? 'ok' : (n.status === 'pending' ? 'pending' : 'error'),
                     duration_ms: n.duration_ms,
                     result: null,
-                    error: n.status !== 200 && n.status !== 0 ? 'HTTP ' + n.status : null,
+                    error: n.status !== 200 && n.status !== 'pending' ? 'HTTP ' + n.status : null,
                 });
             }
             if (limit) return entries.slice(-limit);
@@ -361,7 +361,7 @@ const INIT_SCRIPT_BODY: &str = r#"
                     var raw = n.url.substring(ipcPrefix.length);
                     if (raw.indexOf(victauriPrefix) === 0) return;
                     var cmd; try { cmd = decodeURIComponent(raw); } catch(e) { cmd = raw; }
-                    events.push({ type: 'ipc', command: cmd, status: n.status === 200 ? 'ok' : (n.status === 0 ? 'pending' : 'error'), duration_ms: n.duration_ms, timestamp: n.timestamp });
+                    events.push({ type: 'ipc', command: cmd, status: n.status === 200 ? 'ok' : (n.status === 'pending' ? 'pending' : 'error'), duration_ms: n.duration_ms, timestamp: n.timestamp });
                 }
             });
 
@@ -416,7 +416,7 @@ const INIT_SCRIPT_BODY: &str = r#"
                     } else if (opts.condition === 'url' && opts.value) {
                         met = window.location.href.indexOf(opts.value) !== -1;
                     } else if (opts.condition === 'ipc_idle') {
-                        met = networkLog.filter(function(n) { return n.url.indexOf('http://ipc.localhost/') === 0; }).every(function(n) { return n.status !== 0; });
+                        met = networkLog.filter(function(n) { return n.url.indexOf('http://ipc.localhost/') === 0; }).every(function(n) { return n.status !== 'pending'; });
                     } else if (opts.condition === 'network_idle') {
                         met = networkLog.every(function(n) { return n.status !== 'pending'; });
                     }
@@ -840,7 +840,7 @@ const INIT_SCRIPT_BODY: &str = r#"
             return origAdd.apply(this, arguments);
         };
         EventTarget.prototype.removeEventListener = function() {
-            count--;
+            if (count > 0) count--;
             window.__VICTAURI__._listenerCount = count;
             return origRemove.apply(this, arguments);
         };

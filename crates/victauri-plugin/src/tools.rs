@@ -1,11 +1,8 @@
 use std::sync::Arc;
-use std::time::Duration;
 use tauri::{Manager, Runtime, State};
 use victauri_core::{IpcCall, WindowState};
 
 use crate::VictauriState;
-
-const EVAL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tauri::command]
 pub async fn victauri_eval_js<R: Runtime>(
@@ -42,12 +39,15 @@ pub async fn victauri_eval_js<R: Runtime>(
         return Err(format!("eval failed: {e}"));
     }
 
-    match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
+    match tokio::time::timeout(state.eval_timeout, rx).await {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(_)) => Err("eval callback channel closed".to_string()),
         Err(_) => {
             state.pending_evals.lock().await.remove(&id);
-            Err("eval timed out after 10s".to_string())
+            Err(format!(
+                "eval timed out after {}s",
+                state.eval_timeout.as_secs()
+            ))
         }
     }
 }
@@ -98,12 +98,15 @@ pub async fn victauri_dom_snapshot<R: Runtime>(
         return Err(format!("snapshot eval failed: {e}"));
     }
 
-    match tokio::time::timeout(EVAL_TIMEOUT, rx).await {
+    match tokio::time::timeout(state.eval_timeout, rx).await {
         Ok(Ok(result)) => Ok(result),
         Ok(Err(_)) => Err("snapshot callback channel closed".to_string()),
         Err(_) => {
             state.pending_evals.lock().await.remove(&id);
-            Err("snapshot timed out after 10s".to_string())
+            Err(format!(
+                "snapshot timed out after {}s",
+                state.eval_timeout.as_secs()
+            ))
         }
     }
 }

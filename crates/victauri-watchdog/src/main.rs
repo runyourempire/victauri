@@ -32,6 +32,26 @@ impl Config {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("victauri-watchdog {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("victauri-watchdog {}", env!("CARGO_PKG_VERSION"));
+        println!("Crash-recovery sidecar for Victauri MCP server\n");
+        println!("USAGE: victauri-watchdog [PORT]\n");
+        println!("OPTIONS:");
+        println!("  -h, --help       Print help");
+        println!("  -V, --version    Print version\n");
+        println!("ENVIRONMENT:");
+        println!("  VICTAURI_PORT           Server port (default: 7373)");
+        println!("  VICTAURI_INTERVAL       Poll interval in seconds (default: 5)");
+        println!("  VICTAURI_MAX_FAILURES   Consecutive failures before action (default: 3)");
+        println!("  VICTAURI_ON_FAILURE     Shell command to run on failure");
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
