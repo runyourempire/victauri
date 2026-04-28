@@ -82,6 +82,127 @@ impl WebviewBridge for MockBridge {
     }
 }
 
+// ── Callback Mock Bridge ───────────────────────────────────────────────────
+// A mock that intercepts eval_webview calls, extracts the callback ID from the
+// injected JS, and resolves the pending oneshot channel with a configurable
+// response. This enables testing of the 40+ MCP tools that depend on eval.
+
+type ResponseFn = Arc<dyn Fn(&str) -> String + Send + Sync>;
+
+struct CallbackMockBridge {
+    windows: Vec<victauri_core::WindowState>,
+    pending_evals: victauri_plugin::PendingCallbacks,
+    response_fn: ResponseFn,
+}
+
+impl CallbackMockBridge {
+    fn new(
+        labels: &[&str],
+        pending_evals: victauri_plugin::PendingCallbacks,
+        response_fn: impl Fn(&str) -> String + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            windows: labels
+                .iter()
+                .map(|label| victauri_core::WindowState {
+                    label: label.to_string(),
+                    title: format!("{label} Window"),
+                    url: "http://localhost/".to_string(),
+                    visible: true,
+                    focused: labels.first() == Some(label),
+                    maximized: false,
+                    minimized: false,
+                    fullscreen: false,
+                    position: (100, 100),
+                    size: (800, 600),
+                })
+                .collect(),
+            pending_evals,
+            response_fn: Arc::new(response_fn),
+        }
+    }
+}
+
+fn extract_eval_id(script: &str) -> Option<String> {
+    // The injected JS contains: id: '<uuid>'
+    let marker = "id: '";
+    let start = script.find(marker)? + marker.len();
+    let end = start + 36; // UUID is always 36 chars
+    if end <= script.len() {
+        Some(script[start..end].to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_inner_code(script: &str) -> String {
+    // Extract the user code from the injected async IIFE wrapper.
+    // The pattern is: (async () => { <code> })()
+    // After auto-return, code like "return window.__VICTAURI__?.snapshot()" appears
+    // inside the inner function.
+    let marker = "const __result = await (async () => { ";
+    if let Some(start) = script.find(marker) {
+        let code_start = start + marker.len();
+        if let Some(end) = script[code_start..].find(" })();") {
+            return script[code_start..code_start + end].trim().to_string();
+        }
+    }
+    script.to_string()
+}
+
+impl WebviewBridge for CallbackMockBridge {
+    fn eval_webview(&self, _label: Option<&str>, script: &str) -> Result<(), String> {
+        if let Some(id) = extract_eval_id(script) {
+            let inner_code = extract_inner_code(script);
+            let response = (self.response_fn)(&inner_code);
+            let pending = self.pending_evals.clone();
+            std::thread::spawn(move || {
+                let mut map = pending.blocking_lock();
+                if let Some(tx) = map.remove(&id) {
+                    let _ = tx.send(response);
+                }
+            });
+        }
+        Ok(())
+    }
+
+    fn get_window_states(&self, label: Option<&str>) -> Vec<victauri_core::WindowState> {
+        match label {
+            Some(l) => self
+                .windows
+                .iter()
+                .filter(|w| w.label == l)
+                .cloned()
+                .collect(),
+            None => self.windows.clone(),
+        }
+    }
+
+    fn list_window_labels(&self) -> Vec<String> {
+        self.windows.iter().map(|w| w.label.clone()).collect()
+    }
+
+    fn get_native_handle(&self, _label: Option<&str>) -> Result<isize, String> {
+        Err("native handle not available in mock".to_string())
+    }
+
+    fn manage_window(&self, _label: Option<&str>, action: &str) -> Result<String, String> {
+        Ok(format!("{action} executed"))
+    }
+
+    fn resize_window(&self, _label: Option<&str>, _width: u32, _height: u32) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn move_window(&self, _label: Option<&str>, _x: i32, _y: i32) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn set_window_title(&self, _label: Option<&str>, _title: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn test_state() -> Arc<VictauriState> {
@@ -123,6 +244,54 @@ async fn start_auth_test_server(state: Arc<VictauriState>, labels: &[&str], toke
     });
 
     format!("http://{addr}")
+}
+
+async fn start_callback_server(
+    state: Arc<VictauriState>,
+    labels: &[&str],
+    response_fn: impl Fn(&str) -> String + Send + Sync + 'static,
+) -> String {
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(CallbackMockBridge::new(
+        labels,
+        state.pending_evals.clone(),
+        response_fn,
+    ));
+    let app = build_app(state, bridge);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    format!("http://{addr}")
+}
+
+async fn mcp_call_tool(
+    client: &reqwest::Client,
+    base: &str,
+    session_id: &str,
+    tool_name: &str,
+    arguments: serde_json::Value,
+) -> String {
+    let resp = client
+        .post(format!("{base}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("mcp-session-id", session_id)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+    resp.text().await.unwrap()
 }
 
 fn sample_command(name: &str) -> CommandInfo {
@@ -1902,5 +2071,541 @@ async fn rate_limiter_returns_429_on_burst() {
     assert!(
         got_429,
         "rate limiter should return 429 after exceeding limit"
+    );
+}
+
+// ── CallbackMockBridge tests (eval-dependent tools) ────────────────────────
+
+#[test]
+fn extract_eval_id_parses_uuid() {
+    let script = r#"(async () => { id: '550e8400-e29b-41d4-a716-446655440000', result: ... })();"#;
+    assert_eq!(
+        extract_eval_id(script),
+        Some("550e8400-e29b-41d4-a716-446655440000".to_string())
+    );
+}
+
+#[test]
+fn extract_eval_id_returns_none_for_missing() {
+    assert_eq!(extract_eval_id("no id here"), None);
+}
+
+#[test]
+fn extract_inner_code_gets_user_code() {
+    let script = r#"
+        (async () => {
+            try {
+                const __result = await (async () => { return document.title })();
+                await window.__TAURI__.core.invoke(...)
+            } catch ...
+        })();
+    "#;
+    assert_eq!(extract_inner_code(script), "return document.title");
+}
+
+#[tokio::test]
+async fn callback_mock_eval_js_returns_result() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("document.title") {
+            "\"Test App\"".to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": "document.title"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("Test App"),
+        "eval_js should return the mocked result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_dom_snapshot_returns_tree() {
+    let state = test_state();
+    let snapshot_json = r#"{"role":"document","name":"page","children":[]}"#;
+    let snapshot_response = snapshot_json.to_string();
+    let base = start_callback_server(state, &["main"], move |code| {
+        if code.contains("snapshot()") {
+            snapshot_response.clone()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "dom_snapshot",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("document"),
+        "dom_snapshot should return the mocked tree, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_click_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("click(") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "click",
+        serde_json::json!({"ref_id": "e1"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "click should return ok result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_fill_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("fill(") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "fill",
+        serde_json::json!({"ref_id": "e2", "value": "hello"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "fill should return ok result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_get_ipc_log_returns_entries() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getIpcLog") {
+            r#"[{"command":"greet","status":200,"duration":5}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_ipc_log",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("greet"),
+        "get_ipc_log should return mocked IPC entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_verify_state_pass() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("return (") {
+            r#"{"title":"My App"}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "verify_state",
+        serde_json::json!({
+            "frontend_expr": "({title:'My App'})",
+            "backend_state": {"title": "My App"}
+        }),
+    )
+    .await;
+
+    assert!(
+        body.contains("passed") || body.contains("true"),
+        "verify_state should pass when states match, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_verify_state_divergence() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("return (") {
+            r#"{"title":"Frontend Title"}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "verify_state",
+        serde_json::json!({
+            "frontend_expr": "({title:'Frontend Title'})",
+            "backend_state": {"title": "Backend Title"}
+        }),
+    )
+    .await;
+
+    assert!(
+        body.contains("divergence") || body.contains("false"),
+        "verify_state should detect divergence, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_assert_semantic_truthy() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("return (") {
+            "42".to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "assert_semantic",
+        serde_json::json!({
+            "expression": "42",
+            "label": "answer is truthy",
+            "condition": "truthy",
+            "expected": true
+        }),
+    )
+    .await;
+
+    assert!(
+        body.contains("passed") || body.contains("true"),
+        "assert_semantic truthy should pass for 42, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_assert_semantic_equals() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("return (") {
+            "\"hello\"".to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "assert_semantic",
+        serde_json::json!({
+            "expression": "'hello'",
+            "label": "greeting check",
+            "condition": "equals",
+            "expected": "hello"
+        }),
+    )
+    .await;
+
+    assert!(
+        body.contains("passed"),
+        "assert_semantic equals should pass, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_get_console_logs() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getConsoleLogs") {
+            r#"[{"level":"log","message":"hello","timestamp":1000}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_console_logs",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("hello"),
+        "get_console_logs should return mocked logs, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_get_event_stream() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getEventStream") {
+            r#"[{"type":"console","data":"test event"}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_event_stream",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("test event"),
+        "get_event_stream should return mocked events, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_type_text_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("type(") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "type_text",
+        serde_json::json!({"ref_id": "e3", "text": "hello world"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "type_text should return ok result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_press_key_returns_ok() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("pressKey(") {
+            r#"{"ok":true}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "press_key",
+        serde_json::json!({"key": "Enter"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("ok"),
+        "press_key should return ok result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_ghost_commands_detected() {
+    let state = test_state();
+    state.registry.register(CommandInfo {
+        name: "greet".to_string(),
+        plugin: None,
+        description: Some("greet command".to_string()),
+        args: vec![],
+        return_type: Some("String".to_string()),
+        is_async: false,
+        intent: None,
+        category: None,
+        examples: vec![],
+    });
+
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getIpcLog") {
+            r#"[{"command":"greet","status":200},{"command":"secret_cmd","status":200}]"#
+                .to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "detect_ghost_commands",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("secret_cmd"),
+        "ghost command detection should find unregistered commands, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_get_network_log() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getNetworkLog") {
+            r#"[{"url":"https://api.example.com","method":"GET","status":200}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_network_log",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("api.example.com"),
+        "get_network_log should return mocked entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_audit_accessibility() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("auditAccessibility") {
+            r#"{"violations":[],"warnings":[],"summary":{"violations":0,"warnings":0}}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "audit_accessibility",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("violations"),
+        "audit_accessibility should return audit results, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_get_performance_metrics() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getPerformanceMetrics") {
+            r#"{"navigation":{"load_event_ms":150},"paint":{"fcp_ms":80}}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "get_performance_metrics",
+        serde_json::json!({}),
+    )
+    .await;
+
+    assert!(
+        body.contains("load_event_ms"),
+        "get_performance_metrics should return mocked metrics, got: {body}"
     );
 }

@@ -214,7 +214,12 @@ fn get_app_state(state: tauri::State<'_, AppState>) -> serde_json::Value {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(victauri_plugin::init())
+        .plugin(
+            victauri_plugin::VictauriBuilder::new()
+                .auth_disabled()
+                .build()
+                .expect("victauri config is valid"),
+        )
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
