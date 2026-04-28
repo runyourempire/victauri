@@ -22,6 +22,8 @@ impl VictauriClient {
     }
 
     /// Connect with an optional Bearer auth token.
+    ///
+    /// Retries up to 3 times with exponential backoff on 429 (rate limited).
     pub async fn connect_with_token(port: u16, token: Option<&str>) -> Result<Self, TestError> {
         let base_url = format!("http://127.0.0.1:{port}");
         let http = reqwest::Client::builder()
@@ -30,29 +32,45 @@ impl VictauriClient {
             .build()
             .map_err(|e| TestError::Connection(e.to_string()))?;
 
-        let mut init_req = http
-            .post(format!("{base_url}/mcp"))
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json, text/event-stream")
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-03-26",
-                    "capabilities": {},
-                    "clientInfo": {"name": "victauri-test", "version": env!("CARGO_PKG_VERSION")}
-                }
-            }));
+        let init_body = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "victauri-test", "version": env!("CARGO_PKG_VERSION")}
+            }
+        });
 
-        if let Some(t) = token {
-            init_req = init_req.header("Authorization", format!("Bearer {t}"));
+        let mut init_resp = None;
+        for attempt in 0..4 {
+            let mut req = http
+                .post(format!("{base_url}/mcp"))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .json(&init_body);
+            if let Some(t) = token {
+                req = req.header("Authorization", format!("Bearer {t}"));
+            }
+
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| TestError::Connection(e.to_string()))?;
+
+            if resp.status() == 429 && attempt < 3 {
+                let delay = std::time::Duration::from_millis(100 * (1 << attempt));
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+
+            init_resp = Some(resp);
+            break;
         }
 
-        let init_resp = init_req
-            .send()
-            .await
-            .map_err(|e| TestError::Connection(e.to_string()))?;
+        let init_resp = init_resp
+            .ok_or_else(|| TestError::Connection("initialize failed after retries".into()))?;
 
         if !init_resp.status().is_success() {
             return Err(TestError::Connection(format!(
@@ -92,31 +110,84 @@ impl VictauriClient {
         })
     }
 
+    /// Auto-discover a running Victauri server via temp files.
+    ///
+    /// Reads `<temp>/victauri.port` and `<temp>/victauri.token` written by the
+    /// plugin on startup. Falls back to `VICTAURI_PORT` / `VICTAURI_AUTH_TOKEN`
+    /// env vars, then defaults (port 7373, no auth).
+    pub async fn discover() -> Result<Self, TestError> {
+        let port = Self::discover_port();
+        let token = Self::discover_token();
+        Self::connect_with_token(port, token.as_deref()).await
+    }
+
+    fn discover_port() -> u16 {
+        if let Ok(p) = std::env::var("VICTAURI_PORT")
+            && let Ok(port) = p.parse::<u16>()
+        {
+            return port;
+        }
+        let path = std::env::temp_dir().join("victauri.port");
+        if let Ok(contents) = std::fs::read_to_string(&path)
+            && let Ok(port) = contents.trim().parse::<u16>()
+        {
+            return port;
+        }
+        7373
+    }
+
+    fn discover_token() -> Option<String> {
+        if let Ok(token) = std::env::var("VICTAURI_AUTH_TOKEN") {
+            return Some(token);
+        }
+        let path = std::env::temp_dir().join("victauri.token");
+        let token = std::fs::read_to_string(&path).ok()?;
+        let token = token.trim().to_string();
+        if token.is_empty() { None } else { Some(token) }
+    }
+
     /// Call an MCP tool by name and return the result content as JSON.
+    ///
+    /// Retries up to 3 times with exponential backoff on 429 (rate limited).
     pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, TestError> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let mut req = self
-            .http
-            .post(format!("{}/mcp", self.base_url))
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json, text/event-stream")
-            .header("mcp-session-id", &self.session_id)
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "method": "tools/call",
-                "params": {
-                    "name": name,
-                    "arguments": arguments
-                }
-            }));
-        if let Some(ref t) = self.auth_token {
-            req = req.header("Authorization", format!("Bearer {t}"));
-        }
-        let resp = req.send().await?;
+        let call_body = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments
+            }
+        });
 
+        let mut resp = None;
+        for attempt in 0..4 {
+            let mut req = self
+                .http
+                .post(format!("{}/mcp", self.base_url))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .header("mcp-session-id", &self.session_id)
+                .json(&call_body);
+            if let Some(ref t) = self.auth_token {
+                req = req.header("Authorization", format!("Bearer {t}"));
+            }
+            let r = req.send().await?;
+
+            if r.status() == 429 && attempt < 3 {
+                let delay = std::time::Duration::from_millis(100 * (1 << attempt));
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            resp = Some(r);
+            break;
+        }
+
+        let resp =
+            resp.ok_or_else(|| TestError::Connection("tool call failed after retries".into()))?;
         let body: Value = resp.json().await?;
 
         if let Some(error) = body.get("error") {

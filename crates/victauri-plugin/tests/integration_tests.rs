@@ -2059,10 +2059,15 @@ async fn rate_limiter_returns_429_on_burst() {
     });
 
     let client = reqwest::Client::new();
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..1500 {
+        let c = client.clone();
+        let u = format!("{base}/info");
+        tasks.spawn(async move { c.get(&u).send().await.unwrap().status() });
+    }
     let mut got_429 = false;
-    for _ in 0..200 {
-        let resp = client.get(format!("{base}/info")).send().await.unwrap();
-        if resp.status() == 429 {
+    while let Some(result) = tasks.join_next().await {
+        if result.unwrap() == 429 {
             got_429 = true;
             break;
         }

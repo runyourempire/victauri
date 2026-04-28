@@ -1757,6 +1757,7 @@ pub async fn start_server_with_options<R: Runtime>(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     let bridge: Arc<dyn WebviewBridge> = Arc::new(app_handle);
+    let token_for_file = auth_token.clone();
     let app = build_app_with_options(state.clone(), bridge.clone(), auth_token);
 
     let (listener, actual_port) = try_bind(port).await?;
@@ -1767,6 +1768,9 @@ pub async fn start_server_with_options<R: Runtime>(
 
     state.port.store(actual_port, Ordering::Relaxed);
     write_port_file(actual_port);
+    if let Some(ref token) = token_for_file {
+        write_token_file(token);
+    }
 
     tracing::info!("Victauri MCP server listening on 127.0.0.1:{actual_port}");
 
@@ -1807,14 +1811,25 @@ fn port_file_path() -> std::path::PathBuf {
     std::env::temp_dir().join("victauri.port")
 }
 
+fn token_file_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("victauri.token")
+}
+
 fn write_port_file(port: u16) {
     if let Err(e) = std::fs::write(port_file_path(), port.to_string()) {
         tracing::debug!("could not write port file: {e}");
     }
 }
 
+fn write_token_file(token: &str) {
+    if let Err(e) = std::fs::write(token_file_path(), token) {
+        tracing::debug!("could not write token file: {e}");
+    }
+}
+
 fn remove_port_file() {
     let _ = std::fs::remove_file(port_file_path());
+    let _ = std::fs::remove_file(token_file_path());
 }
 
 async fn event_drain_loop(

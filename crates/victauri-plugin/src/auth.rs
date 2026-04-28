@@ -137,7 +137,7 @@ pub async fn rate_limit(
     }
 }
 
-const DEFAULT_RATE_LIMIT: u64 = 100;
+const DEFAULT_RATE_LIMIT: u64 = 1000;
 
 /// Create a rate limiter with the default capacity of 100 requests per second.
 pub fn default_rate_limiter() -> Arc<RateLimiterState> {
@@ -283,9 +283,9 @@ mod tests {
     }
 
     #[test]
-    fn default_rate_limiter_has_100_tokens() {
+    fn default_rate_limiter_has_expected_tokens() {
         let limiter = default_rate_limiter();
-        assert_eq!(limiter.max_tokens, 100);
+        assert_eq!(limiter.max_tokens, 1000);
     }
 
     #[test]
