@@ -41,6 +41,8 @@ pub struct TypeTextParams {
 pub struct SnapshotParams {
     /// Target webview label. If omitted, targets the first available webview.
     pub webview_label: Option<String>,
+    /// Snapshot format: "compact" (default, accessible text) or "json" (full tree). Compact uses 70-80% fewer tokens.
+    pub format: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
