@@ -1,6 +1,6 @@
 # Victauri
 
-**X-ray vision and hands for AI agents inside Tauri apps.**
+**Full-stack testing for Tauri apps. Click a button in the frontend, verify the Rust handler ran, confirm the database row was written — from one test.**
 
 [![CI](https://github.com/runyourempire/victauri/actions/workflows/ci.yml/badge.svg)](https://github.com/runyourempire/victauri/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/victauri-plugin.svg)](https://crates.io/crates/victauri-plugin)
@@ -9,41 +9,69 @@
 
 ---
 
-Unlike Playwright (which sees only the browser glass), Victauri gives agents simultaneous access to the webview DOM, the Rust backend, the IPC layer, and native window state — all through a single [MCP](https://modelcontextprotocol.io) interface running inside the app process.
+Testing Tauri apps today means choosing between frontend mocks that lie about your backend, WebDriver setups that take a weekend, or paying for macOS support. Victauri embeds an [MCP](https://modelcontextprotocol.io) server directly inside your Tauri process — giving test suites and AI agents simultaneous access to the DOM, IPC layer, Rust backend state, and native windows. No WebDriver binary. No browser dependency. **Works on macOS, Windows, and Linux for free.**
 
-| Capability | Playwright | Victauri |
-|---|---|---|
-| DOM interaction | Yes | Yes |
-| Screenshots | Yes | Yes |
-| Backend state access | No | **Yes** |
-| IPC interception | No | **Yes** |
-| Command registry introspection | No | **Yes** |
-| Cross-boundary state verification | No | **Yes** |
-| Ghost command detection | No | **Yes** |
-| Multi-window targeting | Limited | **Yes** |
-| Event recording & replay | No | **Yes** |
+## What makes this different
+
+Every other Tauri testing tool stops at the glass. They can click buttons and read text, but they can't tell you whether the Rust command handler actually executed, what arguments it received, or whether the result made it back to the frontend intact.
+
+Victauri crosses the boundary:
+
+```rust
+// Click a button in the frontend
+client.interact("click", "e5").await?;
+
+// Verify the Rust command ran with correct args
+let ipc = client.logs("ipc", Some(1)).await?;
+assert_eq!(ipc[0]["command"], "save_settings");
+assert_eq!(ipc[0]["args"]["theme"], "dark");
+
+// Verify frontend state matches backend
+let result = client.verify_state(
+    "document.querySelector('.theme-label').textContent",
+    json!({"theme": "dark"})
+).await?;
+assert!(result["divergences"].as_array().unwrap().is_empty());
+```
+
+| | Playwright | WebdriverIO + tauri-driver | tauri-plugin-mcp | mcp-server-tauri | **Victauri** |
+|---|---|---|---|---|---|
+| DOM interaction | Yes | Yes | Yes | Yes | **Yes** |
+| macOS support | No (no CDP) | No (no WKWebView driver) | Yes | Yes | **Yes** |
+| Backend state access | No | No | No | No | **Yes** |
+| IPC call verification (args + result) | No | No | No | Partial | **Yes** |
+| Ghost command detection | No | No | No | No | **Yes** |
+| Cross-boundary verification | No | No | No | No | **Yes** |
+| `#[inspectable]` command schemas | No | No | No | No | **Yes** |
+| Time-travel recording | No | No | No | No | **Yes** |
+| Zero-config setup | No | No | Near | Near | **Yes** |
+| Works with `cargo test` | N/A | Limited | No | No | **Yes** |
 
 ## Quick Start
 
-**1. Add the plugin** (your Tauri app's `Cargo.toml`):
+**1. Add the plugin:**
 
 ```toml
+# Cargo.toml
 [dev-dependencies]
 victauri-plugin = "0.1"
 ```
 
-**2. Wire it up** (`src-tauri/src/main.rs`):
+**2. Wire it up** (one line in your app):
 
 ```rust
+// src-tauri/src/main.rs
 tauri::Builder::default()
     .plugin(victauri_plugin::init())
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 ```
 
-In release builds, `init()` returns a no-op plugin — zero overhead, no conditional compilation needed.
+In release builds, `init()` returns a no-op plugin — zero overhead, no feature flags needed.
 
-**3. Connect your AI agent** (`.mcp.json` in your project root):
+**3. Connect your agent or test runner:**
+
+For AI agents (Claude Code, Cursor, Windsurf) — add `.mcp.json` to your project:
 
 ```json
 {
@@ -55,67 +83,54 @@ In release builds, `init()` returns a no-op plugin — zero overhead, no conditi
 }
 ```
 
-That's it. Claude Code (or any MCP client) now has full-stack access to your running app.
-
-## 55 MCP Tools
-
-| Category | Tools |
-|---|---|
-| **WebView** (11) | `eval_js`, `dom_snapshot`, `click`, `double_click`, `hover`, `fill`, `type_text`, `press_key`, `select_option`, `scroll_to`, `focus_element` |
-| **Windows** (7) | `get_window_state`, `list_windows`, `screenshot`, `manage_window`, `resize_window`, `move_window`, `set_window_title` |
-| **Backend** (5) | `invoke_command`, `get_ipc_log`, `get_registry`, `get_memory_stats`, `get_console_logs` |
-| **Network** (1) | `get_network_log` |
-| **Storage** (4) | `get_storage`, `set_storage`, `delete_storage`, `get_cookies` |
-| **Navigation** (3) | `get_navigation_log`, `navigate`, `navigate_back` |
-| **Dialogs** (2) | `get_dialog_log`, `set_dialog_response` |
-| **Verification** (3) | `verify_state`, `detect_ghost_commands`, `check_ipc_integrity` |
-| **Streaming** (1) | `get_event_stream` |
-| **Intent** (2) | `resolve_command`, `assert_semantic` |
-| **Wait** (1) | `wait_for` |
-| **Time-Travel** (7) | `start_recording`, `stop_recording`, `checkpoint`, `list_checkpoints`, `get_replay_sequence`, `get_recorded_events`, `events_between_checkpoints` |
-| **CSS/Style** (4) | `get_styles`, `get_bounding_boxes`, `inject_css`, `remove_injected_css` |
-| **Visual Debug** (2) | `highlight_element`, `clear_highlights` |
-| **Accessibility** (1) | `audit_accessibility` |
-| **Performance** (1) | `get_performance_metrics` |
-
-## How It Works
-
-```
-MCP Client <-> HTTP/SSE on :7373 <-> Victauri Plugin (in-process)
-                                        |-- WebView: DOM, click, type, eval JS
-                                        |-- IPC: registry, invoke, intercept
-                                        '-- Backend: state, memory, events
-```
-
-The MCP server runs inside the Tauri process. No external sidecar, no CDP, no WebDriver. Direct `AppHandle` access means sub-millisecond tool response times.
-
-## Test Assertions
-
-The `victauri-test` crate provides a typed HTTP client and assertion helpers for CI testing:
+For `cargo test` — use the test client:
 
 ```rust
-use victauri_test::{VictauriClient, assert_json_eq, assert_ipc_healthy};
-use serde_json::json;
+use victauri_test::VictauriClient;
 
 #[tokio::test]
-async fn app_loads_correctly() {
+async fn settings_persist() {
     let mut client = VictauriClient::connect(7373).await.unwrap();
-
-    let title = client.eval_js("document.title").await.unwrap();
-    assert_eq!(title.as_str(), Some("My App"));
-
-    let state = client.get_window_state(Some("main")).await.unwrap();
-    assert_json_eq(&state, "/visible", &json!(true));
-
-    let integrity = client.check_ipc_integrity().await.unwrap();
-    assert_ipc_healthy(&integrity);
+    
+    // Invoke backend command directly
+    let result = client.invoke_command("save_settings", Some(json!({"theme": "dark"}))).await.unwrap();
+    assert_eq!(result, json!({"ok": true}));
+    
+    // Verify the UI updated
+    client.wait_for("text", Some("Dark mode"), None, None).await.unwrap();
+    
+    // Check no ghost commands exist
+    let ghosts = client.detect_ghost_commands().await.unwrap();
+    assert!(ghosts["ghost_invocations"].as_array().unwrap().is_empty());
 }
 ```
 
-```toml
-[dev-dependencies]
-victauri-test = "0.1"
-```
+## MCP Tools
+
+Victauri exposes ~20 focused MCP tools across 9 compound tools and 13 standalone tools:
+
+| Tool | What it does |
+|---|---|
+| **`interact`** | Click, double-click, hover, focus, scroll, select — with auto-wait for actionability |
+| **`input`** | Fill inputs, type character-by-character, press keyboard keys |
+| **`window`** | Get state, list windows, manage (minimize/maximize/etc), resize, move, set title |
+| **`storage`** | Read/write localStorage, sessionStorage, cookies |
+| **`navigate`** | Go to URL, go back, get history, configure dialog auto-responses |
+| **`recording`** | Start/stop sessions, create checkpoints, get events, export/import for replay |
+| **`inspect`** | Computed CSS, bounding boxes, element highlighting, accessibility audit, performance metrics |
+| **`logs`** | Console, network, IPC, navigation, dialog logs — filtered by time and content |
+| **`css`** | Inject/remove debug CSS |
+| `eval_js` | Execute JavaScript in the webview (async supported) |
+| `dom_snapshot` | Full accessibility tree with ref handles for interaction |
+| `invoke_command` | Call any registered Tauri command through real IPC |
+| `screenshot` | Platform-native window capture (no Chromium dependency) |
+| `verify_state` | Compare frontend DOM state against backend state — find divergences |
+| `detect_ghost_commands` | Find frontend IPC calls with no backend handler (and vice versa) |
+| `check_ipc_integrity` | Detect stuck, stale, or errored IPC calls |
+| `wait_for` | Poll for conditions: text appears, selector matches, IPC settles |
+| `assert_semantic` | Evaluate JS expression and assert against expected value |
+| `resolve_command` | Natural language → matching Tauri command |
+| `get_registry` | List all commands with schemas from `#[inspectable]` |
 
 ## Instrument Your Commands
 
@@ -124,76 +139,88 @@ use victauri_macros::inspectable;
 
 #[tauri::command]
 #[inspectable(
-    description = "Save API key for a provider",
-    intent = "persist credentials",
+    description = "Save user preferences",
+    intent = "persist settings",
     category = "settings",
-    example = "save the API key"
+    example = "save the user's theme preference"
 )]
-async fn save_api_key(provider: String, key: String) -> Result<(), String> {
+async fn save_settings(settings: Settings) -> Result<(), AppError> {
     // your code
 }
 ```
 
-`#[inspectable]` auto-generates a JSON schema, making commands discoverable through the registry and natural language resolution.
+`#[inspectable]` generates a command schema at compile time — zero runtime cost. Commands become discoverable through `get_registry` and natural language via `resolve_command`.
 
-## Authentication
+## How It Works
+
+```
+AI Agent / cargo test
+        |
+        v
+  HTTP on :7373  (MCP protocol)
+        |
+        v
+  Victauri Plugin  (inside Tauri process)
+     |       |       |
+     v       v       v
+  WebView  IPC    Backend
+  - DOM    - log   - state
+  - click  - args  - memory
+  - eval   - result - registry
+```
+
+The MCP server runs **inside** the Tauri process — not as a sidecar. Direct `AppHandle` access means sub-millisecond response times and zero state drift between what the tool sees and what the app does.
+
+## Security & Privacy
+
+Victauri is designed for development, not production:
+
+- **Debug-only**: entire plugin compiles away in release builds (`#[cfg(debug_assertions)]`)
+- **Localhost-only**: no remote access, DNS rebinding protection
+- **Auth tokens**: auto-generated or configurable via `VICTAURI_AUTH_TOKEN`
+- **Privacy controls**: command allowlists/blocklists, tool disabling, output redaction (API keys, JWTs, emails)
+- **Strict mode**: one call to disable all mutating tools
 
 ```rust
 VictauriBuilder::new()
-    .generate_auth_token()  // prints token to logs on startup
+    .strict_privacy_mode()   // disable eval_js, fill, type_text, navigate, etc.
+    .auth_token("my-token")
     .build()
 ```
-
-Or via environment variable: `VICTAURI_AUTH_TOKEN=my-secret-token`.
-
-## Privacy Controls
-
-- **Command allowlists/blocklists** — restrict which Tauri commands are invokable
-- **Tool disabling** — hide specific MCP tools (e.g., `eval_js`, `screenshot`)
-- **Output redaction** — automatic regex-based redaction of API keys, JWTs, emails, and sensitive JSON fields
-- **Strict mode** — one-call preset that disables all mutating tools and enables full redaction
 
 ## Architecture
 
 ```
 victauri/
 ├── crates/
-│   ├── victauri-core/       # Types: events, registry, snapshots, verification
+│   ├── victauri-core/       # Shared types (events, registry, snapshots, verification)
 │   ├── victauri-macros/     # #[inspectable] proc macro
-│   ├── victauri-plugin/     # Tauri plugin: MCP server + JS bridge
-│   ├── victauri-test/       # Test client + assertion helpers
+│   ├── victauri-plugin/     # Tauri plugin + MCP server + JS bridge
+│   ├── victauri-test/       # Typed HTTP client + assertion helpers
 │   └── victauri-watchdog/   # Health-check sidecar
 └── examples/
-    └── demo-app/            # Minimal Tauri app with Victauri wired up
+    └── demo-app/            # Minimal Tauri app with 12 instrumented commands
 ```
 
-## Security Model
+## What It Doesn't Do
 
-- Localhost only — no remote access, no forwarding
-- DNS rebinding protection
-- Auth tokens optional but recommended for shared machines
-- Rate limiting (100 req/sec default, configurable)
-- All tools compile away in release builds
-- `eval_js` executes arbitrary JavaScript — treat it like browser devtools
+- **No production use** — debug builds only, by design
+- **No remote access** — localhost, no port forwarding
+- **No iframe support** — single-frame webviews only (Tauri standard)
+- **Pre-1.0** — API may change. Semver-checked in CI.
 
 ## Development
 
 ```bash
 cargo build                    # Build all crates
-cargo test --workspace         # Run all tests (287)
-cargo bench -p victauri-core   # Criterion benchmarks (13)
-cargo clippy -- -D warnings    # Lint
-cargo fmt --all -- --check     # Format check
+cargo test --workspace         # Run all tests
+cargo bench -p victauri-core   # Criterion benchmarks
+cargo clippy -- -D warnings    # Lint (zero warnings policy)
+cargo fmt --all -- --check     # Format
 ```
-
-## What It Doesn't Do
-
-- **No production use** — gated behind `#[cfg(debug_assertions)]`, debug builds only
-- **No remote access** — localhost only, by design
-- **Early project** — API surface may change before 1.0
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) for details.
+Apache-2.0 — [LICENSE](LICENSE)
 
-Built by [4DA Systems](https://4da.ai).
+Built and maintained by [4DA Systems](https://4da.ai).

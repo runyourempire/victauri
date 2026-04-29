@@ -48,6 +48,46 @@ pub fn init_script(caps: &BridgeCapacities) -> String {
 const INIT_SCRIPT_BODY: &str = r#"
     var refMap = new Map();
     var refCounter = 0;
+    var weakRefMap = new Map();
+
+    function resolveRef(refId) {
+        var direct = refMap.get(refId);
+        if (direct) {
+            if (direct.isConnected) return direct;
+            refMap.delete(refId);
+            return null;
+        }
+        var weak = weakRefMap.get(refId);
+        if (weak) {
+            var el = weak.deref();
+            if (el && el.isConnected) return el;
+            weakRefMap.delete(refId);
+            return null;
+        }
+        return null;
+    }
+
+    function registerRef(node) {
+        var ref_id = 'e' + (refCounter++);
+        refMap.set(ref_id, node);
+        if (typeof WeakRef !== 'undefined') {
+            weakRefMap.set(ref_id, new WeakRef(node));
+        }
+        return ref_id;
+    }
+
+    function getStaleRefs() {
+        var stale = [];
+        weakRefMap.forEach(function(weak, refId) {
+            var el = weak.deref();
+            if (!el || !el.isConnected) {
+                stale.push(refId);
+                weakRefMap.delete(refId);
+                refMap.delete(refId);
+            }
+        });
+        return stale;
+    }
     var consoleLogs = [];
     var mutationLog = [];
     var networkLog = [];
@@ -56,14 +96,63 @@ const INIT_SCRIPT_BODY: &str = r#"
     var dialogLog = [];
 
     function checkActionable(el) {
-        if (el.disabled) return 'element is disabled';
+        if (!el || !el.isConnected) return { error: 'element is detached from DOM', hint: 'RETRY_LATER' };
+        if (el.disabled) return { error: 'element is disabled (disabled attribute)', hint: 'RETRY_LATER' };
+        if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') return { error: 'element is disabled (aria-disabled)', hint: 'RETRY_LATER' };
         var cs = window.getComputedStyle(el);
-        if (cs.display === 'none') return 'element is not visible (display: none)';
-        if (cs.visibility === 'hidden') return 'element is not visible (visibility: hidden)';
-        if (cs.opacity === '0') return 'element is not visible (opacity: 0)';
+        if (cs.display === 'none') return { error: 'element is not visible (display: none)', hint: 'RETRY_LATER' };
+        if (cs.visibility === 'hidden') return { error: 'element is not visible (visibility: hidden)', hint: 'RETRY_LATER' };
+        if (parseFloat(cs.opacity) < 0.01) return { error: 'element is not visible (opacity: ' + cs.opacity + ')', hint: 'RETRY_LATER' };
         var rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return 'element has zero size';
+        if (rect.width === 0 && rect.height === 0) return { error: 'element has zero size', hint: 'RETRY_LATER' };
+        if (cs.pointerEvents === 'none') return { error: 'element has pointer-events: none', hint: 'RETRY_LATER' };
+        var vw = window.innerWidth || document.documentElement.clientWidth;
+        var vh = window.innerHeight || document.documentElement.clientHeight;
+        if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
+            el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            rect = el.getBoundingClientRect();
+            if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
+                return { error: 'element is outside viewport after scroll attempt', hint: 'CHECK_INPUT' };
+            }
+        }
+        var cx = rect.left + rect.width / 2;
+        var cy = rect.top + rect.height / 2;
+        var topEl = document.elementFromPoint(cx, cy);
+        if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
+            var tag = topEl.tagName ? topEl.tagName.toLowerCase() : 'unknown';
+            var info = tag;
+            if (topEl.id) info += '#' + topEl.id;
+            else if (topEl.className && typeof topEl.className === 'string') {
+                var cls = topEl.className.trim().split(/\s+/)[0];
+                if (cls) info += '.' + cls;
+            }
+            return { error: 'element is covered by ' + info + ' at (' + Math.round(cx) + ',' + Math.round(cy) + ')', hint: 'RETRY_LATER' };
+        }
         return null;
+    }
+
+    function withAutoWait(refId, timeoutMs, actionFn) {
+        return new Promise(function(resolve) {
+            var deadline = Date.now() + (timeoutMs || 5000);
+            function attempt() {
+                var el = resolveRef(refId);
+                if (!el) {
+                    if (Date.now() >= deadline) { resolve({ ok: false, error: 'ref not found: ' + refId, hint: 'CHECK_INPUT' }); return; }
+                    setTimeout(attempt, 50); return;
+                }
+                var check = checkActionable(el);
+                if (check) {
+                    if (check.hint === 'CHECK_INPUT' || Date.now() >= deadline) {
+                        var msg = Date.now() >= deadline ? 'timeout (' + (timeoutMs || 5000) + 'ms): ' + check.error : check.error;
+                        resolve({ ok: false, error: msg, hint: check.hint || 'RETRY_LATER' }); return;
+                    }
+                    setTimeout(attempt, 50); return;
+                }
+                try { var r = actionFn(el); resolve(r || { ok: true }); }
+                catch (e) { resolve({ ok: false, error: 'action threw: ' + e.message, hint: 'CHECK_INPUT' }); }
+            }
+            attempt();
+        });
     }
 
     // ── Public API ───────────────────────────────────────────────────────────
@@ -73,93 +162,176 @@ const INIT_SCRIPT_BODY: &str = r#"
 
         // ── DOM ──────────────────────────────────────────────────────────────
 
-        snapshot: function() {
+        snapshot: function(format) {
+            var previousRefs = new Set(refMap.keys());
             refMap.clear();
-            refCounter = 0;
-            return walkDom(document.body);
+            var fmt = format || 'compact';
+            var tree;
+            if (fmt === 'json') {
+                tree = walkDom(document.body);
+            } else {
+                tree = walkDomCompact(document.body, 0);
+            }
+            var currentRefs = new Set(refMap.keys());
+            var stale = [];
+            previousRefs.forEach(function(refId) {
+                if (!currentRefs.has(refId)) {
+                    var weak = weakRefMap.get(refId);
+                    if (weak) {
+                        var el = weak.deref();
+                        if (!el || !el.isConnected) {
+                            stale.push(refId);
+                            weakRefMap.delete(refId);
+                        }
+                    } else {
+                        stale.push(refId);
+                    }
+                }
+            });
+            return { tree: tree, stale_refs: stale, format: fmt };
         },
 
         getRef: function(refId) {
-            return refMap.get(refId) || null;
+            return resolveRef(refId);
+        },
+
+        getStaleRefs: function() {
+            return getStaleRefs();
+        },
+
+        findElements: function(query) {
+            var results = [];
+            var maxResults = query.max_results || 10;
+
+            function matches(el) {
+                if (query.text) {
+                    var txt = (el.textContent || '').trim();
+                    if (txt.toLowerCase().indexOf(query.text.toLowerCase()) === -1) return false;
+                }
+                if (query.role) {
+                    var role = el.getAttribute('role') || inferRole(el);
+                    if (role !== query.role) return false;
+                }
+                if (query.test_id) {
+                    if (el.getAttribute('data-testid') !== query.test_id) return false;
+                }
+                if (query.css) {
+                    try { if (!el.matches(query.css)) return false; } catch(e) { return false; }
+                }
+                if (query.name) {
+                    var name = el.getAttribute('aria-label')
+                        || el.getAttribute('title')
+                        || el.getAttribute('placeholder') || '';
+                    if (name.toLowerCase().indexOf(query.name.toLowerCase()) === -1) return false;
+                }
+                return true;
+            }
+
+            function search(node) {
+                if (results.length >= maxResults) return;
+                if (!node || node.nodeType !== 1) return;
+                var style = window.getComputedStyle(node);
+                if (style.display === 'none' || style.visibility === 'hidden') return;
+
+                if (matches(node)) {
+                    var existingRef = null;
+                    refMap.forEach(function(el, refId) {
+                        if (el === node) existingRef = refId;
+                    });
+                    var ref_id = existingRef || registerRef(node);
+                    var role = node.getAttribute('role') || inferRole(node);
+                    var rect = node.getBoundingClientRect();
+                    results.push({
+                        ref_id: ref_id,
+                        tag: node.tagName.toLowerCase(),
+                        role: role,
+                        name: node.getAttribute('aria-label') || node.getAttribute('title') || null,
+                        text: (node.textContent || '').trim().substring(0, 100),
+                        bounds: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }
+                    });
+                }
+
+                for (var c = 0; c < node.children.length; c++) {
+                    search(node.children[c]);
+                }
+                if (node.shadowRoot) {
+                    for (var s = 0; s < node.shadowRoot.children.length; s++) {
+                        search(node.shadowRoot.children[s]);
+                    }
+                }
+            }
+
+            search(document.body);
+            return results;
         },
 
         // ── Interactions ─────────────────────────────────────────────────────
 
-        click: function(refId) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            var check = checkActionable(el);
-            if (check) return { ok: false, error: check };
-            el.click();
-            return { ok: true };
+        click: function(refId, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                el.click();
+                return { ok: true };
+            });
         },
 
-        doubleClick: function(refId) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            var check = checkActionable(el);
-            if (check) return { ok: false, error: check };
-            el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
-            return { ok: true };
+        doubleClick: function(refId, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+                return { ok: true };
+            });
         },
 
-        hover: function(refId) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            var check = checkActionable(el);
-            if (check) return { ok: false, error: check };
-            el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-            el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-            return { ok: true };
+        hover: function(refId, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                return { ok: true };
+            });
         },
 
-        fill: function(refId, value) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            var check = checkActionable(el);
-            if (check) return { ok: false, error: check };
-            if (!el.matches('input, textarea, [contenteditable="true"]')) {
-                return { ok: false, error: 'element is not fillable (not input, textarea, or contenteditable): ' + (el.tagName || '').toLowerCase() };
-            }
-            var proto = el instanceof HTMLTextAreaElement
-                ? HTMLTextAreaElement.prototype
-                : HTMLInputElement.prototype;
-            var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-            if (desc && desc.set) {
-                desc.set.call(el, value);
-            } else {
-                el.value = value;
-            }
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { ok: true };
-        },
-
-        type: function(refId, text) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            var check = checkActionable(el);
-            if (check) return { ok: false, error: check };
-            el.focus();
-            var proto = el instanceof HTMLTextAreaElement
-                ? HTMLTextAreaElement.prototype
-                : HTMLInputElement.prototype;
-            var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-            for (var i = 0; i < text.length; i++) {
-                var ch = text[i];
-                el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
-                el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
-                var current = el.value || '';
-                if (desc && desc.set) {
-                    desc.set.call(el, current + ch);
-                } else {
-                    el.value = current + ch;
+        fill: function(refId, value, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                if (!el.matches('input, textarea, [contenteditable="true"]')) {
+                    return { ok: false, error: 'element is not fillable (not input, textarea, or contenteditable): ' + (el.tagName || '').toLowerCase(), hint: 'CHECK_INPUT' };
                 }
-                el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
-                el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
-            }
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { ok: true };
+                var proto = el instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                if (desc && desc.set) {
+                    desc.set.call(el, value);
+                } else {
+                    el.value = value;
+                }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { ok: true };
+            });
+        },
+
+        type: function(refId, text, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                el.focus();
+                var proto = el instanceof HTMLTextAreaElement
+                    ? HTMLTextAreaElement.prototype
+                    : HTMLInputElement.prototype;
+                var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                for (var i = 0; i < text.length; i++) {
+                    var ch = text[i];
+                    el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+                    el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
+                    var current = el.value || '';
+                    if (desc && desc.set) {
+                        desc.set.call(el, current + ch);
+                    } else {
+                        el.value = current + ch;
+                    }
+                    el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
+                    el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+                }
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { ok: true };
+            });
         },
 
         pressKey: function(key) {
@@ -169,34 +341,37 @@ const INIT_SCRIPT_BODY: &str = r#"
             return { ok: true };
         },
 
-        selectOption: function(refId, values) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            if (el.tagName !== 'SELECT') return { ok: false, error: 'element is not a <select>' };
-            var valSet = new Set(values);
-            for (var i = 0; i < el.options.length; i++) {
-                el.options[i].selected = valSet.has(el.options[i].value);
-            }
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            return { ok: true };
+        selectOption: function(refId, values, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                if (el.tagName !== 'SELECT') {
+                    return { ok: false, error: 'element is not a <select>', hint: 'CHECK_INPUT' };
+                }
+                var valSet = new Set(values);
+                for (var i = 0; i < el.options.length; i++) {
+                    el.options[i].selected = valSet.has(el.options[i].value);
+                }
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { ok: true };
+            });
         },
 
-        scrollTo: function(refId, x, y) {
+        scrollTo: function(refId, x, y, timeoutMs) {
             if (refId) {
-                var el = refMap.get(refId);
-                if (!el) return { ok: false, error: 'ref not found: ' + refId };
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return withAutoWait(refId, timeoutMs, function(el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return { ok: true };
+                });
             } else {
                 window.scrollTo({ left: x || 0, top: y || 0, behavior: 'smooth' });
+                return Promise.resolve({ ok: true });
             }
-            return { ok: true };
         },
 
-        focusElement: function(refId) {
-            var el = refMap.get(refId);
-            if (!el) return { ok: false, error: 'ref not found: ' + refId };
-            el.focus();
-            return { ok: true, tag: el.tagName.toLowerCase() };
+        focusElement: function(refId, timeoutMs) {
+            return withAutoWait(refId, timeoutMs, function(el) {
+                el.focus();
+                return { ok: true, tag: el.tagName.toLowerCase() };
+            });
         },
 
         // ── IPC Log ──────────────────────────────────────────────────────────
@@ -215,11 +390,11 @@ const INIT_SCRIPT_BODY: &str = r#"
                 entries.push({
                     id: n.id,
                     command: command,
-                    args: {},
+                    args: n.request_args || {},
                     timestamp: n.timestamp,
                     status: n.status === 200 ? 'ok' : (n.status === 'pending' ? 'pending' : 'error'),
                     duration_ms: n.duration_ms,
-                    result: null,
+                    result: n.response_body || null,
                     error: n.status !== 200 && n.status !== 'pending' ? 'HTTP ' + n.status : null,
                 });
             }
@@ -457,7 +632,7 @@ const INIT_SCRIPT_BODY: &str = r#"
         // ── CSS / Style Introspection ────────────────────────────────────────
 
         getStyles: function(refId, properties) {
-            var el = refMap.get(refId);
+            var el = resolveRef(refId);
             if (!el) return { error: 'ref not found: ' + refId };
             var computed = window.getComputedStyle(el);
             var result = {};
@@ -486,7 +661,7 @@ const INIT_SCRIPT_BODY: &str = r#"
         getBoundingBoxes: function(refIds) {
             var results = [];
             for (var i = 0; i < refIds.length; i++) {
-                var el = refMap.get(refIds[i]);
+                var el = resolveRef(refIds[i]);
                 if (!el) { results.push({ ref_id: refIds[i], error: 'ref not found' }); continue; }
                 var rect = el.getBoundingClientRect();
                 var computed = window.getComputedStyle(el);
@@ -523,7 +698,7 @@ const INIT_SCRIPT_BODY: &str = r#"
         // ── Visual Debug Overlays ────────────────────────────────────────────
 
         highlightElement: function(refId, color, label) {
-            var el = refMap.get(refId);
+            var el = resolveRef(refId);
             if (!el) return { error: 'ref not found: ' + refId };
             var c = color || 'rgba(255, 0, 0, 0.3)';
             var overlay = document.createElement('div');
@@ -882,8 +1057,7 @@ const INIT_SCRIPT_BODY: &str = r#"
 
         if (!visible) return null;
 
-        var ref_id = 'e' + (refCounter++);
-        refMap.set(ref_id, node);
+        var ref_id = registerRef(node);
 
         var rect = node.getBoundingClientRect();
         var role = node.getAttribute('role') || inferRole(node);
@@ -928,6 +1102,71 @@ const INIT_SCRIPT_BODY: &str = r#"
         }
 
         return element;
+    }
+
+    function walkDomCompact(node, depth) {
+        if (!node || node.nodeType !== 1) return '';
+
+        var style = window.getComputedStyle(node);
+        var visible = style.display !== 'none'
+            && style.visibility !== 'hidden'
+            && style.opacity !== '0';
+
+        if (!visible) return '';
+
+        var ref_id = registerRef(node);
+        var indent = '';
+        for (var d = 0; d < depth; d++) indent += '  ';
+
+        var role = node.getAttribute('role') || inferRole(node);
+        var name = node.getAttribute('aria-label')
+            || node.getAttribute('title')
+            || node.getAttribute('placeholder')
+            || '';
+        var text = getDirectText(node) || '';
+        var tag = node.tagName.toLowerCase();
+
+        var line = indent + '[' + ref_id + '] ';
+
+        if (role && role !== tag) {
+            line += role;
+        } else {
+            line += tag;
+        }
+
+        if (name) {
+            line += ' "' + name.substring(0, 60) + '"';
+        } else if (text && text.length <= 60) {
+            line += ' "' + text + '"';
+        } else if (text) {
+            line += ' "' + text.substring(0, 57) + '..."';
+        }
+
+        if (node.disabled) line += ' [disabled]';
+        if (node.value) line += ' value=' + JSON.stringify(node.value.substring(0, 40));
+
+        var testId = node.getAttribute('data-testid');
+        if (testId) line += ' @' + testId;
+
+        var type = node.getAttribute('type');
+        if (type && tag === 'input') line += ' type=' + type;
+
+        var href = node.getAttribute('href');
+        if (href && tag === 'a') line += ' href=' + href.substring(0, 60);
+
+        var result = line + '\n';
+
+        for (var c = 0; c < node.children.length; c++) {
+            result += walkDomCompact(node.children[c], depth + 1);
+        }
+
+        if (node.shadowRoot) {
+            for (var s = 0; s < node.shadowRoot.children.length; s++) {
+                result += walkDomCompact(node.shadowRoot.children[s], depth + 1);
+            }
+        }
+
+        return result;
     }
 
     function inferRole(node) {
@@ -1043,7 +1282,19 @@ const INIT_SCRIPT_BODY: &str = r#"
                 var id = ++networkCounter;
                 var url = typeof input === 'string' ? input : (input && input.url ? input.url : String(input));
                 var method = (init && init.method) || (input && input.method) || 'GET';
+                var isIpc = url.indexOf('http://ipc.localhost/') === 0;
                 var entry = { id: id, method: method.toUpperCase(), url: url, timestamp: Date.now(), status: 'pending', duration_ms: null };
+
+                if (isIpc && init && init.body) {
+                    try {
+                        var bodyStr = typeof init.body === 'string' ? init.body : null;
+                        if (bodyStr) {
+                            var parsed = JSON.parse(bodyStr);
+                            entry.request_args = parsed;
+                        }
+                    } catch(e) {}
+                }
+
                 networkLog.push(entry);
                 if (networkLog.length > CAP_NETWORK) networkLog.shift();
 
@@ -1051,6 +1302,14 @@ const INIT_SCRIPT_BODY: &str = r#"
                     entry.status = response.status;
                     entry.status_text = response.statusText;
                     entry.duration_ms = Date.now() - entry.timestamp;
+
+                    if (isIpc) {
+                        var cloned = response.clone();
+                        cloned.text().then(function(text) {
+                            try { entry.response_body = JSON.parse(text); } catch(e) { entry.response_body = text; }
+                        }).catch(function() {});
+                    }
+
                     return response;
                 }, function(err) {
                     entry.status = 'error';
@@ -1143,6 +1402,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         navigationLog.length = 0;
         dialogLog.length = 0;
         refMap.clear();
+        weakRefMap.clear();
+        refCounter = 0;
     });
 
     (function captureDialogs() {

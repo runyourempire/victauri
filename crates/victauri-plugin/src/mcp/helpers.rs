@@ -14,9 +14,63 @@ pub(crate) fn tool_error(msg: impl Into<String>) -> CallToolResult {
 }
 
 pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
-    tool_error(format!(
-        "tool '{name}' is disabled by privacy configuration"
-    ))
+    tool_error_with_hint(
+        format!("tool '{name}' is disabled by privacy configuration"),
+        RecoveryHint::ReportToUser,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RecoveryHint {
+    RetryLater,
+    CheckInput,
+    TryAlternative,
+    ReportToUser,
+}
+
+impl RecoveryHint {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RetryLater => "RETRY_LATER",
+            Self::CheckInput => "CHECK_INPUT",
+            Self::TryAlternative => "TRY_ALTERNATIVE",
+            Self::ReportToUser => "REPORT_TO_USER",
+        }
+    }
+}
+
+pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -> CallToolResult {
+    let message = msg.into();
+    let text = format!("{message}
+
+[hint: {}]", hint.as_str());
+    let mut result = CallToolResult::success(vec![Content::text(text)]);
+    result.is_error = Some(true);
+    result
+}
+
+pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> CallToolResult {
+    tool_error_with_hint(
+        format!(
+            "unknown action '{action}' for {tool_name}. Valid actions: {}",
+            valid.join(", ")
+        ),
+        RecoveryHint::CheckInput,
+    )
+}
+
+pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
+    tool_error_with_hint(
+        format!("missing required parameter '{param}' for action '{action}'"),
+        RecoveryHint::CheckInput,
+    )
+}
+
+pub(crate) fn ref_not_found(ref_id: &str) -> CallToolResult {
+    tool_error_with_hint(
+        format!("ref handle '{ref_id}' not found -- it may have been invalidated. Take a new dom_snapshot to get fresh refs."),
+        RecoveryHint::TryAlternative,
+    )
 }
 
 pub(crate) fn validate_url(url: &str) -> Result<(), String> {
