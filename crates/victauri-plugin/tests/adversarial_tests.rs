@@ -178,7 +178,7 @@ async fn call_tool(
 }
 
 // =============================================================================
-// Group 1: Window Management Adversarial
+// Group 1: Window Management Adversarial (compound "window" tool)
 // =============================================================================
 
 #[tokio::test]
@@ -191,8 +191,8 @@ async fn adversarial_manage_window_minimize() {
         &client,
         &base,
         &sid,
-        "manage_window",
-        json!({"action": "minimize"}),
+        "window",
+        json!({"action": "manage", "manage_action": "minimize"}),
     )
     .await;
     assert!(
@@ -211,8 +211,8 @@ async fn adversarial_manage_window_invalid_action() {
         &client,
         &base,
         &sid,
-        "manage_window",
-        json!({"action": "explode"}),
+        "window",
+        json!({"action": "manage", "manage_action": "explode"}),
     )
     .await;
     assert!(
@@ -231,8 +231,8 @@ async fn adversarial_manage_window_nonexistent_label() {
         &client,
         &base,
         &sid,
-        "manage_window",
-        json!({"action": "minimize", "label": "nonexistent"}),
+        "window",
+        json!({"action": "manage", "manage_action": "minimize", "label": "nonexistent"}),
     )
     .await;
     assert!(
@@ -251,8 +251,8 @@ async fn adversarial_resize_window_succeeds() {
         &client,
         &base,
         &sid,
-        "resize_window",
-        json!({"width": 1024, "height": 768}),
+        "window",
+        json!({"action": "resize", "width": 1024, "height": 768}),
     )
     .await;
     assert!(
@@ -271,8 +271,8 @@ async fn adversarial_resize_window_nonexistent() {
         &client,
         &base,
         &sid,
-        "resize_window",
-        json!({"width": 1024, "height": 768, "label": "fake"}),
+        "window",
+        json!({"action": "resize", "width": 1024, "height": 768, "label": "fake"}),
     )
     .await;
     assert!(
@@ -291,8 +291,8 @@ async fn adversarial_move_window_succeeds() {
         &client,
         &base,
         &sid,
-        "move_window",
-        json!({"x": 100, "y": 200}),
+        "window",
+        json!({"action": "move_to", "x": 100, "y": 200}),
     )
     .await;
     assert!(
@@ -311,8 +311,8 @@ async fn adversarial_move_window_nonexistent() {
         &client,
         &base,
         &sid,
-        "move_window",
-        json!({"x": 100, "y": 200, "label": "fake"}),
+        "window",
+        json!({"action": "move_to", "x": 100, "y": 200, "label": "fake"}),
     )
     .await;
     assert!(
@@ -331,8 +331,8 @@ async fn adversarial_set_window_title_succeeds() {
         &client,
         &base,
         &sid,
-        "set_window_title",
-        json!({"title": "New Title"}),
+        "window",
+        json!({"action": "set_title", "title": "New Title"}),
     )
     .await;
     assert!(
@@ -351,8 +351,8 @@ async fn adversarial_set_window_title_nonexistent() {
         &client,
         &base,
         &sid,
-        "set_window_title",
-        json!({"title": "New Title", "label": "fake"}),
+        "window",
+        json!({"action": "set_title", "title": "New Title", "label": "fake"}),
     )
     .await;
     assert!(
@@ -387,8 +387,8 @@ async fn adversarial_manage_window_all_valid_actions() {
             &client,
             &base,
             &sid,
-            "manage_window",
-            json!({"action": action}),
+            "window",
+            json!({"action": "manage", "manage_action": action}),
         )
         .await;
         assert!(
@@ -399,7 +399,7 @@ async fn adversarial_manage_window_all_valid_actions() {
 }
 
 // =============================================================================
-// Group 2: Recording Tool Adversarial (via MCP)
+// Group 2: Recording Tool Adversarial (compound "recording" tool)
 // =============================================================================
 
 #[tokio::test]
@@ -408,7 +408,7 @@ async fn adversarial_stop_recording_without_start() {
     let base = start_server(state, &["main"]).await;
     let (client, sid) = mcp_session(&base).await;
 
-    let body = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
     assert!(
         body.contains("no recording"),
         "expected 'no recording' error when stopping without starting: {body}"
@@ -425,8 +425,8 @@ async fn adversarial_checkpoint_without_recording() {
         &client,
         &base,
         &sid,
-        "checkpoint",
-        json!({"id": "cp1", "label": "test checkpoint", "state": {}}),
+        "recording",
+        json!({"action": "checkpoint", "checkpoint_id": "cp1", "checkpoint_label": "test checkpoint", "state": {}}),
     )
     .await;
     assert!(
@@ -446,8 +446,8 @@ async fn adversarial_list_checkpoints_empty() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "test-session"}),
+        "recording",
+        json!({"action": "start", "session_id": "test-session"}),
     )
     .await;
     assert!(
@@ -455,14 +455,14 @@ async fn adversarial_list_checkpoints_empty() {
         "recording should start successfully: {start_body}"
     );
 
-    let body = call_tool(&client, &base, &sid, "list_checkpoints", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "list_checkpoints"})).await;
     assert!(
         body.contains("[]"),
         "expected empty array for list_checkpoints on fresh recording: {body}"
     );
 
     // Cleanup: stop recording
-    let _ = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
 }
 
 #[tokio::test]
@@ -475,18 +475,18 @@ async fn adversarial_get_replay_sequence_empty() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "replay-test"}),
+        "recording",
+        json!({"action": "start", "session_id": "replay-test"}),
     )
     .await;
 
-    let body = call_tool(&client, &base, &sid, "get_replay_sequence", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_replay"})).await;
     assert!(
         body.contains("[]"),
         "expected empty array for get_replay_sequence on fresh recording: {body}"
     );
 
-    let _ = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
 }
 
 #[tokio::test]
@@ -499,18 +499,18 @@ async fn adversarial_get_recorded_events_empty() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "events-test"}),
+        "recording",
+        json!({"action": "start", "session_id": "events-test"}),
     )
     .await;
 
-    let body = call_tool(&client, &base, &sid, "get_recorded_events", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_events"})).await;
     assert!(
         body.contains("[]"),
         "expected empty array for get_recorded_events on fresh recording: {body}"
     );
 
-    let _ = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
 }
 
 #[tokio::test]
@@ -523,8 +523,8 @@ async fn adversarial_events_between_invalid_checkpoints() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "between-test"}),
+        "recording",
+        json!({"action": "start", "session_id": "between-test"}),
     )
     .await;
 
@@ -532,8 +532,8 @@ async fn adversarial_events_between_invalid_checkpoints() {
         &client,
         &base,
         &sid,
-        "events_between_checkpoints",
-        json!({"from_checkpoint": "nonexistent_a", "to_checkpoint": "nonexistent_b"}),
+        "recording",
+        json!({"action": "events_between", "from": "nonexistent_a", "to": "nonexistent_b"}),
     )
     .await;
     assert!(
@@ -541,7 +541,7 @@ async fn adversarial_events_between_invalid_checkpoints() {
         "expected 'not found' error for nonexistent checkpoints: {body}"
     );
 
-    let _ = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
 }
 
 #[tokio::test]
@@ -550,7 +550,7 @@ async fn adversarial_export_session_without_recording() {
     let base = start_server(state, &["main"]).await;
     let (client, sid) = mcp_session(&base).await;
 
-    let body = call_tool(&client, &base, &sid, "export_session", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "export"})).await;
     assert!(
         body.contains("no recording"),
         "expected 'no recording' error when exporting without recording: {body}"
@@ -567,8 +567,8 @@ async fn adversarial_import_session_invalid_json() {
         &client,
         &base,
         &sid,
-        "import_session",
-        json!({"session_json": "not valid json"}),
+        "recording",
+        json!({"action": "import", "session_json": "not valid json"}),
     )
     .await;
     assert!(
@@ -595,8 +595,8 @@ async fn adversarial_import_session_valid() {
         &client,
         &base,
         &sid,
-        "import_session",
-        json!({"session_json": session_json}),
+        "recording",
+        json!({"action": "import", "session_json": session_json}),
     )
     .await;
     assert!(
@@ -616,8 +616,8 @@ async fn adversarial_recording_full_lifecycle() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "lifecycle-test"}),
+        "recording",
+        json!({"action": "start", "session_id": "lifecycle-test"}),
     )
     .await;
     assert!(
@@ -630,8 +630,8 @@ async fn adversarial_recording_full_lifecycle() {
         &client,
         &base,
         &sid,
-        "checkpoint",
-        json!({"id": "cp-1", "label": "initial", "state": {"counter": 0}}),
+        "recording",
+        json!({"action": "checkpoint", "checkpoint_id": "cp-1", "checkpoint_label": "initial", "state": {"counter": 0}}),
     )
     .await;
     assert!(
@@ -640,21 +640,21 @@ async fn adversarial_recording_full_lifecycle() {
     );
 
     // 3. Get recorded events (should be empty -- no events pushed, only checkpoints)
-    let events_body = call_tool(&client, &base, &sid, "get_recorded_events", json!({})).await;
+    let events_body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_events"})).await;
     assert!(
         events_body.contains("[]"),
         "recorded events should be empty array: {events_body}"
     );
 
     // 4. Export session (without stopping)
-    let export_body = call_tool(&client, &base, &sid, "export_session", json!({})).await;
+    let export_body = call_tool(&client, &base, &sid, "recording", json!({"action": "export"})).await;
     assert!(
         export_body.contains("lifecycle-test"),
         "exported session should contain session id: {export_body}"
     );
 
     // 5. Stop recording
-    let stop_body = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let stop_body = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
     assert!(
         stop_body.contains("lifecycle-test"),
         "stopped session should contain session id: {stop_body}"
@@ -665,8 +665,6 @@ async fn adversarial_recording_full_lifecycle() {
     );
 
     // 6. Import the exported session back
-    // Parse the export body to get the session JSON from the SSE/JSON response
-    // The response is SSE format, so we need to extract the content text
     let session_json = serde_json::to_string(&json!({
         "id": "lifecycle-test-reimport",
         "started_at": "2025-01-01T00:00:00Z",
@@ -678,8 +676,8 @@ async fn adversarial_recording_full_lifecycle() {
         &client,
         &base,
         &sid,
-        "import_session",
-        json!({"session_json": session_json}),
+        "recording",
+        json!({"action": "import", "session_json": session_json}),
     )
     .await;
     assert!(
@@ -699,8 +697,8 @@ async fn adversarial_double_start_recording() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "first-session"}),
+        "recording",
+        json!({"action": "start", "session_id": "first-session"}),
     )
     .await;
     assert!(
@@ -713,8 +711,8 @@ async fn adversarial_double_start_recording() {
         &client,
         &base,
         &sid,
-        "start_recording",
-        json!({"session_id": "second-session"}),
+        "recording",
+        json!({"action": "start", "session_id": "second-session"}),
     )
     .await;
     assert!(
@@ -722,7 +720,7 @@ async fn adversarial_double_start_recording() {
         "second start_recording should return started:false: {second}"
     );
 
-    let _ = call_tool(&client, &base, &sid, "stop_recording", json!({})).await;
+    let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;
 }
 
 // =============================================================================
@@ -833,7 +831,7 @@ async fn adversarial_concurrent_sessions() {
         let base_clone = base.clone();
         let handle = tokio::spawn(async move {
             let (client, sid) = mcp_session(&base_clone).await;
-            let body = call_tool(&client, &base_clone, &sid, "list_windows", json!({})).await;
+            let body = call_tool(&client, &base_clone, &sid, "window", json!({"action": "list"})).await;
             (i, body)
         });
         handles.push(handle);
@@ -887,8 +885,8 @@ async fn adversarial_get_window_state_specific_label() {
         &client,
         &base,
         &sid,
-        "get_window_state",
-        json!({"label": "main"}),
+        "window",
+        json!({"action": "get_state", "label": "main"}),
     )
     .await;
     assert!(
@@ -913,8 +911,8 @@ async fn adversarial_get_window_state_nonexistent_label() {
         &client,
         &base,
         &sid,
-        "get_window_state",
-        json!({"label": "fake"}),
+        "window",
+        json!({"action": "get_state", "label": "fake"}),
     )
     .await;
     // Should return an empty array since no window matches
@@ -930,7 +928,7 @@ async fn adversarial_list_windows_multiple() {
     let base = start_server(state, &["main", "settings", "debug"]).await;
     let (client, sid) = mcp_session(&base).await;
 
-    let body = call_tool(&client, &base, &sid, "list_windows", json!({})).await;
+    let body = call_tool(&client, &base, &sid, "window", json!({"action": "list"})).await;
     assert!(
         body.contains("main"),
         "list_windows should contain 'main': {body}"

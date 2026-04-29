@@ -35,7 +35,7 @@ use helpers::{js_string, sanitize_css_color, tool_disabled, tool_error, validate
 pub use backend_params::*;
 pub use compound_params::*;
 pub use introspection_params::*;
-pub use other_params::{DialogLogParams, DeleteStorageParams, EventStreamParams, GetCookiesParams, GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams, SetDialogResponseParams, SetStorageParams, WaitForParams};
+pub use other_params::{DialogLogParams, DeleteStorageParams, EventStreamParams, FindElementsParams, GetCookiesParams, GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams, SetDialogResponseParams, SetStorageParams, WaitForParams};
 pub use recording_params::*;
 pub use verification_params::*;
 pub use webview_params::*;
@@ -82,10 +82,47 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Get the current DOM snapshot from the webview as a JSON accessibility tree with ref handles for interaction."
+        description = "Get the DOM snapshot with stable ref handles. Default: compact accessible text (70-80%% fewer tokens). Set format=\"json\" for full tree. Returns tree + stale_refs (refs invalidated since last snapshot)."
     )]
     async fn dom_snapshot(&self, Parameters(params): Parameters<SnapshotParams>) -> CallToolResult {
-        let code = "return window.__VICTAURI__?.snapshot()";
+        let format = params.format.as_deref().unwrap_or("compact");
+        let code = format!("return window.__VICTAURI__?.snapshot({})", js_string(format));
+        match self
+            .eval_with_return(&code, params.webview_label.as_deref())
+            .await
+        {
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Err(e) => tool_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Search for elements by text, role, test_id, CSS selector, or accessible name without a full snapshot. Returns lightweight matches with ref handles."
+    )]
+    async fn find_elements(&self, Parameters(params): Parameters<FindElementsParams>) -> CallToolResult {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(t) = &params.text {
+            parts.push(format!("text: {}", js_string(t)));
+        }
+        if let Some(r) = &params.role {
+            parts.push(format!("role: {}", js_string(r)));
+        }
+        if let Some(tid) = &params.test_id {
+            parts.push(format!("test_id: {}", js_string(tid)));
+        }
+        if let Some(c) = &params.css {
+            parts.push(format!("css: {}", js_string(c)));
+        }
+        if let Some(n) = &params.name {
+            parts.push(format!("name: {}", js_string(n)));
+        }
+        if let Some(max) = params.max_results {
+            parts.push(format!("max_results: {}", max));
+        }
+        let code = format!(
+            "return window.__VICTAURI__?.findElements({{ {} }})",
+            parts.join(", ")
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await

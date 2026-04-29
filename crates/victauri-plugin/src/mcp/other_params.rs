@@ -126,3 +126,23 @@ pub struct WaitForParams {
     /// Target webview label.
     pub webview_label: Option<String>,
 }
+
+// ── Find Elements ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FindElementsParams {
+    /// Text content to search for (case-insensitive substring match).
+    pub text: Option<String>,
+    /// ARIA role to match (exact match).
+    pub role: Option<String>,
+    /// data-testid attribute value to match (exact match).
+    pub test_id: Option<String>,
+    /// CSS selector to match.
+    pub css: Option<String>,
+    /// Accessible name to search for (aria-label, title, placeholder — case-insensitive substring).
+    pub name: Option<String>,
+    /// Maximum number of results to return. Default: 10.
+    pub max_results: Option<u32>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}

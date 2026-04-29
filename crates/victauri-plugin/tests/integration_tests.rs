@@ -581,8 +581,8 @@ async fn mcp_full_session_lists_tools() {
         "tools should include dom_snapshot"
     );
     assert!(
-        body.contains("start_recording"),
-        "tools should include start_recording"
+        body.contains("recording"),
+        "tools should include recording"
     );
     assert!(
         body.contains("verify_state"),
@@ -738,10 +738,10 @@ async fn mcp_tools_include_invoke_command() {
         body.contains("screenshot"),
         "tools should include screenshot"
     );
-    assert!(body.contains("press_key"), "tools should include press_key");
+    assert!(body.contains("input"), "tools should include input");
     assert!(
-        body.contains("get_console_logs"),
-        "tools should include get_console_logs"
+        body.contains("logs"),
+        "tools should include logs"
     );
 }
 
@@ -805,75 +805,30 @@ async fn mcp_tool_count_is_correct() {
 
     let body = tools_resp.text().await.unwrap();
     let expected_tools = [
-        // Phase 1: WebView & Backend
+        // Standalone tools
         "eval_js",
         "dom_snapshot",
-        "click",
-        "fill",
-        "type_text",
-        "get_window_state",
-        "list_windows",
-        "get_ipc_log",
-        "get_registry",
-        "get_memory_stats",
-        // Phase 2: Verification
+        "invoke_command",
+        "screenshot",
         "verify_state",
         "detect_ghost_commands",
         "check_ipc_integrity",
-        // Phase 3: Streaming
-        "get_event_stream",
-        // Phase 4: Intent
-        "resolve_command",
-        "assert_semantic",
-        // Phase 5: Time-Travel
-        "start_recording",
-        "stop_recording",
-        "checkpoint",
-        "list_checkpoints",
-        "get_replay_sequence",
-        "get_recorded_events",
-        "events_between_checkpoints",
-        // Phase 6: Enhanced
-        "invoke_command",
-        "screenshot",
-        "press_key",
-        "get_console_logs",
-        // Extended interactions
-        "double_click",
-        "hover",
-        "select_option",
-        "scroll_to",
-        "focus_element",
-        // Network
-        "get_network_log",
-        // Storage
-        "get_storage",
-        "set_storage",
-        "delete_storage",
-        "get_cookies",
-        // Navigation
-        "get_navigation_log",
-        "navigate",
-        "navigate_back",
-        // Dialogs
-        "get_dialog_log",
-        "set_dialog_response",
-        // Wait
         "wait_for",
-        // Window management
-        "manage_window",
-        "resize_window",
-        "move_window",
-        "set_window_title",
-        // Phase 8: Deep Introspection
-        "get_styles",
-        "get_bounding_boxes",
-        "highlight_element",
-        "clear_highlights",
-        "inject_css",
-        "remove_injected_css",
-        "audit_accessibility",
-        "get_performance_metrics",
+        "assert_semantic",
+        "resolve_command",
+        "get_registry",
+        "get_memory_stats",
+        "get_plugin_info",
+        // Compound tools
+        "interact",
+        "input",
+        "window",
+        "storage",
+        "navigate",
+        "recording",
+        "inspect",
+        "css",
+        "logs",
     ];
 
     for tool_name in &expected_tools {
@@ -1598,7 +1553,7 @@ async fn privacy_disabled_tools_hidden_from_list() {
         "non-disabled tools should still be listed"
     );
     assert!(
-        body.contains("get_window_state"),
+        body.contains("window"),
         "non-disabled tools should still be listed"
     );
 }
@@ -1664,16 +1619,11 @@ async fn privacy_strict_mode_disables_dangerous_tools() {
         .unwrap();
 
     let body = tools_resp.text().await.unwrap();
+    // In strict mode, standalone tools that match disabled_tools are hidden
     for tool_name in &[
         "eval_js",
         "screenshot",
-        "inject_css",
-        "set_storage",
-        "delete_storage",
         "navigate",
-        "set_dialog_response",
-        "fill",
-        "type_text",
     ] {
         assert!(
             !body.contains(&format!("\"{tool_name}\"")),
@@ -1685,7 +1635,7 @@ async fn privacy_strict_mode_disables_dangerous_tools() {
         "read-only tools should still be visible"
     );
     assert!(
-        body.contains("get_ipc_log"),
+        body.contains("logs"),
         "read-only tools should still be visible"
     );
 }
@@ -1981,8 +1931,8 @@ async fn mcp_tool_call_with_empty_arguments() {
             "id": 10,
             "method": "tools/call",
             "params": {
-                "name": "list_windows",
-                "arguments": {}
+                "name": "window",
+                "arguments": {"action": "list"}
             }
         }))
         .send()
@@ -1991,12 +1941,12 @@ async fn mcp_tool_call_with_empty_arguments() {
 
     assert!(
         resp.status().is_success(),
-        "tool call with empty args should succeed"
+        "tool call with action-only args should succeed"
     );
     let body = resp.text().await.unwrap();
     assert!(
         body.contains("main"),
-        "list_windows should return window labels"
+        "window list should return window labels"
     );
 }
 
@@ -2142,7 +2092,7 @@ async fn callback_mock_dom_snapshot_returns_tree() {
     let snapshot_json = r#"{"role":"document","name":"page","children":[]}"#;
     let snapshot_response = snapshot_json.to_string();
     let base = start_callback_server(state, &["main"], move |code| {
-        if code.contains("snapshot()") {
+        if code.contains("snapshot(") {
             snapshot_response.clone()
         } else {
             "null".to_string()
@@ -2183,8 +2133,8 @@ async fn callback_mock_click_returns_ok() {
         &client,
         &base,
         &session_id,
-        "click",
-        serde_json::json!({"ref_id": "e1"}),
+        "interact",
+        serde_json::json!({"action": "click", "ref_id": "e1"}),
     )
     .await;
 
@@ -2211,8 +2161,8 @@ async fn callback_mock_fill_returns_ok() {
         &client,
         &base,
         &session_id,
-        "fill",
-        serde_json::json!({"ref_id": "e2", "value": "hello"}),
+        "input",
+        serde_json::json!({"action": "fill", "ref_id": "e2", "value": "hello"}),
     )
     .await;
 
@@ -2239,14 +2189,14 @@ async fn callback_mock_get_ipc_log_returns_entries() {
         &client,
         &base,
         &session_id,
-        "get_ipc_log",
-        serde_json::json!({}),
+        "logs",
+        serde_json::json!({"action": "ipc"}),
     )
     .await;
 
     assert!(
         body.contains("greet"),
-        "get_ipc_log should return mocked IPC entries, got: {body}"
+        "logs ipc should return mocked IPC entries, got: {body}"
     );
 }
 
@@ -2395,8 +2345,8 @@ async fn callback_mock_get_console_logs() {
         &client,
         &base,
         &session_id,
-        "get_console_logs",
-        serde_json::json!({}),
+        "logs",
+        serde_json::json!({"action": "console"}),
     )
     .await;
 
@@ -2423,8 +2373,8 @@ async fn callback_mock_get_event_stream() {
         &client,
         &base,
         &session_id,
-        "get_event_stream",
-        serde_json::json!({}),
+        "logs",
+        serde_json::json!({"action": "events"}),
     )
     .await;
 
@@ -2451,8 +2401,8 @@ async fn callback_mock_type_text_returns_ok() {
         &client,
         &base,
         &session_id,
-        "type_text",
-        serde_json::json!({"ref_id": "e3", "text": "hello world"}),
+        "input",
+        serde_json::json!({"action": "type_text", "ref_id": "e3", "text": "hello world"}),
     )
     .await;
 
@@ -2479,8 +2429,8 @@ async fn callback_mock_press_key_returns_ok() {
         &client,
         &base,
         &session_id,
-        "press_key",
-        serde_json::json!({"key": "Enter"}),
+        "input",
+        serde_json::json!({"action": "press_key", "key": "Enter"}),
     )
     .await;
 
@@ -2548,14 +2498,14 @@ async fn callback_mock_get_network_log() {
         &client,
         &base,
         &session_id,
-        "get_network_log",
-        serde_json::json!({}),
+        "logs",
+        serde_json::json!({"action": "network"}),
     )
     .await;
 
     assert!(
         body.contains("api.example.com"),
-        "get_network_log should return mocked entries, got: {body}"
+        "logs network should return mocked entries, got: {body}"
     );
 }
 
@@ -2576,8 +2526,8 @@ async fn callback_mock_audit_accessibility() {
         &client,
         &base,
         &session_id,
-        "audit_accessibility",
-        serde_json::json!({}),
+        "inspect",
+        serde_json::json!({"action": "audit_accessibility"}),
     )
     .await;
 
@@ -2604,8 +2554,8 @@ async fn callback_mock_get_performance_metrics() {
         &client,
         &base,
         &session_id,
-        "get_performance_metrics",
-        serde_json::json!({}),
+        "inspect",
+        serde_json::json!({"action": "get_performance"}),
     )
     .await;
 
@@ -2636,8 +2586,8 @@ async fn adversarial_double_click_returns_ok() {
         &client,
         &base,
         &session_id,
-        "double_click",
-        serde_json::json!({"ref_id": "e1"}),
+        "interact",
+        serde_json::json!({"action": "double_click", "ref_id": "e1"}),
     )
     .await;
 
@@ -2664,8 +2614,8 @@ async fn adversarial_hover_returns_ok() {
         &client,
         &base,
         &session_id,
-        "hover",
-        serde_json::json!({"ref_id": "e1"}),
+        "interact",
+        serde_json::json!({"action": "hover", "ref_id": "e1"}),
     )
     .await;
 
@@ -2689,8 +2639,8 @@ async fn adversarial_select_option_returns_ok() {
         &client,
         &base,
         &session_id,
-        "select_option",
-        serde_json::json!({"ref_id": "e1", "values": ["opt1"]}),
+        "interact",
+        serde_json::json!({"action": "select_option", "ref_id": "e1", "values": ["opt1"]}),
     )
     .await;
 
@@ -2717,8 +2667,8 @@ async fn adversarial_scroll_to_returns_ok() {
         &client,
         &base,
         &session_id,
-        "scroll_to",
-        serde_json::json!({"ref_id": "e1"}),
+        "interact",
+        serde_json::json!({"action": "scroll_into_view", "ref_id": "e1"}),
     )
     .await;
 
@@ -2745,8 +2695,8 @@ async fn adversarial_focus_element_returns_ok() {
         &client,
         &base,
         &session_id,
-        "focus_element",
-        serde_json::json!({"ref_id": "e1"}),
+        "interact",
+        serde_json::json!({"action": "focus", "ref_id": "e1"}),
     )
     .await;
 
@@ -2773,8 +2723,8 @@ async fn adversarial_get_storage_returns_data() {
         &client,
         &base,
         &session_id,
-        "get_storage",
-        serde_json::json!({"storage_type": "local"}),
+        "storage",
+        serde_json::json!({"action": "get", "storage_type": "local"}),
     )
     .await;
 
@@ -2801,8 +2751,8 @@ async fn adversarial_set_storage_succeeds() {
         &client,
         &base,
         &session_id,
-        "set_storage",
-        serde_json::json!({"storage_type": "local", "key": "test", "value": "val"}),
+        "storage",
+        serde_json::json!({"action": "set", "storage_type": "local", "key": "test", "value": "val"}),
     )
     .await;
 
@@ -2829,8 +2779,8 @@ async fn adversarial_delete_storage_succeeds() {
         &client,
         &base,
         &session_id,
-        "delete_storage",
-        serde_json::json!({"storage_type": "local", "key": "test"}),
+        "storage",
+        serde_json::json!({"action": "delete", "storage_type": "local", "key": "test"}),
     )
     .await;
 
@@ -2857,8 +2807,8 @@ async fn adversarial_get_cookies_returns_data() {
         &client,
         &base,
         &session_id,
-        "get_cookies",
-        serde_json::json!({}),
+        "storage",
+        serde_json::json!({"action": "get_cookies"}),
     )
     .await;
 
@@ -2885,8 +2835,8 @@ async fn adversarial_get_navigation_log_returns_entries() {
         &client,
         &base,
         &session_id,
-        "get_navigation_log",
-        serde_json::json!({}),
+        "logs",
+        serde_json::json!({"action": "navigation"}),
     )
     .await;
 
@@ -2914,7 +2864,7 @@ async fn adversarial_navigate_succeeds() {
         &base,
         &session_id,
         "navigate",
-        serde_json::json!({"url": "http://localhost:4444"}),
+        serde_json::json!({"action": "go_to", "url": "http://localhost:4444"}),
     )
     .await;
 
@@ -2941,8 +2891,8 @@ async fn adversarial_navigate_back_succeeds() {
         &client,
         &base,
         &session_id,
-        "navigate_back",
-        serde_json::json!({}),
+        "navigate",
+        serde_json::json!({"action": "go_back"}),
     )
     .await;
 
@@ -2969,8 +2919,8 @@ async fn adversarial_get_dialog_log_returns_entries() {
         &client,
         &base,
         &session_id,
-        "get_dialog_log",
-        serde_json::json!({}),
+        "navigate",
+        serde_json::json!({"action": "get_dialog_log"}),
     )
     .await;
 
@@ -2997,8 +2947,8 @@ async fn adversarial_set_dialog_response_succeeds() {
         &client,
         &base,
         &session_id,
-        "set_dialog_response",
-        serde_json::json!({"dialog_type": "confirm", "action": "accept"}),
+        "navigate",
+        serde_json::json!({"action": "set_dialog_response", "dialog_type": "confirm", "dialog_action": "accept"}),
     )
     .await;
 
@@ -3025,8 +2975,8 @@ async fn adversarial_get_styles_returns_css() {
         &client,
         &base,
         &session_id,
-        "get_styles",
-        serde_json::json!({"ref_id": "e1"}),
+        "inspect",
+        serde_json::json!({"action": "get_styles", "ref_id": "e1"}),
     )
     .await;
 
@@ -3057,8 +3007,8 @@ async fn adversarial_get_bounding_boxes_returns_rects() {
         &client,
         &base,
         &session_id,
-        "get_bounding_boxes",
-        serde_json::json!({"ref_ids": ["e1", "e2"]}),
+        "inspect",
+        serde_json::json!({"action": "get_bounding_boxes", "ref_ids": ["e1", "e2"]}),
     )
     .await;
 
@@ -3089,8 +3039,8 @@ async fn adversarial_highlight_element_succeeds() {
         &client,
         &base,
         &session_id,
-        "highlight_element",
-        serde_json::json!({"ref_id": "e1", "color": "red"}),
+        "inspect",
+        serde_json::json!({"action": "highlight", "ref_id": "e1", "color": "red"}),
     )
     .await;
 
@@ -3117,8 +3067,8 @@ async fn adversarial_clear_highlights_succeeds() {
         &client,
         &base,
         &session_id,
-        "clear_highlights",
-        serde_json::json!({}),
+        "inspect",
+        serde_json::json!({"action": "clear_highlights"}),
     )
     .await;
 
@@ -3145,8 +3095,8 @@ async fn adversarial_inject_css_succeeds() {
         &client,
         &base,
         &session_id,
-        "inject_css",
-        serde_json::json!({"css": "body { color: red }"}),
+        "css",
+        serde_json::json!({"action": "inject", "css": "body { color: red }"}),
     )
     .await;
 
@@ -3173,8 +3123,8 @@ async fn adversarial_remove_injected_css_succeeds() {
         &client,
         &base,
         &session_id,
-        "remove_injected_css",
-        serde_json::json!({}),
+        "css",
+        serde_json::json!({"action": "remove"}),
     )
     .await;
 
@@ -3201,8 +3151,8 @@ async fn adversarial_slow_ipc_calls_returns_data() {
         &client,
         &base,
         &session_id,
-        "slow_ipc_calls",
-        serde_json::json!({"threshold_ms": 100}),
+        "logs",
+        serde_json::json!({"action": "slow_ipc", "threshold_ms": 100}),
     )
     .await;
 
@@ -3374,7 +3324,7 @@ async fn adversarial_navigate_blocks_javascript_url() {
         &base,
         &session_id,
         "navigate",
-        serde_json::json!({"url": "javascript:alert(1)"}),
+        serde_json::json!({"action": "go_to", "url": "javascript:alert(1)"}),
     )
     .await;
 
@@ -3398,7 +3348,7 @@ async fn adversarial_navigate_blocks_data_url() {
         &base,
         &session_id,
         "navigate",
-        serde_json::json!({"url": "data:text/html,<script>"}),
+        serde_json::json!({"action": "go_to", "url": "data:text/html,<script>"}),
     )
     .await;
 
@@ -3449,8 +3399,8 @@ async fn adversarial_fill_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "fill",
-        serde_json::json!({"ref_id": "e1", "value": "test"}),
+        "input",
+        serde_json::json!({"action": "fill", "ref_id": "e1", "value": "test"}),
     )
     .await;
 
@@ -3475,8 +3425,8 @@ async fn adversarial_type_text_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "type_text",
-        serde_json::json!({"ref_id": "e1", "text": "hello"}),
+        "input",
+        serde_json::json!({"action": "type_text", "ref_id": "e1", "text": "hello"}),
     )
     .await;
 
@@ -3524,8 +3474,8 @@ async fn adversarial_set_storage_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "set_storage",
-        serde_json::json!({"storage_type": "local", "key": "test", "value": "val"}),
+        "storage",
+        serde_json::json!({"action": "set", "storage_type": "local", "key": "test", "value": "val"}),
     )
     .await;
 
@@ -3550,8 +3500,8 @@ async fn adversarial_delete_storage_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "delete_storage",
-        serde_json::json!({"storage_type": "local", "key": "test"}),
+        "storage",
+        serde_json::json!({"action": "delete", "storage_type": "local", "key": "test"}),
     )
     .await;
 
@@ -3578,8 +3528,8 @@ async fn adversarial_set_dialog_response_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "set_dialog_response",
-        serde_json::json!({"dialog_type": "confirm", "action": "accept"}),
+        "navigate",
+        serde_json::json!({"action": "set_dialog_response", "dialog_type": "confirm", "dialog_action": "accept"}),
     )
     .await;
 
@@ -3604,8 +3554,8 @@ async fn adversarial_inject_css_privacy_disabled() {
         &client,
         &base,
         &session_id,
-        "inject_css",
-        serde_json::json!({"css": "body { color: red }"}),
+        "css",
+        serde_json::json!({"action": "inject", "css": "body { color: red }"}),
     )
     .await;
 
@@ -3631,7 +3581,7 @@ async fn adversarial_navigate_privacy_disabled() {
         &base,
         &session_id,
         "navigate",
-        serde_json::json!({"url": "http://localhost:4444"}),
+        serde_json::json!({"action": "go_to", "url": "http://localhost:4444"}),
     )
     .await;
 
