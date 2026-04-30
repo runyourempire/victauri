@@ -20,6 +20,7 @@ pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
     )
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum RecoveryHint {
     RetryLater,
@@ -41,14 +42,18 @@ impl RecoveryHint {
 
 pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -> CallToolResult {
     let message = msg.into();
-    let text = format!("{message}
+    let text = format!(
+        "{message}
 
-[hint: {}]", hint.as_str());
+[hint: {}]",
+        hint.as_str()
+    );
     let mut result = CallToolResult::success(vec![Content::text(text)]);
     result.is_error = Some(true);
     result
 }
 
+#[allow(dead_code)]
 pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> CallToolResult {
     tool_error_with_hint(
         format!(
@@ -59,6 +64,7 @@ pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> C
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("missing required parameter '{param}' for action '{action}'"),
@@ -66,9 +72,12 @@ pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
     )
 }
 
+#[allow(dead_code)]
 pub(crate) fn ref_not_found(ref_id: &str) -> CallToolResult {
     tool_error_with_hint(
-        format!("ref handle '{ref_id}' not found -- it may have been invalidated. Take a new dom_snapshot to get fresh refs."),
+        format!(
+            "ref handle '{ref_id}' not found -- it may have been invalidated. Take a new dom_snapshot to get fresh refs."
+        ),
         RecoveryHint::TryAlternative,
     )
 }

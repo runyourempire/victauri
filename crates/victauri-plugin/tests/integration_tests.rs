@@ -580,10 +580,7 @@ async fn mcp_full_session_lists_tools() {
         body.contains("dom_snapshot"),
         "tools should include dom_snapshot"
     );
-    assert!(
-        body.contains("recording"),
-        "tools should include recording"
-    );
+    assert!(body.contains("recording"), "tools should include recording");
     assert!(
         body.contains("verify_state"),
         "tools should include verify_state"
@@ -739,10 +736,7 @@ async fn mcp_tools_include_invoke_command() {
         "tools should include screenshot"
     );
     assert!(body.contains("input"), "tools should include input");
-    assert!(
-        body.contains("logs"),
-        "tools should include logs"
-    );
+    assert!(body.contains("logs"), "tools should include logs");
 }
 
 #[tokio::test]
@@ -1620,11 +1614,7 @@ async fn privacy_strict_mode_disables_dangerous_tools() {
 
     let body = tools_resp.text().await.unwrap();
     // In strict mode, standalone tools that match disabled_tools are hidden
-    for tool_name in &[
-        "eval_js",
-        "screenshot",
-        "navigate",
-    ] {
+    for tool_name in &["eval_js", "screenshot", "navigate"] {
         assert!(
             !body.contains(&format!("\"{tool_name}\"")),
             "{tool_name} should be hidden in strict privacy mode"

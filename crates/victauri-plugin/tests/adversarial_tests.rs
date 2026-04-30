@@ -455,7 +455,14 @@ async fn adversarial_list_checkpoints_empty() {
         "recording should start successfully: {start_body}"
     );
 
-    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "list_checkpoints"})).await;
+    let body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "list_checkpoints"}),
+    )
+    .await;
     assert!(
         body.contains("[]"),
         "expected empty array for list_checkpoints on fresh recording: {body}"
@@ -480,7 +487,14 @@ async fn adversarial_get_replay_sequence_empty() {
     )
     .await;
 
-    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_replay"})).await;
+    let body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "get_replay"}),
+    )
+    .await;
     assert!(
         body.contains("[]"),
         "expected empty array for get_replay_sequence on fresh recording: {body}"
@@ -504,7 +518,14 @@ async fn adversarial_get_recorded_events_empty() {
     )
     .await;
 
-    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_events"})).await;
+    let body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "get_events"}),
+    )
+    .await;
     assert!(
         body.contains("[]"),
         "expected empty array for get_recorded_events on fresh recording: {body}"
@@ -550,7 +571,14 @@ async fn adversarial_export_session_without_recording() {
     let base = start_server(state, &["main"]).await;
     let (client, sid) = mcp_session(&base).await;
 
-    let body = call_tool(&client, &base, &sid, "recording", json!({"action": "export"})).await;
+    let body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "export"}),
+    )
+    .await;
     assert!(
         body.contains("no recording"),
         "expected 'no recording' error when exporting without recording: {body}"
@@ -640,14 +668,28 @@ async fn adversarial_recording_full_lifecycle() {
     );
 
     // 3. Get recorded events (should be empty -- no events pushed, only checkpoints)
-    let events_body = call_tool(&client, &base, &sid, "recording", json!({"action": "get_events"})).await;
+    let events_body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "get_events"}),
+    )
+    .await;
     assert!(
         events_body.contains("[]"),
         "recorded events should be empty array: {events_body}"
     );
 
     // 4. Export session (without stopping)
-    let export_body = call_tool(&client, &base, &sid, "recording", json!({"action": "export"})).await;
+    let export_body = call_tool(
+        &client,
+        &base,
+        &sid,
+        "recording",
+        json!({"action": "export"}),
+    )
+    .await;
     assert!(
         export_body.contains("lifecycle-test"),
         "exported session should contain session id: {export_body}"
@@ -831,7 +873,14 @@ async fn adversarial_concurrent_sessions() {
         let base_clone = base.clone();
         let handle = tokio::spawn(async move {
             let (client, sid) = mcp_session(&base_clone).await;
-            let body = call_tool(&client, &base_clone, &sid, "window", json!({"action": "list"})).await;
+            let body = call_tool(
+                &client,
+                &base_clone,
+                &sid,
+                "window",
+                json!({"action": "list"}),
+            )
+            .await;
             (i, body)
         });
         handles.push(handle);

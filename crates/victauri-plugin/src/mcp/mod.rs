@@ -35,7 +35,11 @@ use helpers::{js_string, sanitize_css_color, tool_disabled, tool_error, validate
 pub use backend_params::*;
 pub use compound_params::*;
 pub use introspection_params::*;
-pub use other_params::{DialogLogParams, DeleteStorageParams, EventStreamParams, FindElementsParams, GetCookiesParams, GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams, SetDialogResponseParams, SetStorageParams, WaitForParams};
+pub use other_params::{
+    DeleteStorageParams, DialogLogParams, EventStreamParams, FindElementsParams, GetCookiesParams,
+    GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams,
+    SetDialogResponseParams, SetStorageParams, WaitForParams,
+};
 pub use recording_params::*;
 pub use verification_params::*;
 pub use webview_params::*;
@@ -86,7 +90,10 @@ impl VictauriMcpHandler {
     )]
     async fn dom_snapshot(&self, Parameters(params): Parameters<SnapshotParams>) -> CallToolResult {
         let format = params.format.as_deref().unwrap_or("compact");
-        let code = format!("return window.__VICTAURI__?.snapshot({})", js_string(format));
+        let code = format!(
+            "return window.__VICTAURI__?.snapshot({})",
+            js_string(format)
+        );
         match self
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
@@ -99,7 +106,10 @@ impl VictauriMcpHandler {
     #[tool(
         description = "Search for elements by text, role, test_id, CSS selector, or accessible name without a full snapshot. Returns lightweight matches with ref handles."
     )]
-    async fn find_elements(&self, Parameters(params): Parameters<FindElementsParams>) -> CallToolResult {
+    async fn find_elements(
+        &self,
+        Parameters(params): Parameters<FindElementsParams>,
+    ) -> CallToolResult {
         let mut parts: Vec<String> = Vec::new();
         if let Some(t) = &params.text {
             parts.push(format!("text: {}", js_string(t)));
@@ -225,7 +235,7 @@ impl VictauriMcpHandler {
     ) -> CallToolResult {
         let code = "return window.__VICTAURI__?.getIpcLog()";
         let ipc_json = match self
-            .eval_with_return(&code, params.webview_label.as_deref())
+            .eval_with_return(code, params.webview_label.as_deref())
             .await
         {
             Ok(r) => r,
@@ -461,10 +471,7 @@ impl VictauriMcpHandler {
                     Some(r) => r,
                     None => return tool_error("ref_id is required for click"),
                 };
-                let code = format!(
-                    "return window.__VICTAURI__?.click({})",
-                    js_string(ref_id)
-                );
+                let code = format!("return window.__VICTAURI__?.click({})", js_string(ref_id));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -495,10 +502,7 @@ impl VictauriMcpHandler {
                     Some(r) => r,
                     None => return tool_error("ref_id is required for hover"),
                 };
-                let code = format!(
-                    "return window.__VICTAURI__?.hover({})",
-                    js_string(ref_id)
-                );
+                let code = format!("return window.__VICTAURI__?.hover({})", js_string(ref_id));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -628,10 +632,7 @@ impl VictauriMcpHandler {
                     Some(k) => k,
                     None => return tool_error("key is required for press_key"),
                 };
-                let code = format!(
-                    "return window.__VICTAURI__?.pressKey({})",
-                    js_string(key)
-                );
+                let code = format!("return window.__VICTAURI__?.pressKey({})", js_string(key));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -693,7 +694,8 @@ impl VictauriMcpHandler {
                     .resize_window(params.label.as_deref(), width, height)
                 {
                     Ok(()) => {
-                        let result = serde_json::json!({"ok": true, "width": width, "height": height});
+                        let result =
+                            serde_json::json!({"ok": true, "width": width, "height": height});
                         CallToolResult::success(vec![Content::text(result.to_string())])
                     }
                     Err(e) => tool_error(e),
@@ -708,10 +710,7 @@ impl VictauriMcpHandler {
                     Some(v) => v,
                     None => return tool_error("y is required for move_to"),
                 };
-                match self
-                    .bridge
-                    .move_window(params.label.as_deref(), x, y)
-                {
+                match self.bridge.move_window(params.label.as_deref(), x, y) {
                     Ok(()) => {
                         let result = serde_json::json!({"ok": true, "x": x, "y": y});
                         CallToolResult::success(vec![Content::text(result.to_string())])
@@ -724,10 +723,7 @@ impl VictauriMcpHandler {
                     Some(t) => t,
                     None => return tool_error("title is required for set_title"),
                 };
-                match self
-                    .bridge
-                    .set_window_title(params.label.as_deref(), title)
-                {
+                match self.bridge.set_window_title(params.label.as_deref(), title) {
                     Ok(()) => {
                         let result = serde_json::json!({"ok": true, "title": title});
                         CallToolResult::success(vec![Content::text(result.to_string())])
@@ -779,7 +775,11 @@ impl VictauriMcpHandler {
                     Some(k) => k,
                     None => return tool_error("key is required for set"),
                 };
-                let value = params.value.as_ref().cloned().unwrap_or(serde_json::Value::Null);
+                let value = params
+                    .value
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 let value_json =
                     serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string());
                 let code = format!(
@@ -807,10 +807,7 @@ impl VictauriMcpHandler {
                     Some(k) => k,
                     None => return tool_error("key is required for delete"),
                 };
-                let code = format!(
-                    "return window.__VICTAURI__?.{method}({})",
-                    js_string(key)
-                );
+                let code = format!("return window.__VICTAURI__?.{method}({})", js_string(key));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -822,7 +819,7 @@ impl VictauriMcpHandler {
             "get_cookies" => {
                 let code = "return window.__VICTAURI__?.getCookies()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => self.redact_result(result),
@@ -851,10 +848,7 @@ impl VictauriMcpHandler {
                 if let Err(e) = validate_url(url) {
                     return tool_error(e);
                 }
-                let code = format!(
-                    "return window.__VICTAURI__?.navigate({})",
-                    js_string(url)
-                );
+                let code = format!("return window.__VICTAURI__?.navigate({})", js_string(url));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -866,7 +860,7 @@ impl VictauriMcpHandler {
             "go_back" => {
                 let code = "return window.__VICTAURI__?.navigateBack()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -876,7 +870,7 @@ impl VictauriMcpHandler {
             "get_history" => {
                 let code = "return window.__VICTAURI__?.getNavigationLog()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -916,7 +910,7 @@ impl VictauriMcpHandler {
             "get_dialog_log" => {
                 let code = "return window.__VICTAURI__?.getDialogLog()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -959,10 +953,10 @@ impl VictauriMcpHandler {
                     None => return tool_error("checkpoint_id is required for checkpoint"),
                 };
                 let state = params.state.unwrap_or(serde_json::Value::Null);
-                let created = self
-                    .state
-                    .recorder
-                    .checkpoint(id.clone(), params.checkpoint_label, state);
+                let created =
+                    self.state
+                        .recorder
+                        .checkpoint(id.clone(), params.checkpoint_label, state);
                 if created {
                     let result = serde_json::json!({
                         "created": true,
@@ -1131,7 +1125,7 @@ impl VictauriMcpHandler {
             "clear_highlights" => {
                 let code = "return window.__VICTAURI__?.clearHighlights()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1141,7 +1135,7 @@ impl VictauriMcpHandler {
             "audit_accessibility" => {
                 let code = "return window.__VICTAURI__?.auditAccessibility()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1151,7 +1145,7 @@ impl VictauriMcpHandler {
             "get_performance" => {
                 let code = "return window.__VICTAURI__?.getPerformanceMetrics()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1177,10 +1171,7 @@ impl VictauriMcpHandler {
                     Some(c) => c,
                     None => return tool_error("css is required for inject"),
                 };
-                let code = format!(
-                    "return window.__VICTAURI__?.injectCss({})",
-                    js_string(css)
-                );
+                let code = format!("return window.__VICTAURI__?.injectCss({})", js_string(css));
                 match self
                     .eval_with_return(&code, params.webview_label.as_deref())
                     .await
@@ -1192,7 +1183,7 @@ impl VictauriMcpHandler {
             "remove" => {
                 let code = "return window.__VICTAURI__?.removeInjectedCss()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1263,7 +1254,7 @@ impl VictauriMcpHandler {
             "navigation" => {
                 let code = "return window.__VICTAURI__?.getNavigationLog()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),
@@ -1273,7 +1264,7 @@ impl VictauriMcpHandler {
             "dialogs" => {
                 let code = "return window.__VICTAURI__?.getDialogLog()";
                 match self
-                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .eval_with_return(code, params.webview_label.as_deref())
                     .await
                 {
                     Ok(result) => CallToolResult::success(vec![Content::text(result)]),

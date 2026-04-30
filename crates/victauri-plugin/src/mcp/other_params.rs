@@ -83,6 +83,7 @@ pub struct NavigationLogParams {
     pub webview_label: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
     /// URL to navigate to.
