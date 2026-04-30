@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+/// Parameters for the `get_ipc_log` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct IpcLogParams {
     /// Maximum number of most recent entries to return.
@@ -9,12 +10,14 @@ pub struct IpcLogParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `get_registry` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RegistryParams {
     /// Search query to filter commands by name or description.
     pub query: Option<String>,
 }
 
+/// Parameters for the `invoke_command` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InvokeCommandParams {
     /// The Tauri command name to invoke (e.g. "greet", "save_settings").
@@ -25,6 +28,7 @@ pub struct InvokeCommandParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `get_network_log` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NetworkLogParams {
     /// Filter by URL substring.

@@ -4,10 +4,11 @@ use syn::{ItemFn, parse_macro_input};
 
 /// Marks a `#[tauri::command]` as inspectable by Victauri.
 ///
-/// Generates:
-/// - A companion `<fn_name>__schema()` function returning the command's JSON schema
-/// - Runtime telemetry (duration, result status) emitted as tracing spans
-/// - Auto-registration in the global command registry
+/// Generates a companion `<fn_name>__schema()` function that returns a
+/// [`CommandInfo`](victauri_core::registry::CommandInfo) with the command's
+/// name, description, argument types, return type, and NL-resolution metadata.
+/// Call the schema function at setup time to register the command in the
+/// Victauri [`CommandRegistry`](victauri_core::CommandRegistry).
 ///
 /// # Example
 ///
@@ -17,6 +18,9 @@ use syn::{ItemFn, parse_macro_input};
 /// async fn save_api_key(provider: String, key: String) -> Result<(), String> {
 ///     // ...
 /// }
+///
+/// // At setup:
+/// state.registry.register(save_api_key__schema());
 /// ```
 #[proc_macro_attribute]
 pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {

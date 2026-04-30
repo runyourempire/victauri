@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+#![warn(missing_docs)]
 //! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
 //!
 //! Add this plugin to your Tauri app for AI-agent-driven testing and debugging:
@@ -34,16 +35,21 @@
 //!     .unwrap();
 //! ```
 
+/// Runtime-erased webview bridge trait and its Tauri implementation.
 pub mod bridge;
 pub mod error;
 mod js_bridge;
+/// MCP server, tool handler, and parameter types.
 pub mod mcp;
 mod memory;
+/// Privacy controls: command allowlists, blocklists, and tool disabling.
 pub mod privacy;
+/// Output redaction for API keys, tokens, emails, and sensitive JSON keys.
 pub mod redaction;
 pub(crate) mod screenshot;
 mod tools;
 
+/// Bearer-token authentication, rate limiting, and security middlewares.
 pub mod auth;
 
 use std::collections::{HashMap, HashSet};
@@ -140,6 +146,7 @@ impl Default for VictauriBuilder {
 }
 
 impl VictauriBuilder {
+    /// Create a new builder with default settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -342,6 +349,7 @@ impl VictauriBuilder {
         Ok(())
     }
 
+    /// Consume the builder and produce a Tauri plugin. Returns an error if validation fails.
     pub fn build<R: Runtime>(self) -> Result<TauriPlugin<R>, BuilderError> {
         #[cfg(not(debug_assertions))]
         {

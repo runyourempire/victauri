@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 // ── interact ────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `interact` tool (click, hover, focus, scroll, select).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InteractParams {
     /// Action to perform: click, double_click, hover, focus, scroll_into_view, select_option.
@@ -21,6 +22,7 @@ pub struct InteractParams {
 
 // ── input ───────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `input` tool (fill, type_text, press_key).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InputParams {
     /// Action to perform: fill, type_text, press_key.
@@ -39,6 +41,7 @@ pub struct InputParams {
 
 // ── window ──────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `window` tool (get_state, list, manage, resize, move, title).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WindowParams {
     /// Action to perform: get_state, list, manage, resize, move_to, set_title.
@@ -61,6 +64,7 @@ pub struct WindowParams {
 
 // ── storage ─────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `storage` tool (get, set, delete, get_cookies).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageParams {
     /// Action to perform: get, set, delete, get_cookies.
@@ -77,6 +81,7 @@ pub struct StorageParams {
 
 // ── navigate ────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `navigate` tool (go_to, go_back, history, dialogs).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
     /// Action to perform: go_to, go_back, get_history, set_dialog_response, get_dialog_log.
@@ -95,6 +100,7 @@ pub struct NavigateParams {
 
 // ── recording ───────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `recording` tool (start, stop, checkpoint, replay, export, import).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecordingParams {
     /// Action to perform: start, stop, checkpoint, list_checkpoints, get_events, events_between, get_replay, export, import.
@@ -119,6 +125,7 @@ pub struct RecordingParams {
 
 // ── inspect ─────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `inspect` tool (styles, bounding boxes, highlight, a11y, perf).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InspectParams {
     /// Action to perform: get_styles, get_bounding_boxes, highlight, clear_highlights, audit_accessibility, get_performance.
@@ -140,6 +147,7 @@ pub struct InspectParams {
 
 // ── css ─────────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `css` tool (inject, remove).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CssParams {
     /// Action to perform: inject, remove.
@@ -152,6 +160,7 @@ pub struct CssParams {
 
 // ── logs ────────────────────────────────────────────────────────────────────
 
+/// Parameters for the compound `logs` tool (console, network, ipc, navigation, dialogs, events).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct LogsParams {
     /// Action to perform: console, network, ipc, navigation, dialogs, events, slow_ipc.

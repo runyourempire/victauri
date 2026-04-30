@@ -4,68 +4,144 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum BuilderError {
+    /// The configured port is invalid (e.g., port 0).
     #[error("invalid port {port}: {reason}")]
-    InvalidPort { port: u16, reason: String },
+    InvalidPort {
+        /// The invalid port number.
+        port: u16,
+        /// Why the port is invalid.
+        reason: String,
+    },
 
+    /// The event log capacity is out of the valid range.
     #[error("invalid event capacity {capacity}: {reason}")]
-    InvalidEventCapacity { capacity: usize, reason: String },
+    InvalidEventCapacity {
+        /// The invalid capacity value.
+        capacity: usize,
+        /// Why the capacity is invalid.
+        reason: String,
+    },
 
+    /// The recorder capacity is out of the valid range.
     #[error("invalid recorder capacity {capacity}: {reason}")]
-    InvalidRecorderCapacity { capacity: usize, reason: String },
+    InvalidRecorderCapacity {
+        /// The invalid capacity value.
+        capacity: usize,
+        /// Why the capacity is invalid.
+        reason: String,
+    },
 
+    /// The eval timeout is out of the valid range.
     #[error("invalid eval timeout {timeout_secs}s: {reason}")]
-    InvalidEvalTimeout { timeout_secs: u64, reason: String },
+    InvalidEvalTimeout {
+        /// The invalid timeout in seconds.
+        timeout_secs: u64,
+        /// Why the timeout is invalid.
+        reason: String,
+    },
 }
 
 /// Errors that can occur during MCP server operation, tool execution, or webview interaction.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum PluginError {
+    /// A JavaScript eval timed out waiting for a response from the webview.
     #[error("eval timed out after {timeout_secs}s")]
-    EvalTimeout { timeout_secs: u64 },
+    EvalTimeout {
+        /// How many seconds elapsed before the timeout.
+        timeout_secs: u64,
+    },
 
+    /// A JavaScript eval returned an error from the webview.
     #[error("eval failed: {message}")]
-    EvalFailed { message: String },
+    EvalFailed {
+        /// The error message from the webview.
+        message: String,
+    },
 
+    /// Too many concurrent eval requests are pending.
     #[error("too many concurrent eval requests (limit: {limit})")]
-    EvalConcurrencyExceeded { limit: usize },
+    EvalConcurrencyExceeded {
+        /// The maximum number of concurrent eval requests.
+        limit: usize,
+    },
 
+    /// The webview bridge returned an error.
     #[error("bridge error: {message}")]
-    BridgeError { message: String },
+    BridgeError {
+        /// The error message from the bridge.
+        message: String,
+    },
 
+    /// Screenshot capture failed.
     #[error("screenshot failed: {message}")]
-    ScreenshotFailed { message: String },
+    ScreenshotFailed {
+        /// The error message from the screenshot subsystem.
+        message: String,
+    },
 
+    /// Bearer-token authentication failed.
     #[error("authentication failed: {message}")]
-    AuthenticationFailed { message: String },
+    AuthenticationFailed {
+        /// The error message describing the auth failure.
+        message: String,
+    },
 
+    /// The rate limiter rejected the request.
     #[error("rate limit exceeded")]
     RateLimitExceeded,
 
+    /// The requested tool is disabled by the privacy configuration.
     #[error("tool '{tool_name}' is disabled by privacy configuration")]
-    ToolDisabled { tool_name: String },
+    ToolDisabled {
+        /// Name of the disabled tool.
+        tool_name: String,
+    },
 
+    /// The requested command is blocked by the privacy configuration.
     #[error("command '{command}' is blocked by privacy configuration")]
-    CommandBlocked { command: String },
+    CommandBlocked {
+        /// Name of the blocked command.
+        command: String,
+    },
 
+    /// No window with the given label was found.
     #[error("window not found: {label}")]
-    WindowNotFound { label: String },
+    WindowNotFound {
+        /// The window label that was not found.
+        label: String,
+    },
 
+    /// The MCP server failed to start (e.g., all ports in use).
     #[error("MCP server failed to start: {message}")]
-    ServerStartFailed { message: String },
+    ServerStartFailed {
+        /// The error message from the server startup.
+        message: String,
+    },
 
+    /// The configured port is already bound by another process.
     #[error("port {port} is already in use")]
-    PortInUse { port: u16 },
+    PortInUse {
+        /// The port that is already in use.
+        port: u16,
+    },
 
+    /// JSON serialization or deserialization failed.
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    /// An I/O operation failed.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// A URL failed validation.
     #[error("invalid URL: {message}")]
-    InvalidUrl { message: String },
+    InvalidUrl {
+        /// The error message describing why the URL is invalid.
+        message: String,
+    },
 
+    /// An error propagated from the `victauri-core` crate.
     #[error(transparent)]
     Core(#[from] victauri_core::VictauriError),
 }

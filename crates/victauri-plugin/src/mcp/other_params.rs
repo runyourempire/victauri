@@ -3,6 +3,7 @@ use serde::Deserialize;
 
 // ── Streaming ──────────────────────────────────────────────────────────────
 
+/// Parameters for the `get_event_stream` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EventStreamParams {
     /// Only return events after this Unix timestamp (milliseconds). If omitted, returns all events.
@@ -13,6 +14,7 @@ pub struct EventStreamParams {
 
 // ── Intent ─────────────────────────────────────────────────────────────────
 
+/// Parameters for the `resolve_command` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ResolveCommandParams {
     /// Natural language query describing what you want to do (e.g. "save the user's settings").
@@ -21,6 +23,7 @@ pub struct ResolveCommandParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters for the `semantic_assert` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SemanticAssertParams {
     /// JavaScript expression to evaluate in the webview. The result is checked against the assertion.
@@ -37,6 +40,7 @@ pub struct SemanticAssertParams {
 
 // ── Storage ────────────────────────────────────────────────────────────────
 
+/// Parameters for the `get_storage` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetStorageParams {
     /// Storage type: "local" or "session".
@@ -47,6 +51,7 @@ pub struct GetStorageParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `set_storage` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetStorageParams {
     /// Storage type: "local" or "session".
@@ -59,6 +64,7 @@ pub struct SetStorageParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `delete_storage` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteStorageParams {
     /// Storage type: "local" or "session".
@@ -69,6 +75,7 @@ pub struct DeleteStorageParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `get_cookies` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetCookiesParams {
     /// Target webview label.
@@ -77,12 +84,14 @@ pub struct GetCookiesParams {
 
 // ── Navigation ─────────────────────────────────────────────────────────────
 
+/// Parameters for the `get_navigation_log` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigationLogParams {
     /// Target webview label.
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `navigate` tool.
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
@@ -94,12 +103,14 @@ pub struct NavigateParams {
 
 // ── Dialogs ────────────────────────────────────────────────────────────────
 
+/// Parameters for the `get_dialog_log` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DialogLogParams {
     /// Target webview label.
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `set_dialog_response` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetDialogResponseParams {
     /// Dialog type: "alert", "confirm", or "prompt".
@@ -114,6 +125,7 @@ pub struct SetDialogResponseParams {
 
 // ── Wait ───────────────────────────────────────────────────────────────────
 
+/// Parameters for the `wait_for` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WaitForParams {
     /// Condition to wait for: text, text_gone, selector, selector_gone, url, ipc_idle, network_idle.
@@ -130,6 +142,7 @@ pub struct WaitForParams {
 
 // ── Find Elements ──────────────────────────────────────────────────────────
 
+/// Parameters for the `find_elements` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindElementsParams {
     /// Text content to search for (case-insensitive substring match).

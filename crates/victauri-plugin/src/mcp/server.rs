@@ -12,10 +12,12 @@ use super::{MAX_PENDING_EVALS, VictauriMcpHandler};
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
+/// Build an Axum router for the MCP server with default options (no auth token).
 pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> axum::Router {
     build_app_with_options(state, bridge, None)
 }
 
+/// Build an Axum router for the MCP server with an optional auth token.
 pub fn build_app_with_options(
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
@@ -105,6 +107,7 @@ pub mod tests_support {
 
 const PORT_FALLBACK_RANGE: u16 = 10;
 
+/// Start the MCP server on the given port with default options (no auth token).
 pub async fn start_server<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: Arc<VictauriState>,
@@ -114,6 +117,7 @@ pub async fn start_server<R: Runtime>(
     start_server_with_options(app_handle, state, port, None, shutdown_rx).await
 }
 
+/// Start the MCP server on the given port with an optional auth token.
 pub async fn start_server_with_options<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: Arc<VictauriState>,

@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+/// Parameters for the `eval_js` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EvalJsParams {
     /// JavaScript code to evaluate in the webview. Async expressions supported.
@@ -9,6 +10,7 @@ pub struct EvalJsParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `click` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ClickParams {
     /// Ref handle ID from a DOM snapshot (e.g. "e5").
@@ -17,6 +19,7 @@ pub struct ClickParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `fill` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FillParams {
     /// Ref handle ID of the input element.
@@ -27,6 +30,7 @@ pub struct FillParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `type_text` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TypeTextParams {
     /// Ref handle ID of the element to type into.
@@ -37,6 +41,7 @@ pub struct TypeTextParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `snapshot` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SnapshotParams {
     /// Target webview label. If omitted, targets the first available webview.
@@ -45,6 +50,7 @@ pub struct SnapshotParams {
     pub format: Option<String>,
 }
 
+/// Parameters for the `press_key` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PressKeyParams {
     /// Key to press (e.g. "Enter", "Escape", "Tab", "ArrowDown").
@@ -53,6 +59,7 @@ pub struct PressKeyParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `get_console_logs` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetConsoleLogsParams {
     /// Only return logs after this Unix timestamp (milliseconds). If omitted, returns all captured logs.
@@ -61,6 +68,7 @@ pub struct GetConsoleLogsParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `double_click` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DoubleClickParams {
     /// Ref handle ID from a DOM snapshot.
@@ -69,6 +77,7 @@ pub struct DoubleClickParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `hover` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct HoverParams {
     /// Ref handle ID from a DOM snapshot.
@@ -77,6 +86,7 @@ pub struct HoverParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `select_option` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SelectOptionParams {
     /// Ref handle ID of the `<select>` element.
@@ -87,6 +97,7 @@ pub struct SelectOptionParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `scroll_to` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ScrollToParams {
     /// Ref handle ID to scroll into view. If null, scrolls to absolute coordinates.
@@ -99,6 +110,7 @@ pub struct ScrollToParams {
     pub webview_label: Option<String>,
 }
 
+/// Parameters for the `focus_element` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FocusElementParams {
     /// Ref handle ID of the element to focus.

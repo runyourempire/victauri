@@ -1,12 +1,14 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+/// Parameters for the `start_recording` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StartRecordingParams {
     /// Optional session ID. If omitted, a UUID is generated.
     pub session_id: Option<String>,
 }
 
+/// Parameters for the `checkpoint` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CheckpointParams {
     /// Unique ID for this checkpoint.
@@ -17,12 +19,14 @@ pub struct CheckpointParams {
     pub state: serde_json::Value,
 }
 
+/// Parameters for the `get_replay` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ReplayParams {
     /// Only return events after this index.
     pub since_index: Option<usize>,
 }
 
+/// Parameters for the `events_between_checkpoints` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EventsBetweenCheckpointsParams {
     /// Checkpoint ID to start from.
@@ -31,6 +35,7 @@ pub struct EventsBetweenCheckpointsParams {
     pub to_checkpoint: String,
 }
 
+/// Parameters for the `import_session` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImportSessionParams {
     /// JSON string of a previously exported RecordedSession.

@@ -59,6 +59,7 @@ const RESOURCE_URI_STATE: &str = "victauri://state";
 
 const BRIDGE_VERSION: &str = "0.3.0";
 
+/// MCP tool handler that dispatches tool calls to the webview bridge and state.
 #[derive(Clone)]
 pub struct VictauriMcpHandler {
     state: Arc<VictauriState>,
@@ -1354,6 +1355,7 @@ impl VictauriMcpHandler {
 }
 
 impl VictauriMcpHandler {
+    /// Create a new handler backed by the given state and webview bridge.
     pub fn new(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> Self {
         Self {
             state,
