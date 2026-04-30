@@ -431,8 +431,9 @@ const ADLER32_MOD: u32 = 65521;
 fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
     use std::io::Write;
 
-    let mut out =
-        Vec::with_capacity(PNG_OVERHEAD_BYTES + rgba.len() + (height as usize) * PNG_FILTER_OVERHEAD_PER_ROW);
+    let mut out = Vec::with_capacity(
+        PNG_OVERHEAD_BYTES + rgba.len() + (height as usize) * PNG_FILTER_OVERHEAD_PER_ROW,
+    );
 
     out.write_all(&PNG_SIGNATURE)?;
 
