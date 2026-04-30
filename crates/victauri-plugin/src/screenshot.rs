@@ -417,25 +417,33 @@ pub async fn capture_window(_window_id: isize) -> anyhow::Result<Vec<u8>> {
     anyhow::bail!("screenshot capture not yet implemented for this platform")
 }
 
+const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+const PNG_BIT_DEPTH: u8 = 8;
+const PNG_COLOR_TYPE_RGBA: u8 = 6;
+const PNG_OVERHEAD_BYTES: usize = 45;
+const PNG_FILTER_OVERHEAD_PER_ROW: usize = 6;
+const IHDR_DATA_LEN: usize = 13;
+const CRC32_INIT: u32 = 0xFFFF_FFFF;
+const CRC32_POLYNOMIAL: u32 = 0xEDB8_8320;
+const ADLER32_MOD: u32 = 65521;
+
 #[allow(dead_code)]
 fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
     use std::io::Write;
 
-    // Pre-allocate: signature(8) + IHDR chunk(25) + IDAT chunk(~data) + IEND(12)
-    let mut out = Vec::with_capacity(45 + rgba.len() + (height as usize) * 6);
+    let mut out =
+        Vec::with_capacity(PNG_OVERHEAD_BYTES + rgba.len() + (height as usize) * PNG_FILTER_OVERHEAD_PER_ROW);
 
-    // PNG signature
-    out.write_all(&[137, 80, 78, 71, 13, 10, 26, 10])?;
+    out.write_all(&PNG_SIGNATURE)?;
 
-    // IHDR
-    let mut ihdr = Vec::with_capacity(13);
+    let mut ihdr = Vec::with_capacity(IHDR_DATA_LEN);
     ihdr.extend_from_slice(&width.to_be_bytes());
     ihdr.extend_from_slice(&height.to_be_bytes());
-    ihdr.push(8); // bit depth
-    ihdr.push(6); // RGBA color type
-    ihdr.push(0); // compression
-    ihdr.push(0); // filter
-    ihdr.push(0); // interlace
+    ihdr.push(PNG_BIT_DEPTH);
+    ihdr.push(PNG_COLOR_TYPE_RGBA);
+    ihdr.push(0); // compression: deflate
+    ihdr.push(0); // filter: adaptive
+    ihdr.push(0); // interlace: none
     write_png_chunk(&mut out, b"IHDR", &ihdr)?;
 
     // IDAT — raw pixel data with filter byte per row, deflate-compressed
@@ -474,18 +482,18 @@ fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> anyh
 
 #[allow(dead_code)]
 fn png_crc32(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0xFFFF_FFFF;
+    let mut crc: u32 = CRC32_INIT;
     for &byte in data {
         crc ^= u32::from(byte);
         for _ in 0..8 {
             if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB8_8320;
+                crc = (crc >> 1) ^ CRC32_POLYNOMIAL;
             } else {
                 crc >>= 1;
             }
         }
     }
-    crc ^ 0xFFFF_FFFF
+    crc ^ CRC32_INIT
 }
 
 #[allow(dead_code)]
@@ -504,8 +512,8 @@ fn adler32(data: &[u8]) -> u32 {
     let mut a: u32 = 1;
     let mut b: u32 = 0;
     for &byte in data {
-        a = (a + u32::from(byte)) % 65521;
-        b = (b + a) % 65521;
+        a = (a + u32::from(byte)) % ADLER32_MOD;
+        b = (b + a) % ADLER32_MOD;
     }
     (b << 16) | a
 }

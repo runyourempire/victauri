@@ -5,6 +5,8 @@ use axum::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+const BEARER_PREFIX_LEN: usize = "Bearer ".len();
+
 /// Generate a random UUID v4 token suitable for Bearer authentication.
 #[must_use]
 pub fn generate_token() -> String {
@@ -39,7 +41,7 @@ pub async fn require_auth(
         .and_then(|v| {
             let lower = v.to_lowercase();
             if lower.starts_with("bearer ") {
-                Some(v[7..].to_string())
+                Some(v[BEARER_PREFIX_LEN..].to_string())
             } else {
                 None
             }

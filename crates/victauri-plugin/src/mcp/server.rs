@@ -10,6 +10,8 @@ use crate::bridge::WebviewBridge;
 
 use super::{MAX_PENDING_EVALS, VictauriMcpHandler};
 
+const DEFAULT_WEBVIEW_LABEL: &str = "main";
+
 // ── Server startup ───────────────────────────────────────────────────────────
 
 /// Build an Axum router for the MCP server with default options (no auth token).
@@ -304,7 +306,7 @@ async fn event_drain_loop(
                         .map(std::string::ToString::to_string),
                 },
                 "dom_mutation" => AppEvent::DomMutation {
-                    webview_label: "main".to_string(),
+                    webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
                     timestamp: now,
                     mutation_count: ev
                         .get("count")
@@ -330,7 +332,7 @@ async fn event_drain_loop(
                             .and_then(serde_json::Value::as_f64)
                             .map(|d| d as u64),
                         arg_size_bytes: 0,
-                        webview_label: "main".to_string(),
+                        webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
                     })
                 }
                 "network" => AppEvent::StateChange {
@@ -345,7 +347,7 @@ async fn event_drain_loop(
                         .map(std::string::ToString::to_string),
                 },
                 "navigation" => AppEvent::WindowEvent {
-                    label: "main".to_string(),
+                    label: DEFAULT_WEBVIEW_LABEL.to_string(),
                     event: format!(
                         "navigation.{}",
                         ev.get("nav_type")

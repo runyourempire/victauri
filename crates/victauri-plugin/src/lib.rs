@@ -67,6 +67,9 @@ const DEFAULT_PORT: u16 = 7373;
 const DEFAULT_EVENT_CAPACITY: usize = 10_000;
 const DEFAULT_RECORDER_CAPACITY: usize = 50_000;
 const DEFAULT_EVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const MAX_EVENT_CAPACITY: usize = 1_000_000;
+const MAX_RECORDER_CAPACITY: usize = 1_000_000;
+const MAX_EVAL_TIMEOUT_SECS: u64 = 300;
 
 /// Map of pending JavaScript eval callbacks, keyed by request ID.
 /// Each entry holds a oneshot sender that resolves when the webview returns a result.
@@ -348,25 +351,25 @@ impl VictauriBuilder {
             });
         }
 
-        if self.event_capacity == 0 || self.event_capacity > 1_000_000 {
+        if self.event_capacity == 0 || self.event_capacity > MAX_EVENT_CAPACITY {
             return Err(BuilderError::InvalidEventCapacity {
                 capacity: self.event_capacity,
-                reason: "must be between 1 and 1,000,000".to_string(),
+                reason: format!("must be between 1 and {MAX_EVENT_CAPACITY}"),
             });
         }
 
-        if self.recorder_capacity == 0 || self.recorder_capacity > 1_000_000 {
+        if self.recorder_capacity == 0 || self.recorder_capacity > MAX_RECORDER_CAPACITY {
             return Err(BuilderError::InvalidRecorderCapacity {
                 capacity: self.recorder_capacity,
-                reason: "must be between 1 and 1,000,000".to_string(),
+                reason: format!("must be between 1 and {MAX_RECORDER_CAPACITY}"),
             });
         }
 
         let timeout = self.resolve_eval_timeout();
-        if timeout.as_secs() == 0 || timeout.as_secs() > 300 {
+        if timeout.as_secs() == 0 || timeout.as_secs() > MAX_EVAL_TIMEOUT_SECS {
             return Err(BuilderError::InvalidEvalTimeout {
                 timeout_secs: timeout.as_secs(),
-                reason: "must be between 1 and 300 seconds".to_string(),
+                reason: format!("must be between 1 and {MAX_EVAL_TIMEOUT_SECS} seconds"),
             });
         }
 
