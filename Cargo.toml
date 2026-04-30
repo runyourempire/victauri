@@ -36,6 +36,7 @@ default_trait_access = "deny"
 cast_lossless = "deny"
 unnecessary_raw_string_hashes = "deny"
 if_not_else = "deny"
+missing_panics_doc = "deny"
 
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
