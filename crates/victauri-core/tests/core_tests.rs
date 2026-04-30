@@ -1079,7 +1079,7 @@ fn recorder_events_between_checkpoints() {
     assert!(
         recorder
             .events_between_checkpoints("cp1", "nonexistent")
-            .is_none()
+            .is_err()
     );
 }
 
@@ -2452,8 +2452,13 @@ fn recorder_events_between_checkpoints_nonexistent_from() {
         .checkpoint("cp_real".to_string(), None, serde_json::json!(null))
         .unwrap();
 
-    let result = recorder.events_between_checkpoints("nonexistent", "cp_real");
-    assert!(result.is_none());
+    let err = recorder
+        .events_between_checkpoints("nonexistent", "cp_real")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("nonexistent"),
+        "error should name the missing checkpoint: {err}"
+    );
 }
 
 #[test]
@@ -2465,8 +2470,13 @@ fn recorder_events_between_checkpoints_nonexistent_to() {
         .checkpoint("cp_real".to_string(), None, serde_json::json!(null))
         .unwrap();
 
-    let result = recorder.events_between_checkpoints("cp_real", "nonexistent");
-    assert!(result.is_none());
+    let err = recorder
+        .events_between_checkpoints("cp_real", "nonexistent")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("nonexistent"),
+        "error should name the missing checkpoint: {err}"
+    );
 }
 
 #[test]
@@ -2474,16 +2484,25 @@ fn recorder_events_between_checkpoints_both_nonexistent() {
     let recorder = EventRecorder::new(1000);
     recorder.start("s1".to_string()).unwrap();
 
-    let result = recorder.events_between_checkpoints("fake_a", "fake_b");
-    assert!(result.is_none());
+    let err = recorder
+        .events_between_checkpoints("fake_a", "fake_b")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("fake_a"),
+        "error should name the first missing checkpoint: {err}"
+    );
 }
 
 #[test]
 fn recorder_events_between_checkpoints_not_recording() {
     let recorder = EventRecorder::new(1000);
-    // Not recording, should return None
-    let result = recorder.events_between_checkpoints("cp1", "cp2");
-    assert!(result.is_none());
+    let err = recorder
+        .events_between_checkpoints("cp1", "cp2")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("no active recording"),
+        "error should indicate no active recording: {err}"
+    );
 }
 
 #[test]

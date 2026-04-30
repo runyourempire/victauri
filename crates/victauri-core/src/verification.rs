@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 /// assert!(result.passed);
 /// assert!(result.divergences.is_empty());
 /// ```
+#[must_use]
 pub fn verify_state(
     frontend_state: serde_json::Value,
     backend_state: serde_json::Value,
@@ -173,6 +174,7 @@ pub enum GhostSource {
 }
 
 /// Detects commands that exist on only one side of the IPC boundary (frontend vs registry).
+#[must_use]
 pub fn detect_ghost_commands(
     frontend_commands: &[String],
     registry: &CommandRegistry,
@@ -268,6 +270,7 @@ pub struct ErrorCall {
 }
 
 /// Analyzes the event log for IPC health, flagging stale and errored calls.
+#[must_use]
 pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> IpcIntegrityReport {
     let now = Utc::now();
     let calls = event_log.ipc_calls();
@@ -362,6 +365,7 @@ pub struct AssertionResult {
 /// let result = evaluate_assertion(json!(42), &assertion);
 /// assert!(result.passed);
 /// ```
+#[must_use]
 pub fn evaluate_assertion(
     actual: serde_json::Value,
     assertion: &SemanticAssertion,

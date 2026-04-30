@@ -57,6 +57,7 @@ impl CommandRegistry {
     /// assert_eq!(registry.count(), 0);
     /// assert!(registry.list().is_empty());
     /// ```
+    #[must_use]
     pub fn new() -> Self {
         Self {
             commands: Arc::new(RwLock::new(BTreeMap::new())),

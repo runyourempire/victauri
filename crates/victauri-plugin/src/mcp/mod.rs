@@ -1051,11 +1051,11 @@ impl VictauriMcpHandler {
                     None => return missing_param("to", "events_between"),
                 };
                 match self.state.recorder.events_between_checkpoints(from, to) {
-                    Some(events) => match serde_json::to_string_pretty(&events) {
+                    Ok(events) => match serde_json::to_string_pretty(&events) {
                         Ok(json) => CallToolResult::success(vec![Content::text(json)]),
                         Err(e) => tool_error(e.to_string()),
                     },
-                    None => tool_error("one or both checkpoint IDs not found"),
+                    Err(e) => tool_error(e.to_string()),
                 }
             }
             "get_replay" => {

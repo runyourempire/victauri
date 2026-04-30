@@ -79,6 +79,7 @@ impl EventRecorder {
     /// assert!(!recorder.is_recording());
     /// assert_eq!(recorder.event_count(), 0);
     /// ```
+    #[must_use]
     pub fn new(max_events: usize) -> Self {
         Self {
             recording: Arc::new(Mutex::new(None)),
@@ -226,24 +227,35 @@ impl EventRecorder {
         }
     }
 
-    /// Returns events recorded between two named checkpoints, or None if either ID is unknown.
+    /// Returns events recorded between two named checkpoints.
+    ///
+    /// # Errors
+    ///
+    /// - [`VictauriError::NoActiveRecording`] if no session is active.
+    /// - [`VictauriError::CheckpointNotFound`] if either checkpoint ID does not exist.
     pub fn events_between_checkpoints(
         &self,
         from_checkpoint_id: &str,
         to_checkpoint_id: &str,
-    ) -> Option<Vec<RecordedEvent>> {
+    ) -> crate::error::Result<Vec<RecordedEvent>> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
-        let active = rec.as_ref()?;
+        let active = rec.as_ref().ok_or(VictauriError::NoActiveRecording)?;
 
         let from_idx = active
             .checkpoints
             .iter()
-            .find(|c| c.id == from_checkpoint_id)?
+            .find(|c| c.id == from_checkpoint_id)
+            .ok_or_else(|| VictauriError::CheckpointNotFound {
+                id: from_checkpoint_id.to_string(),
+            })?
             .event_index;
         let to_idx = active
             .checkpoints
             .iter()
-            .find(|c| c.id == to_checkpoint_id)?
+            .find(|c| c.id == to_checkpoint_id)
+            .ok_or_else(|| VictauriError::CheckpointNotFound {
+                id: to_checkpoint_id.to_string(),
+            })?
             .event_index;
 
         let (start, end) = if from_idx <= to_idx {
@@ -252,14 +264,12 @@ impl EventRecorder {
             (to_idx, from_idx)
         };
 
-        Some(
-            active
-                .events
-                .iter()
-                .filter(|e| e.index >= start && e.index < end)
-                .cloned()
-                .collect(),
-        )
+        Ok(active
+            .events
+            .iter()
+            .filter(|e| e.index >= start && e.index < end)
+            .cloned()
+            .collect())
     }
 
     /// Snapshot the current recording as a session WITHOUT stopping it.

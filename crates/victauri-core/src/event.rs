@@ -102,6 +102,7 @@ impl EventLog {
     /// assert!(log.is_empty());
     /// assert_eq!(log.capacity(), 100);
     /// ```
+    #[must_use]
     pub fn new(max_capacity: usize) -> Self {
         Self {
             events: Arc::new(Mutex::new(VecDeque::with_capacity(max_capacity))),

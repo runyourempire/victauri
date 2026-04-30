@@ -147,6 +147,7 @@ impl Default for VictauriBuilder {
 
 impl VictauriBuilder {
     /// Create a new builder with default settings.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
