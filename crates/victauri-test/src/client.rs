@@ -229,13 +229,13 @@ impl VictauriClient {
 
     /// Fill an input element with a value.
     pub async fn fill(&mut self, ref_id: &str, value: &str) -> Result<Value, TestError> {
-        self.call_tool("fill", json!({"ref_id": ref_id, "value": value}))
+        self.call_tool("input", json!({"action": "fill", "ref_id": ref_id, "value": value}))
             .await
     }
 
     /// Type text into an element character by character.
     pub async fn type_text(&mut self, ref_id: &str, text: &str) -> Result<Value, TestError> {
-        self.call_tool("type_text", json!({"ref_id": ref_id, "text": text}))
+        self.call_tool("input", json!({"action": "type_text", "ref_id": ref_id, "text": text}))
             .await
     }
 
@@ -246,11 +246,11 @@ impl VictauriClient {
 
     /// Get the state of a specific window (or all windows).
     pub async fn get_window_state(&mut self, label: Option<&str>) -> Result<Value, TestError> {
-        let args = match label {
-            Some(l) => json!({"label": l}),
-            None => json!({}),
-        };
-        self.call_tool("get_window_state", args).await
+        let mut args = json!({"action": "get_state"});
+        if let Some(l) = label {
+            args["label"] = json!(l);
+        }
+        self.call_tool("window", args).await
     }
 
     /// Take a screenshot and return base64-encoded PNG.
@@ -273,11 +273,11 @@ impl VictauriClient {
 
     /// Get the IPC call log.
     pub async fn get_ipc_log(&mut self, limit: Option<usize>) -> Result<Value, TestError> {
-        let args = match limit {
-            Some(n) => json!({"limit": n}),
-            None => json!({}),
-        };
-        self.call_tool("get_ipc_log", args).await
+        let mut args = json!({"action": "ipc"});
+        if let Some(n) = limit {
+            args["limit"] = json!(n);
+        }
+        self.call_tool("logs", args).await
     }
 
     /// Verify frontend state against backend state.
@@ -353,30 +353,37 @@ impl VictauriClient {
         self.call_tool("get_plugin_info", json!({})).await
     }
 
-    /// Wait for a JS condition to become truthy, polling at an interval.
+    /// Wait for a condition to be met, polling at an interval.
+    ///
+    /// Conditions: `text`, `text_gone`, `selector`, `selector_gone`, `url`,
+    /// `ipc_idle`, `network_idle`.
     pub async fn wait_for(
         &mut self,
         condition: &str,
+        value: Option<&str>,
         timeout_ms: Option<u64>,
-        interval_ms: Option<u64>,
+        poll_ms: Option<u64>,
     ) -> Result<Value, TestError> {
         let mut args = json!({"condition": condition});
+        if let Some(v) = value {
+            args["value"] = json!(v);
+        }
         if let Some(t) = timeout_ms {
             args["timeout_ms"] = json!(t);
         }
-        if let Some(i) = interval_ms {
-            args["interval_ms"] = json!(i);
+        if let Some(p) = poll_ms {
+            args["poll_ms"] = json!(p);
         }
         self.call_tool("wait_for", args).await
     }
 
     /// Start a time-travel recording session.
     pub async fn start_recording(&mut self, session_id: Option<&str>) -> Result<Value, TestError> {
-        let args = match session_id {
-            Some(id) => json!({"session_id": id}),
-            None => json!({}),
-        };
-        self.call_tool("start_recording", args).await
+        let mut args = json!({"action": "start"});
+        if let Some(id) = session_id {
+            args["session_id"] = json!(id);
+        }
+        self.call_tool("recording", args).await
     }
 
     /// Stop the recording and return the session.
