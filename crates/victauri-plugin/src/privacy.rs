@@ -19,6 +19,7 @@ pub struct PrivacyConfig {
 
 impl PrivacyConfig {
     /// Returns `true` if the command passes both the allowlist and blocklist checks.
+    #[must_use]
     pub fn is_command_allowed(&self, command: &str) -> bool {
         if self.command_blocklist.contains(command) {
             return false;
@@ -30,11 +31,13 @@ impl PrivacyConfig {
     }
 
     /// Returns `true` unless the tool is in [`disabled_tools`](Self::disabled_tools).
+    #[must_use]
     pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
         !self.disabled_tools.contains(tool_name)
     }
 
     /// Apply redaction rules to the output string if redaction is enabled, otherwise pass through.
+    #[must_use]
     pub fn redact_output(&self, output: &str) -> String {
         if self.redaction_enabled {
             self.redactor.redact(output)

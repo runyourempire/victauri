@@ -126,6 +126,7 @@ impl Redactor {
     }
 
     /// Scrub sensitive data from `input` using regex patterns and JSON-key matching.
+    #[must_use]
     pub fn redact(&self, input: &str) -> String {
         let mut output = self.redact_regex(input);
         output = self.redact_json_keys(&output);

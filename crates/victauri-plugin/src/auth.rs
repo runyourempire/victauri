@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Generate a random UUID v4 token suitable for Bearer authentication.
+#[must_use]
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string()
 }
@@ -70,6 +71,7 @@ fn now_ms() -> u64 {
 
 impl RateLimiterState {
     /// Create a rate limiter with the given maximum requests per second.
+    #[must_use]
     pub fn new(max_requests_per_sec: u64) -> Self {
         Self {
             tokens: AtomicU64::new(max_requests_per_sec),
@@ -148,6 +150,7 @@ pub async fn rate_limit(
 const DEFAULT_RATE_LIMIT: u64 = 1000;
 
 /// Create a rate limiter with the default capacity of 1000 requests per second.
+#[must_use]
 pub fn default_rate_limiter() -> Arc<RateLimiterState> {
     Arc::new(RateLimiterState::new(DEFAULT_RATE_LIMIT))
 }

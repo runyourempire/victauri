@@ -152,36 +152,42 @@ impl VictauriBuilder {
     }
 
     /// Set the TCP port for the MCP server (default: 7373, env: `VICTAURI_PORT`).
+    #[must_use]
     pub fn port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
     /// Set the maximum number of events in the ring-buffer log (default: 10,000).
+    #[must_use]
     pub fn event_capacity(mut self, capacity: usize) -> Self {
         self.event_capacity = capacity;
         self
     }
 
     /// Set the maximum events kept during session recording (default: 50,000).
+    #[must_use]
     pub fn recorder_capacity(mut self, capacity: usize) -> Self {
         self.recorder_capacity = capacity;
         self
     }
 
     /// Set the timeout for JavaScript eval operations (default: 30s, env: `VICTAURI_EVAL_TIMEOUT`).
+    #[must_use]
     pub fn eval_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.eval_timeout = timeout;
         self
     }
 
     /// Set an explicit auth token for the MCP server (env: `VICTAURI_AUTH_TOKEN`).
+    #[must_use]
     pub fn auth_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
         self
     }
 
     /// Generate a random UUID v4 auth token.
+    #[must_use]
     pub fn generate_auth_token(mut self) -> Self {
         self.auth_token = Some(auth::generate_token());
         self
@@ -192,6 +198,7 @@ impl VictauriBuilder {
     ///
     /// **Warning:** Without authentication, any process on localhost can access
     /// the MCP server. Only use this in trusted environments.
+    #[must_use]
     pub fn auth_disabled(mut self) -> Self {
         self.auth_explicitly_disabled = true;
         self.auth_token = None;
@@ -199,12 +206,14 @@ impl VictauriBuilder {
     }
 
     /// Disable specific MCP tools by name (e.g., `["eval_js", "screenshot"]`).
+    #[must_use]
     pub fn disable_tools(mut self, tools: &[&str]) -> Self {
         self.disabled_tools = tools.iter().map(std::string::ToString::to_string).collect();
         self
     }
 
     /// Only allow these Tauri commands to be invoked via MCP (positive allowlist).
+    #[must_use]
     pub fn command_allowlist(mut self, commands: &[&str]) -> Self {
         self.command_allowlist = Some(
             commands
@@ -216,6 +225,7 @@ impl VictauriBuilder {
     }
 
     /// Block specific Tauri commands from being invoked via MCP.
+    #[must_use]
     pub fn command_blocklist(mut self, commands: &[&str]) -> Self {
         self.command_blocklist = commands
             .iter()
@@ -225,12 +235,14 @@ impl VictauriBuilder {
     }
 
     /// Add a regex pattern for output redaction (e.g., `r"SECRET_\w+"`).
+    #[must_use]
     pub fn add_redaction_pattern(mut self, pattern: impl Into<String>) -> Self {
         self.redaction_patterns.push(pattern.into());
         self
     }
 
     /// Enable output redaction with built-in patterns (API keys, emails, tokens).
+    #[must_use]
     pub fn enable_redaction(mut self) -> Self {
         self.redaction_enabled = true;
         self
@@ -239,24 +251,28 @@ impl VictauriBuilder {
     /// Enable strict privacy mode: disables dangerous tools (eval_js, screenshot,
     /// inject_css, set_storage, delete_storage, navigate, set_dialog_response,
     /// fill, type_text), enables output redaction with built-in PII patterns.
+    #[must_use]
     pub fn strict_privacy_mode(mut self) -> Self {
         self.strict_privacy = true;
         self
     }
 
     /// Set the maximum console log entries kept in the JS bridge (default: 1000).
+    #[must_use]
     pub fn console_log_capacity(mut self, capacity: usize) -> Self {
         self.bridge_capacities.console_logs = capacity;
         self
     }
 
     /// Set the maximum network log entries kept in the JS bridge (default: 1000).
+    #[must_use]
     pub fn network_log_capacity(mut self, capacity: usize) -> Self {
         self.bridge_capacities.network_log = capacity;
         self
     }
 
     /// Set the maximum navigation log entries kept in the JS bridge (default: 200).
+    #[must_use]
     pub fn navigation_log_capacity(mut self, capacity: usize) -> Self {
         self.bridge_capacities.navigation_log = capacity;
         self
@@ -264,6 +280,7 @@ impl VictauriBuilder {
 
     /// Register a callback invoked once the MCP server is listening.
     /// The callback receives the port number.
+    #[must_use]
     pub fn on_ready(mut self, f: impl FnOnce(u16) + Send + 'static) -> Self {
         self.on_ready = Some(Box::new(f));
         self
@@ -493,6 +510,7 @@ impl VictauriBuilder {
 /// all introspection tools are completely stripped — zero overhead, zero attack surface.
 ///
 /// For custom configuration, use `VictauriBuilder::new().port(8080).build()`.
+#[must_use]
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     VictauriBuilder::new()
         .build()
