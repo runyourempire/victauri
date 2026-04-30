@@ -70,6 +70,17 @@ pub enum AppEvent {
     },
 }
 
+impl AppEvent {
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        match self {
+            Self::Ipc(call) => call.timestamp,
+            Self::StateChange { timestamp, .. }
+            | Self::DomMutation { timestamp, .. }
+            | Self::WindowEvent { timestamp, .. } => *timestamp,
+        }
+    }
+}
+
 /// Thread-safe ring-buffer event log. Automatically evicts the oldest events
 /// when capacity is reached. All operations recover from mutex poisoning.
 #[derive(Debug, Clone)]
@@ -137,12 +148,7 @@ impl EventLog {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .iter()
-            .filter(|e| match e {
-                AppEvent::Ipc(call) => call.timestamp >= timestamp,
-                AppEvent::StateChange { timestamp: ts, .. } => *ts >= timestamp,
-                AppEvent::DomMutation { timestamp: ts, .. } => *ts >= timestamp,
-                AppEvent::WindowEvent { timestamp: ts, .. } => *ts >= timestamp,
-            })
+            .filter(|e| e.timestamp() >= timestamp)
             .cloned()
             .collect()
     }

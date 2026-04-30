@@ -1,6 +1,6 @@
 # Example: AI Agent Session with Victauri
 
-This shows a real Claude Code session using Victauri's MCP tools to inspect and test a Tauri app.
+A real Claude Code session using Victauri's MCP tools to inspect and test a Tauri app.
 
 ## Setup
 
@@ -40,44 +40,62 @@ Result: 12 commands registered
 ```
 Agent: What's currently rendered in the webview?
 
-→ dom_snapshot(selector: "main", depth: 3)
+→ dom_snapshot()
 
-Result: <main> with 2 children
-  <div class="todo-list"> — 5 <li> items
-  <div class="settings-panel" style="display:none">
+Result (compact accessible-text format):
+  [e0] main
+    [e1] div.todo-list
+      [e2] listitem "Buy groceries"
+      [e3] listitem "Write tests"
+      [e4] listitem "Deploy v2"
+    [e5] div.settings-panel [hidden]
+
+Note: ref handles (e0-e5) are stable across calls.
+Use format: "json" for full accessibility tree.
 ```
 
-### 3. Interact and Verify
+### 3. Find Specific Elements
+
+```
+Agent: I need the add button without scanning the full tree.
+
+→ find_elements(text: "Add", role: "button")
+
+Result: 1 match
+  [e12] button "Add Todo" @add-btn
+```
+
+### 4. Interact and Verify
 
 ```
 Agent: I'll add a todo item through the UI and verify it hits the backend.
 
-→ fill(selector: "#todo-input", value: "Write tests")
-→ click(selector: "#add-button")
-→ get_ipc_log(limit: 1)
+→ input(action: "fill", ref_id: "e10", value: "Write tests")
+→ interact(action: "click", ref_id: "e12")
+→ logs(action: "ipc", limit: 1)
 
 Result: IPC call captured
   command: "add_item"
-  args: {"text": "Write tests"}
-  result: Ok({"id": 6, "text": "Write tests", "done": false})
+  request_args: {"text": "Write tests"}
+  response_body: {"id": 6, "text": "Write tests", "done": false}
   duration: 2ms
 ```
 
-### 4. Cross-Boundary Verification
+### 5. Cross-Boundary Verification
 
 ```
 Agent: Let me verify the UI state matches what the backend returned.
 
 → verify_state(
     command: "get_items",
-    js_expression: "document.querySelectorAll('.todo-item').length",
-    assertion: { condition: "equals" }
+    frontend_expr: "document.querySelectorAll('.todo-item').length",
+    backend_state: {"key": "items_count"}
   )
 
 Result: ✓ Match — backend returns 6 items, DOM shows 6 .todo-item elements
 ```
 
-### 5. Ghost Command Detection
+### 6. Ghost Command Detection
 
 ```
 Agent: Are there any commands registered but never called, or called but not registered?
@@ -88,19 +106,19 @@ Result: 1 ghost found
   - "export_data" — registered in Rust but no frontend invoke() calls detected
 ```
 
-### 6. Record and Replay
+### 7. Record and Replay
 
 ```
 Agent: I'll record a user flow for regression testing.
 
-→ start_recording()
-→ click(selector: ".todo-item:first-child .checkbox")
-→ checkpoint(label: "after-toggle")
-→ click(selector: "#clear-completed")
-→ checkpoint(label: "after-clear")
-→ stop_recording()
+→ recording(action: "start", session_name: "toggle-flow")
+→ interact(action: "click", ref_id: "e2")
+→ recording(action: "checkpoint", checkpoint_id: "after-toggle")
+→ interact(action: "click", ref_id: "e15")
+→ recording(action: "checkpoint", checkpoint_id: "after-clear")
+→ recording(action: "stop")
 
-→ events_between_checkpoints(from: "after-toggle", to: "after-clear")
+→ recording(action: "events_between", from_checkpoint: "after-toggle", to_checkpoint: "after-clear")
 
 Result: 3 events captured
   1. IPC: toggle_item({id: 1, done: true})
@@ -108,15 +126,21 @@ Result: 3 events captured
   3. IPC: clear_completed() → deleted 1 item
 ```
 
-### 7. Performance Check
+### 8. Performance & Accessibility
 
 ```
-Agent: Any slow IPC calls?
+Agent: Any slow IPC calls or accessibility issues?
 
-→ slow_ipc_calls(threshold_ms: 100, limit: 5)
+→ logs(action: "slow_ipc", threshold_ms: 100)
 
 Result: 1 slow call
   - save_api_key: 340ms (file I/O on main thread)
+
+→ inspect(action: "audit_accessibility")
+
+Result: 2 violations
+  - missing aria-label on icon button (#settings-btn)
+  - insufficient color contrast on .muted-text (3.2:1, needs 4.5:1)
 ```
 
 ## Key Patterns
@@ -124,8 +148,25 @@ Result: 1 slow call
 | Pattern | Tools |
 |---|---|
 | **Smoke test** | `get_registry` → `invoke_command` → `verify_state` |
-| **UI regression** | `start_recording` → interactions → `stop_recording` → `export_session` |
+| **UI regression** | `recording(start)` → interactions → `recording(stop/export)` |
 | **Ghost hunting** | `detect_ghost_commands` + `check_ipc_integrity` |
-| **Performance audit** | `slow_ipc_calls` + `get_performance_metrics` |
-| **Accessibility** | `audit_accessibility` |
+| **Performance audit** | `logs(slow_ipc)` + `inspect(get_performance)` |
+| **Accessibility** | `inspect(audit_accessibility)` |
+| **Element search** | `find_elements(text: "Save")` → `interact(click, ref_id)` |
 | **Natural language** | `resolve_command("save the key")` → finds `save_api_key` |
+| **Window inspection** | `window(list)` → `window(get_state, label: "main")` |
+
+## Tool Reference (23 tools)
+
+**14 standalone:** `eval_js`, `dom_snapshot`, `find_elements`, `invoke_command`, `screenshot`, `verify_state`, `detect_ghost_commands`, `check_ipc_integrity`, `wait_for`, `assert_semantic`, `resolve_command`, `get_registry`, `get_memory_stats`, `get_plugin_info`
+
+**9 compound** (pass `action` to select behavior):
+- `interact` — click, double_click, hover, focus, scroll_into_view, select_option
+- `input` — fill, type_text, press_key
+- `window` — get_state, list, manage, resize, move_to, set_title
+- `storage` — get, set, delete, get_cookies
+- `navigate` — go_to, go_back, get_history, set_dialog_response, get_dialog_log
+- `recording` — start, stop, checkpoint, list_checkpoints, get_events, events_between, get_replay, export, import
+- `inspect` — get_styles, get_bounding_boxes, highlight, clear_highlights, audit_accessibility, get_performance
+- `css` — inject, remove
+- `logs` — console, network, ipc, navigation, dialogs, events, slow_ipc

@@ -121,7 +121,7 @@ impl EventRecorder {
     pub fn record_event(&self, event: AppEvent) {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
-            let timestamp = extract_timestamp(&event);
+            let timestamp = event.timestamp();
             let index = active.event_counter;
             active.event_counter += 1;
 
@@ -301,11 +301,3 @@ impl Default for EventRecorder {
     }
 }
 
-fn extract_timestamp(event: &AppEvent) -> DateTime<Utc> {
-    match event {
-        AppEvent::Ipc(call) => call.timestamp,
-        AppEvent::StateChange { timestamp, .. } => *timestamp,
-        AppEvent::DomMutation { timestamp, .. } => *timestamp,
-        AppEvent::WindowEvent { timestamp, .. } => *timestamp,
-    }
-}
