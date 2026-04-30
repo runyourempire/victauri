@@ -357,7 +357,15 @@ impl VictauriBuilder {
         Ok(())
     }
 
-    /// Consume the builder and produce a Tauri plugin. Returns an error if validation fails.
+    /// Consume the builder and produce a Tauri plugin.
+    ///
+    /// In release builds this always succeeds. In debug builds the builder configuration is
+    /// validated first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuilderError`] if the port, event capacity, recorder capacity, or eval
+    /// timeout are outside their valid ranges (debug builds only).
     pub fn build<R: Runtime>(self) -> Result<TauriPlugin<R>, BuilderError> {
         #[cfg(not(debug_assertions))]
         {

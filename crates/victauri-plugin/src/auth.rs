@@ -18,6 +18,10 @@ pub struct AuthState {
 }
 
 /// Axum middleware that validates the `Authorization: Bearer <token>` header against [`AuthState`].
+///
+/// # Errors
+///
+/// Returns [`StatusCode::UNAUTHORIZED`] if the token is missing or invalid.
 pub async fn require_auth(
     axum::extract::State(auth): axum::extract::State<Arc<AuthState>>,
     request: Request,
@@ -125,6 +129,10 @@ impl RateLimiterState {
 }
 
 /// Axum middleware that rejects requests with 429 when the token bucket is exhausted.
+///
+/// # Errors
+///
+/// Returns [`StatusCode::TOO_MANY_REQUESTS`] if the token bucket has no remaining capacity.
 pub async fn rate_limit(
     axum::extract::State(limiter): axum::extract::State<Arc<RateLimiterState>>,
     request: Request,
@@ -149,6 +157,10 @@ pub fn default_rate_limiter() -> Arc<RateLimiterState> {
 /// Axum middleware that blocks DNS rebinding attacks.
 ///
 /// Rejects any request where the Host header is not a localhost address.
+///
+/// # Errors
+///
+/// Returns [`StatusCode::FORBIDDEN`] if the `Host` header is not `localhost`, `127.0.0.1`, or `::1`.
 pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
     let host = request
         .headers()
@@ -169,6 +181,11 @@ pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Respons
 }
 
 /// Axum middleware that blocks cross-origin requests from browsers.
+///
+/// # Errors
+///
+/// Returns [`StatusCode::FORBIDDEN`] if the `Origin` header is present and does not match a
+/// localhost or `tauri://` origin.
 pub async fn origin_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
     if let Some(origin) = request
         .headers()

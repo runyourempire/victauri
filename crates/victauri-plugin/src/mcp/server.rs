@@ -108,6 +108,11 @@ pub mod tests_support {
 const PORT_FALLBACK_RANGE: u16 = 10;
 
 /// Start the MCP server on the given port with default options (no auth token).
+///
+/// # Errors
+///
+/// Returns an error if the server fails to bind to the requested port (or any port in the
+/// fallback range), or if the server exits unexpectedly.
 pub async fn start_server<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: Arc<VictauriState>,
@@ -118,6 +123,11 @@ pub async fn start_server<R: Runtime>(
 }
 
 /// Start the MCP server on the given port with an optional auth token.
+///
+/// # Errors
+///
+/// Returns an error if the server fails to bind to the requested port (or any port in the
+/// fallback range), or if the server exits unexpectedly.
 pub async fn start_server_with_options<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: Arc<VictauriState>,

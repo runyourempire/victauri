@@ -4,6 +4,10 @@ use victauri_core::WindowState;
 /// Runtime-erased interface for webview access, allowing the MCP server to interact with Tauri windows without generic parameters.
 pub trait WebviewBridge: Send + Sync {
     /// Execute JavaScript in the target webview (defaults to "main" or first visible window).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the eval fails.
     fn eval_webview(&self, label: Option<&str>, script: &str) -> Result<(), String>;
     /// Retrieve the state of one or all windows (position, size, visibility, focus, URL).
     fn get_window_states(&self, label: Option<&str>) -> Vec<WindowState>;
@@ -11,14 +15,34 @@ pub trait WebviewBridge: Send + Sync {
     fn list_window_labels(&self) -> Vec<String>;
     /// Return the platform-native window handle for screenshot capture.
     /// Windows: HWND, macOS: CGWindowID (window number), Linux: X11 window ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the handle type is unsupported.
     fn get_native_handle(&self, label: Option<&str>) -> Result<isize, String>;
     /// Perform a window management action (minimize, maximize, close, show, hide, etc.).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the action fails.
     fn manage_window(&self, label: Option<&str>, action: &str) -> Result<String, String>;
     /// Set the logical size of a window in device-independent pixels.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the resize fails.
     fn resize_window(&self, label: Option<&str>, width: u32, height: u32) -> Result<(), String>;
     /// Set the logical position of a window in device-independent pixels.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the move fails.
     fn move_window(&self, label: Option<&str>, x: i32, y: i32) -> Result<(), String>;
     /// Set the title bar text of a window.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if no matching window is found or the title change fails.
     fn set_window_title(&self, label: Option<&str>, title: &str) -> Result<(), String>;
 }
 

@@ -17,6 +17,12 @@ pub struct VictauriClient {
 impl VictauriClient {
     /// Connect to a Victauri MCP server on the given port.
     /// Sends `initialize` and `notifications/initialized` automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Connection`] if the server is unreachable or
+    /// returns a non-success status. Returns [`TestError::Request`] on
+    /// HTTP transport failures.
     pub async fn connect(port: u16) -> Result<Self, TestError> {
         Self::connect_with_token(port, None).await
     }
@@ -24,6 +30,12 @@ impl VictauriClient {
     /// Connect with an optional Bearer auth token.
     ///
     /// Retries up to 3 times with exponential backoff on 429 (rate limited).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Connection`] if the server is unreachable or
+    /// returns a non-success status. Returns [`TestError::Request`] on
+    /// HTTP transport failures.
     pub async fn connect_with_token(port: u16, token: Option<&str>) -> Result<Self, TestError> {
         let base_url = format!("http://127.0.0.1:{port}");
         let http = reqwest::Client::builder()
@@ -115,6 +127,12 @@ impl VictauriClient {
     /// Reads `<temp>/victauri.port` and `<temp>/victauri.token` written by the
     /// plugin on startup. Falls back to `VICTAURI_PORT` / `VICTAURI_AUTH_TOKEN`
     /// env vars, then defaults (port 7373, no auth).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Connection`] if the server is unreachable or
+    /// returns a non-success status. Returns [`TestError::Request`] on
+    /// HTTP transport failures.
     pub async fn discover() -> Result<Self, TestError> {
         let port = Self::discover_port();
         let token = Self::discover_token();
@@ -149,6 +167,12 @@ impl VictauriClient {
     /// Call an MCP tool by name and return the result content as JSON.
     ///
     /// Retries up to 3 times with exponential backoff on 429 (rate limited).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Connection`] if the request fails after retries.
+    /// Returns [`TestError::Request`] on HTTP transport errors.
+    /// Returns [`TestError::Mcp`] if the server returns a JSON-RPC error.
     pub async fn call_tool(&mut self, name: &str, arguments: Value) -> Result<Value, TestError> {
         let id = self.next_id;
         self.next_id += 1;
@@ -212,22 +236,38 @@ impl VictauriClient {
     }
 
     /// Evaluate JavaScript in the webview and return the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn eval_js(&mut self, code: &str) -> Result<Value, TestError> {
         self.call_tool("eval_js", json!({"code": code})).await
     }
 
     /// Get a DOM snapshot of the current page.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn dom_snapshot(&mut self) -> Result<Value, TestError> {
         self.call_tool("dom_snapshot", json!({})).await
     }
 
     /// Click an element by ref handle ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn click(&mut self, ref_id: &str) -> Result<Value, TestError> {
         self.call_tool("interact", json!({"action": "click", "ref_id": ref_id}))
             .await
     }
 
     /// Fill an input element with a value.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn fill(&mut self, ref_id: &str, value: &str) -> Result<Value, TestError> {
         self.call_tool(
             "input",
@@ -237,6 +277,10 @@ impl VictauriClient {
     }
 
     /// Type text into an element character by character.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn type_text(&mut self, ref_id: &str, text: &str) -> Result<Value, TestError> {
         self.call_tool(
             "input",
@@ -246,11 +290,19 @@ impl VictauriClient {
     }
 
     /// List all window labels.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn list_windows(&mut self) -> Result<Value, TestError> {
         self.call_tool("window", json!({"action": "list"})).await
     }
 
     /// Get the state of a specific window (or all windows).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_window_state(&mut self, label: Option<&str>) -> Result<Value, TestError> {
         let mut args = json!({"action": "get_state"});
         if let Some(l) = label {
@@ -260,11 +312,19 @@ impl VictauriClient {
     }
 
     /// Take a screenshot and return base64-encoded PNG.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn screenshot(&mut self) -> Result<Value, TestError> {
         self.call_tool("screenshot", json!({})).await
     }
 
     /// Invoke a Tauri command by name with optional arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn invoke_command(
         &mut self,
         command: &str,
@@ -278,6 +338,10 @@ impl VictauriClient {
     }
 
     /// Get the IPC call log.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_ipc_log(&mut self, limit: Option<usize>) -> Result<Value, TestError> {
         let mut args = json!({"action": "ipc"});
         if let Some(n) = limit {
@@ -287,6 +351,10 @@ impl VictauriClient {
     }
 
     /// Verify frontend state against backend state.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn verify_state(
         &mut self,
         frontend_expr: &str,
@@ -303,16 +371,28 @@ impl VictauriClient {
     }
 
     /// Detect ghost commands (registered but never called, or called but not registered).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn detect_ghost_commands(&mut self) -> Result<Value, TestError> {
         self.call_tool("detect_ghost_commands", json!({})).await
     }
 
     /// Check IPC call health (pending, stale, errored).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn check_ipc_integrity(&mut self) -> Result<Value, TestError> {
         self.call_tool("check_ipc_integrity", json!({})).await
     }
 
     /// Run a semantic assertion against a JS expression.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn assert_semantic(
         &mut self,
         expression: &str,
@@ -333,28 +413,48 @@ impl VictauriClient {
     }
 
     /// Run an accessibility audit.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn audit_accessibility(&mut self) -> Result<Value, TestError> {
         self.call_tool("inspect", json!({"action": "audit_accessibility"}))
             .await
     }
 
     /// Get performance metrics (timing, heap, resources).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_performance_metrics(&mut self) -> Result<Value, TestError> {
         self.call_tool("inspect", json!({"action": "get_performance"}))
             .await
     }
 
     /// Get the command registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_registry(&mut self) -> Result<Value, TestError> {
         self.call_tool("get_registry", json!({})).await
     }
 
     /// Get process memory statistics.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_memory_stats(&mut self) -> Result<Value, TestError> {
         self.call_tool("get_memory_stats", json!({})).await
     }
 
     /// Read plugin info (version, uptime, tool count).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn get_plugin_info(&mut self) -> Result<Value, TestError> {
         self.call_tool("get_plugin_info", json!({})).await
     }
@@ -363,6 +463,10 @@ impl VictauriClient {
     ///
     /// Conditions: `text`, `text_gone`, `selector`, `selector_gone`, `url`,
     /// `ipc_idle`, `network_idle`.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn wait_for(
         &mut self,
         condition: &str,
@@ -384,6 +488,10 @@ impl VictauriClient {
     }
 
     /// Start a time-travel recording session.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn start_recording(&mut self, session_id: Option<&str>) -> Result<Value, TestError> {
         let mut args = json!({"action": "start"});
         if let Some(id) = session_id {
@@ -393,52 +501,88 @@ impl VictauriClient {
     }
 
     /// Stop the recording and return the session.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn stop_recording(&mut self) -> Result<Value, TestError> {
         self.call_tool("recording", json!({"action": "stop"})).await
     }
 
     /// Export the current recording session as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn export_session(&mut self) -> Result<Value, TestError> {
         self.call_tool("recording", json!({"action": "export"}))
             .await
     }
 
     /// Search for elements by various criteria without a full snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn find_elements(&mut self, query: Value) -> Result<Value, TestError> {
         self.call_tool("find_elements", query).await
     }
 
     /// Hover over an element by ref handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn hover(&mut self, ref_id: &str) -> Result<Value, TestError> {
         self.call_tool("interact", json!({"action": "hover", "ref_id": ref_id}))
             .await
     }
 
     /// Focus an element by ref handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn focus(&mut self, ref_id: &str) -> Result<Value, TestError> {
         self.call_tool("interact", json!({"action": "focus", "ref_id": ref_id}))
             .await
     }
 
     /// Press a keyboard key.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn press_key(&mut self, key: &str) -> Result<Value, TestError> {
         self.call_tool("input", json!({"action": "press_key", "key": key}))
             .await
     }
 
     /// Navigate to a URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn navigate(&mut self, url: &str) -> Result<Value, TestError> {
         self.call_tool("navigate", json!({"action": "go_to", "url": url}))
             .await
     }
 
     /// Get logs by type (console, network, ipc, navigation, dialogs).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn logs(&mut self, action: &str, limit: Option<usize>) -> Result<Value, TestError> {
         self.call_tool("logs", json!({"action": action, "limit": limit}))
             .await
     }
 
     /// Scroll an element into view by ref handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn scroll_to(&mut self, ref_id: &str) -> Result<Value, TestError> {
         self.call_tool(
             "interact",
@@ -448,6 +592,10 @@ impl VictauriClient {
     }
 
     /// Select option(s) in a `<select>` element.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn select_option(
         &mut self,
         ref_id: &str,

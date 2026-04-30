@@ -88,6 +88,10 @@ impl EventRecorder {
     }
 
     /// Starts a new recording session; returns `Err` if one is already active.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VictauriError::RecordingAlreadyActive`] if a session is already in progress.
     pub fn start(&self, session_id: String) -> crate::error::Result<()> {
         let mut rec = self
             .recording
@@ -156,6 +160,10 @@ impl EventRecorder {
     }
 
     /// Creates a named state checkpoint at the current event index; returns `Err` if not recording.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VictauriError::NoActiveRecording`] if no session is in progress.
     pub fn checkpoint(
         &self,
         id: String,

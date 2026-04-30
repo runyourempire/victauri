@@ -59,7 +59,11 @@ pub struct Redactor {
 }
 
 impl Redactor {
-    /// Build a redactor with custom patterns, returning an error if any pattern is invalid.
+    /// Build a redactor with custom patterns.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`regex::Error`] if any custom pattern (or a built-in pattern) fails to compile.
     pub fn try_new(custom_patterns: &[String]) -> Result<Self, regex::Error> {
         let builtin_set = RegexSet::new(BUILTIN_PATTERNS)?;
         let builtin_compiled: Vec<regex::Regex> = BUILTIN_PATTERNS
