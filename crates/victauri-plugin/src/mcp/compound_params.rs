@@ -1,6 +1,71 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+/// Web storage type for browser storage operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageType {
+    /// Browser localStorage (persistent across sessions).
+    Local,
+    /// Browser sessionStorage (cleared when tab closes).
+    Session,
+}
+
+impl StorageType {
+    /// Returns the JavaScript property name for this storage type.
+    pub fn js_property(self) -> &'static str {
+        match self {
+            Self::Local => "localStorage",
+            Self::Session => "sessionStorage",
+        }
+    }
+}
+
+/// Browser dialog type for dialog response configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DialogType {
+    /// JavaScript `alert()` dialog.
+    Alert,
+    /// JavaScript `confirm()` dialog.
+    Confirm,
+    /// JavaScript `prompt()` dialog.
+    Prompt,
+}
+
+impl DialogType {
+    /// Returns the lowercase string for JS bridge consumption.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Alert => "alert",
+            Self::Confirm => "confirm",
+            Self::Prompt => "prompt",
+        }
+    }
+}
+
+/// Action to take on a browser dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DialogAction {
+    /// Accept the dialog (click OK/Yes).
+    Accept,
+    /// Dismiss the dialog (click Cancel/No).
+    Dismiss,
+}
+
+impl DialogAction {
+    /// Returns the lowercase string for JS bridge consumption.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Accept => "accept",
+            Self::Dismiss => "dismiss",
+        }
+    }
+}
+
 // ── interact ────────────────────────────────────────────────────────────────
 
 /// Parameters for the compound `interact` tool (click, hover, focus, scroll, select).
@@ -69,8 +134,8 @@ pub struct WindowParams {
 pub struct StorageParams {
     /// Action to perform: get, set, delete, get_cookies.
     pub action: String,
-    /// Storage type: "local" or "session". Required for get, set, delete.
-    pub storage_type: Option<String>,
+    /// Storage type for get/set/delete. Defaults to local if omitted.
+    pub storage_type: Option<StorageType>,
     /// Key to read, write, or delete.
     pub key: Option<String>,
     /// Value to store (for set action). Will be JSON-serialized if not a string.
@@ -88,10 +153,10 @@ pub struct NavigateParams {
     pub action: String,
     /// URL to navigate to (for go_to action).
     pub url: Option<String>,
-    /// Dialog type: "alert", "confirm", or "prompt" (for set_dialog_response).
-    pub dialog_type: Option<String>,
-    /// Dialog action: "accept" or "dismiss" (for set_dialog_response).
-    pub dialog_action: Option<String>,
+    /// Dialog type (for set_dialog_response).
+    pub dialog_type: Option<DialogType>,
+    /// Dialog action (for set_dialog_response).
+    pub dialog_action: Option<DialogAction>,
     /// Response text for prompt dialogs (for set_dialog_response).
     pub text: Option<String>,
     /// Target webview label.

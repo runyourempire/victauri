@@ -1,6 +1,43 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+/// Condition to poll for in the wait_for tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitCondition {
+    /// Wait for text to appear in the page.
+    Text,
+    /// Wait for text to disappear from the page.
+    TextGone,
+    /// Wait for a CSS selector to match an element.
+    Selector,
+    /// Wait for a CSS selector to stop matching.
+    SelectorGone,
+    /// Wait for the URL to contain a substring.
+    Url,
+    /// Wait for all IPC calls to complete.
+    IpcIdle,
+    /// Wait for all network requests to complete.
+    NetworkIdle,
+}
+
+impl WaitCondition {
+    /// Returns the snake_case string for JS bridge consumption.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::TextGone => "text_gone",
+            Self::Selector => "selector",
+            Self::SelectorGone => "selector_gone",
+            Self::Url => "url",
+            Self::IpcIdle => "ipc_idle",
+            Self::NetworkIdle => "network_idle",
+        }
+    }
+}
+
 // ── Streaming ──────────────────────────────────────────────────────────────
 
 /// Parameters for the `get_event_stream` tool.
@@ -118,8 +155,8 @@ pub struct SetDialogResponseParams {
 /// Parameters for the `wait_for` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WaitForParams {
-    /// Condition to wait for: text, text_gone, selector, selector_gone, url, ipc_idle, network_idle.
-    pub condition: String,
+    /// Condition to wait for.
+    pub condition: WaitCondition,
     /// Value for the condition (text to find, CSS selector, URL substring).
     pub value: Option<String>,
     /// Maximum time to wait in milliseconds. Default: 10000.

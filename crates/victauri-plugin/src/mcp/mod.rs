@@ -39,7 +39,7 @@ pub use introspection_params::*;
 pub use other_params::{
     DeleteStorageParams, DialogLogParams, EventStreamParams, FindElementsParams, GetCookiesParams,
     GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams,
-    SetDialogResponseParams, SetStorageParams, WaitForParams,
+    SetDialogResponseParams, SetStorageParams, WaitCondition, WaitForParams,
 };
 pub use recording_params::*;
 pub use server::*;
@@ -345,7 +345,7 @@ impl VictauriMcpHandler {
         let poll = params.poll_ms.unwrap_or(200);
         let code = format!(
             "return window.__VICTAURI__?.waitFor({{ condition: {}, value: {value}, timeout_ms: {timeout_ms}, poll_ms: {poll} }})",
-            js_string(&params.condition)
+            js_string(params.condition.as_str())
         );
         let eval_timeout = std::time::Duration::from_millis(timeout_ms + 5000);
         match self
@@ -786,10 +786,9 @@ impl VictauriMcpHandler {
     async fn storage(&self, Parameters(params): Parameters<StorageParams>) -> CallToolResult {
         match params.action.as_str() {
             "get" => {
-                let storage_type = params.storage_type.as_deref().unwrap_or("local");
-                let method = match storage_type {
-                    "session" => "getSessionStorage",
-                    _ => "getLocalStorage",
+                let method = match params.storage_type.unwrap_or(StorageType::Local) {
+                    StorageType::Session => "getSessionStorage",
+                    StorageType::Local => "getLocalStorage",
                 };
                 let key_arg = params
                     .key
@@ -804,10 +803,9 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("set_storage") {
                     return tool_disabled("set_storage");
                 }
-                let storage_type = params.storage_type.as_deref().unwrap_or("local");
-                let method = match storage_type {
-                    "session" => "setSessionStorage",
-                    _ => "setLocalStorage",
+                let method = match params.storage_type.unwrap_or(StorageType::Local) {
+                    StorageType::Session => "setSessionStorage",
+                    StorageType::Local => "setLocalStorage",
                 };
                 let key = match &params.key {
                     Some(k) => k,
@@ -831,10 +829,9 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("delete_storage") {
                     return tool_disabled("delete_storage");
                 }
-                let storage_type = params.storage_type.as_deref().unwrap_or("local");
-                let method = match storage_type {
-                    "session" => "deleteSessionStorage",
-                    _ => "deleteLocalStorage",
+                let method = match params.storage_type.unwrap_or(StorageType::Local) {
+                    StorageType::Session => "deleteSessionStorage",
+                    StorageType::Local => "deleteLocalStorage",
                 };
                 let key = match &params.key {
                     Some(k) => k,
@@ -899,11 +896,11 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("set_dialog_response") {
                     return tool_disabled("set_dialog_response");
                 }
-                let dialog_type = match &params.dialog_type {
+                let dialog_type = match params.dialog_type {
                     Some(t) => t,
                     None => return missing_param("dialog_type", "set_dialog_response"),
                 };
-                let dialog_action = match &params.dialog_action {
+                let dialog_action = match params.dialog_action {
                     Some(a) => a,
                     None => return missing_param("dialog_action", "set_dialog_response"),
                 };
@@ -914,8 +911,8 @@ impl VictauriMcpHandler {
                     .unwrap_or_else(|| "undefined".to_string());
                 let code = format!(
                     "return window.__VICTAURI__?.setDialogAutoResponse({}, {}, {text_arg})",
-                    js_string(dialog_type),
-                    js_string(dialog_action)
+                    js_string(dialog_type.as_str()),
+                    js_string(dialog_action.as_str())
                 );
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
