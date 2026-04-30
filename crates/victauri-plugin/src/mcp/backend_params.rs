@@ -1,15 +1,6 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-/// Parameters for the `get_ipc_log` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct IpcLogParams {
-    /// Maximum number of most recent entries to return.
-    pub limit: Option<usize>,
-    /// Target webview label.
-    pub webview_label: Option<String>,
-}
-
 /// Parameters for the `get_registry` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RegistryParams {
@@ -24,17 +15,6 @@ pub struct InvokeCommandParams {
     pub command: String,
     /// Arguments as a JSON object. Keys are parameter names. Omit for commands with no arguments.
     pub args: Option<serde_json::Value>,
-    /// Target webview label.
-    pub webview_label: Option<String>,
-}
-
-/// Parameters for the `get_network_log` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct NetworkLogParams {
-    /// Filter by URL substring.
-    pub filter: Option<String>,
-    /// Maximum number of entries to return.
-    pub limit: Option<usize>,
     /// Target webview label.
     pub webview_label: Option<String>,
 }

@@ -1,9 +1,7 @@
 mod backend_params;
 mod compound_params;
 mod helpers;
-mod introspection_params;
 mod other_params;
-mod recording_params;
 mod server;
 mod verification_params;
 mod webview_params;
@@ -35,13 +33,9 @@ use helpers::{
 
 pub use backend_params::*;
 pub use compound_params::*;
-pub use introspection_params::*;
 pub use other_params::{
-    DeleteStorageParams, DialogLogParams, EventStreamParams, FindElementsParams, GetCookiesParams,
-    GetStorageParams, NavigationLogParams, ResolveCommandParams, SemanticAssertParams,
-    SetDialogResponseParams, SetStorageParams, WaitCondition, WaitForParams,
+    FindElementsParams, ResolveCommandParams, SemanticAssertParams, WaitCondition, WaitForParams,
 };
-pub use recording_params::*;
 pub use server::*;
 pub use verification_params::*;
 pub use webview_params::*;
@@ -104,10 +98,14 @@ impl VictauriMcpHandler {
         )
     )]
     async fn dom_snapshot(&self, Parameters(params): Parameters<SnapshotParams>) -> CallToolResult {
-        let format = params.format.as_deref().unwrap_or("compact");
+        let format = params.format.unwrap_or(SnapshotFormat::Compact);
+        let format_str = match format {
+            SnapshotFormat::Compact => "compact",
+            SnapshotFormat::Json => "json",
+        };
         let code = format!(
             "return window.__VICTAURI__?.snapshot({})",
-            js_string(format)
+            js_string(format_str)
         );
         self.eval_bridge(&code, params.webview_label.as_deref())
             .await

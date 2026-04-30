@@ -27,12 +27,3 @@ pub struct IpcIntegrityParams {
     /// Target webview label.
     pub webview_label: Option<String>,
 }
-
-/// Parameters for the `slow_ipc` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SlowIpcParams {
-    /// Threshold in milliseconds. Returns IPC calls slower than this value.
-    pub threshold_ms: u64,
-    /// Maximum number of results. Default: 20.
-    pub limit: Option<usize>,
-}
