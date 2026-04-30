@@ -92,6 +92,7 @@ impl CommandRegistry {
     }
 
     /// Looks up a command by exact name.
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<CommandInfo> {
         self.commands
             .read()
@@ -101,6 +102,7 @@ impl CommandRegistry {
     }
 
     /// Returns all registered commands in alphabetical order.
+    #[must_use]
     pub fn list(&self) -> Vec<CommandInfo> {
         self.commands
             .read()
@@ -111,6 +113,7 @@ impl CommandRegistry {
     }
 
     /// Returns the number of registered commands.
+    #[must_use]
     pub fn count(&self) -> usize {
         self.commands
             .read()
@@ -119,6 +122,7 @@ impl CommandRegistry {
     }
 
     /// Searches commands by substring match on name or description (case-insensitive).
+    #[must_use]
     pub fn search(&self, query: &str) -> Vec<CommandInfo> {
         let query_lower = query.to_lowercase();
         self.commands
@@ -137,6 +141,7 @@ impl CommandRegistry {
     }
 
     /// Resolves a natural-language query to commands ranked by relevance score.
+    #[must_use]
     pub fn resolve(&self, query: &str) -> Vec<ScoredCommand> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();

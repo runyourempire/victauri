@@ -74,6 +74,7 @@ pub enum AppEvent {
 
 impl AppEvent {
     /// Returns the timestamp of this event, regardless of variant.
+    #[must_use]
     pub fn timestamp(&self) -> DateTime<Utc> {
         match self {
             Self::Ipc(call) => call.timestamp,

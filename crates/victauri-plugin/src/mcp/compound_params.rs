@@ -15,6 +15,7 @@ pub enum StorageType {
 
 impl StorageType {
     /// Returns the JavaScript property name for this storage type.
+    #[must_use]
     pub fn js_property(self) -> &'static str {
         match self {
             Self::Local => "localStorage",
@@ -37,6 +38,7 @@ pub enum DialogType {
 
 impl DialogType {
     /// Returns the lowercase string for JS bridge consumption.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Alert => "alert",
@@ -58,6 +60,7 @@ pub enum DialogAction {
 
 impl DialogAction {
     /// Returns the lowercase string for JS bridge consumption.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Accept => "accept",

@@ -82,6 +82,7 @@ pub struct ElementBounds {
 
 impl DomSnapshot {
     /// Renders the snapshot as indented accessible text (roles, names, and ref handles).
+    #[must_use]
     pub fn to_accessible_text(&self, indent: usize) -> String {
         let mut output = String::new();
         for element in &self.elements {

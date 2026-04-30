@@ -25,6 +25,7 @@ pub enum WaitCondition {
 
 impl WaitCondition {
     /// Returns the snake_case string for JS bridge consumption.
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Text => "text",

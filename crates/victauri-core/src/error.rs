@@ -66,12 +66,14 @@ pub type Result<T> = std::result::Result<T, VictauriError>;
 
 impl VictauriError {
     /// Create a [`CapacityExceeded`](Self::CapacityExceeded) error.
+    #[must_use]
     pub fn capacity_exceeded(message: impl fmt::Display) -> Self {
         Self::CapacityExceeded {
             message: message.to_string(),
         }
     }
     /// Create an [`InvalidInput`](Self::InvalidInput) error.
+    #[must_use]
     pub fn invalid_input(message: impl fmt::Display) -> Self {
         Self::InvalidInput {
             message: message.to_string(),
