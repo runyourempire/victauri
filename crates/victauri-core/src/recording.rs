@@ -10,6 +10,7 @@ use crate::error::VictauriError;
 use crate::event::{AppEvent, IpcCall};
 
 const DEFAULT_MAX_CHECKPOINTS: usize = 1000;
+const DEFAULT_MAX_EVENTS: usize = 50_000;
 
 /// A snapshot of application state taken at a specific point during recording.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -388,6 +389,6 @@ impl EventRecorder {
 
 impl Default for EventRecorder {
     fn default() -> Self {
-        Self::new(50_000)
+        Self::new(DEFAULT_MAX_EVENTS)
     }
 }

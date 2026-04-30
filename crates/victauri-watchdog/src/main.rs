@@ -158,6 +158,7 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn clear_env() {
+        // SAFETY: test-only — ENV_LOCK serializes all env access in this module.
         unsafe {
             std::env::remove_var("VICTAURI_PORT");
             std::env::remove_var("VICTAURI_INTERVAL");
@@ -185,6 +186,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
+        // SAFETY: test-only — ENV_LOCK serializes all env access in this module.
         unsafe {
             std::env::set_var("VICTAURI_PORT", "9999");
             std::env::set_var("VICTAURI_INTERVAL", "10");
@@ -205,6 +207,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
+        // SAFETY: test-only — ENV_LOCK serializes all env access in this module.
         unsafe {
             std::env::set_var("VICTAURI_PORT", "not_a_number");
             std::env::set_var("VICTAURI_INTERVAL", "abc");

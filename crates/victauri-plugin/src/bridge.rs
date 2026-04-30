@@ -188,6 +188,9 @@ fn macos_window_number(ns_view: *mut std::ffi::c_void) -> Result<isize, String> 
         return Err("null NSView handle".to_string());
     }
 
+    // SAFETY: `ns_view` is a valid NSView pointer obtained from Tauri's
+    // `with_webview` callback; null was checked above. `objc_msgSend` and
+    // `sel_registerName` are stable Objective-C runtime ABI.
     unsafe {
         let sel_window = sel_registerName(b"window\0".as_ptr().cast());
         let ns_window = objc_msgSend(ns_view, sel_window) as *mut std::ffi::c_void;

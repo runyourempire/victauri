@@ -772,9 +772,9 @@ mod tests {
 
         let builder = VictauriBuilder::new()
             .port(65535)
-            .event_capacity(1_000_000)
-            .recorder_capacity(1_000_000)
-            .eval_timeout(std::time::Duration::from_secs(300));
+            .event_capacity(MAX_EVENT_CAPACITY)
+            .recorder_capacity(MAX_RECORDER_CAPACITY)
+            .eval_timeout(std::time::Duration::from_secs(MAX_EVAL_TIMEOUT_SECS));
         assert!(builder.validate().is_ok());
     }
 }
