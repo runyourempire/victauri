@@ -7,6 +7,13 @@ pub(crate) fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
 
+pub(crate) fn json_result(value: &impl serde::Serialize) -> CallToolResult {
+    match serde_json::to_string_pretty(value) {
+        Ok(json) => CallToolResult::success(vec![Content::text(json)]),
+        Err(e) => tool_error(e.to_string()),
+    }
+}
+
 pub(crate) fn tool_error(msg: impl Into<String>) -> CallToolResult {
     let mut result = CallToolResult::success(vec![Content::text(msg)]);
     result.is_error = Some(true);

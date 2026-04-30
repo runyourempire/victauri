@@ -29,8 +29,8 @@ use crate::VictauriState;
 use crate::bridge::WebviewBridge;
 
 use helpers::{
-    js_string, missing_param, sanitize_css_color, tool_disabled, tool_error, tool_not_found,
-    validate_url,
+    js_string, json_result, missing_param, sanitize_css_color, tool_disabled, tool_error,
+    tool_not_found, validate_url,
 };
 
 pub use backend_params::*;
@@ -249,10 +249,7 @@ impl VictauriMcpHandler {
         };
 
         let result = victauri_core::verify_state(frontend_state, params.backend_state);
-        match serde_json::to_string_pretty(&result) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&result)
     }
 
     #[tool(
@@ -289,10 +286,7 @@ impl VictauriMcpHandler {
             .collect();
 
         let report = victauri_core::detect_ghost_commands(&frontend_commands, &self.state.registry);
-        match serde_json::to_string_pretty(&report) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&report)
     }
 
     #[tool(
@@ -397,10 +391,7 @@ impl VictauriMcpHandler {
         };
 
         let result = victauri_core::evaluate_assertion(actual, &assertion);
-        match serde_json::to_string_pretty(&result) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&result)
     }
 
     #[tool(
@@ -420,10 +411,7 @@ impl VictauriMcpHandler {
         let limit = params.limit.unwrap_or(5);
         let mut results = self.state.registry.resolve(&params.query);
         results.truncate(limit);
-        match serde_json::to_string_pretty(&results) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&results)
     }
 
     #[tool(
@@ -441,10 +429,7 @@ impl VictauriMcpHandler {
             Some(q) => self.state.registry.search(&q),
             None => self.state.registry.list(),
         };
-        match serde_json::to_string_pretty(&commands) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&commands)
     }
 
     #[tool(
@@ -459,10 +444,7 @@ impl VictauriMcpHandler {
     async fn get_memory_stats(&self) -> CallToolResult {
         self.track_tool_call();
         let stats = crate::memory::current_stats();
-        match serde_json::to_string_pretty(&stats) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&stats)
     }
 
     #[tool(
@@ -528,10 +510,7 @@ impl VictauriMcpHandler {
             "tool_invocations": self.state.tool_invocations.load(std::sync::atomic::Ordering::Relaxed),
             "uptime_secs": self.state.started_at.elapsed().as_secs(),
         });
-        match serde_json::to_string_pretty(&result) {
-            Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-            Err(e) => tool_error(e.to_string()),
-        }
+        json_result(&result)
     }
 
     // ── Compound Tools ──────────────────────────────────────────────────────
@@ -710,17 +689,11 @@ impl VictauriMcpHandler {
         match params.action.as_str() {
             "get_state" => {
                 let states = self.bridge.get_window_states(params.label.as_deref());
-                match serde_json::to_string_pretty(&states) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                }
+                json_result(&states)
             }
             "list" => {
                 let labels = self.bridge.list_window_labels();
-                match serde_json::to_string_pretty(&labels) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                }
+                json_result(&labels)
             }
             "manage" => {
                 let manage_action = match &params.manage_action {
@@ -996,10 +969,7 @@ impl VictauriMcpHandler {
                 }
             }
             "stop" => match self.state.recorder.stop() {
-                Some(session) => match serde_json::to_string_pretty(&session) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                },
+                Some(session) => json_result(&session),
                 None => tool_error("no recording is active"),
             },
             "checkpoint" => {
@@ -1026,20 +996,14 @@ impl VictauriMcpHandler {
             }
             "list_checkpoints" => {
                 let checkpoints = self.state.recorder.get_checkpoints();
-                match serde_json::to_string_pretty(&checkpoints) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                }
+                json_result(&checkpoints)
             }
             "get_events" => {
                 let events = self
                     .state
                     .recorder
                     .events_since(params.since_index.unwrap_or(0));
-                match serde_json::to_string_pretty(&events) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                }
+                json_result(&events)
             }
             "events_between" => {
                 let from = match &params.from {
@@ -1051,19 +1015,13 @@ impl VictauriMcpHandler {
                     None => return missing_param("to", "events_between"),
                 };
                 match self.state.recorder.events_between_checkpoints(from, to) {
-                    Ok(events) => match serde_json::to_string_pretty(&events) {
-                        Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                        Err(e) => tool_error(e.to_string()),
-                    },
+                    Ok(events) => json_result(&events),
                     Err(e) => tool_error(e.to_string()),
                 }
             }
             "get_replay" => {
                 let calls = self.state.recorder.ipc_replay_sequence();
-                match serde_json::to_string_pretty(&calls) {
-                    Ok(json) => CallToolResult::success(vec![Content::text(json)]),
-                    Err(e) => tool_error(e.to_string()),
-                }
+                json_result(&calls)
             }
             "export" => match self.state.recorder.export() {
                 Some(s) => {
