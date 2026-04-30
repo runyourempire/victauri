@@ -19,7 +19,7 @@ Victauri crosses the boundary:
 
 ```rust
 // Click a button in the frontend
-client.interact("click", "e5").await?;
+client.click("e5").await?;
 
 // Verify the Rust command ran with correct args
 let ipc = client.logs("ipc", Some(1)).await?;
@@ -101,7 +101,7 @@ async fn settings_persist() {
     
     // Check no ghost commands exist
     let ghosts = client.detect_ghost_commands().await.unwrap();
-    assert!(ghosts["ghost_invocations"].as_array().unwrap().is_empty());
+    assert!(ghosts["ghost_commands"].as_array().unwrap().is_empty());
 }
 ```
 

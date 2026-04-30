@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** `SemanticAssertion.condition` is now `AssertionCondition` enum instead of `String` — invalid conditions are caught at deserialization, not deep in evaluation logic
+- `events_between_checkpoints` returns `Result` with specific error variants instead of `Option`
+- Extracted `json_result` helper in MCP handler, eliminating 14 repeated serialization blocks
+
+### Added
+
+- `AssertionCondition` enum with `FromStr`, `Display`, `Serialize`/`Deserialize`, and feature-gated `JsonSchema` (`schema` feature on victauri-core)
+- `#[must_use]` on all pure constructors and analysis functions
+- `#[warn(missing_docs)]` enforced in victauri-core, victauri-plugin, and victauri-test
+- `FLOAT_EPSILON` named constant for floating-point severity classification
+
+### Fixed
+
+- 6 ghost tool names in `VictauriClient` test client (`fill`, `type_text`, `get_window_state`, `get_ipc_log`, `start_recording`, `wait_for` parameter name)
+- Benchmark code silently discarding `Result` from `EventRecorder::start`
+- README code examples using non-existent API methods
+
 ## [0.1.0] - 2026-04-28
 
 Initial public release.
