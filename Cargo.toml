@@ -24,6 +24,7 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 redundant_closure_for_method_calls = "deny"
+missing_errors_doc = "deny"
 
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
