@@ -8,7 +8,7 @@ use std::sync::{Arc, RwLock};
 /// Metadata for a registered Tauri command, including intent and schema information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandInfo {
-    /// Fully qualified command name (e.g. "get_settings").
+    /// Fully qualified command name (e.g. "`get_settings`").
     pub name: String,
     /// Plugin namespace, if the command belongs to a Tauri plugin.
     pub plugin: Option<String>,

@@ -248,9 +248,9 @@ impl VictauriBuilder {
         self
     }
 
-    /// Enable strict privacy mode: disables dangerous tools (eval_js, screenshot,
-    /// inject_css, set_storage, delete_storage, navigate, set_dialog_response,
-    /// fill, type_text), enables output redaction with built-in PII patterns.
+    /// Enable strict privacy mode: disables dangerous tools (`eval_js`, screenshot,
+    /// `inject_css`, `set_storage`, `delete_storage`, navigate, `set_dialog_response`,
+    /// fill, `type_text`), enables output redaction with built-in PII patterns.
     #[must_use]
     pub fn strict_privacy_mode(mut self) -> Self {
         self.strict_privacy = true;
@@ -500,7 +500,7 @@ impl VictauriBuilder {
     }
 }
 
-/// Initialize the Victauri plugin with default settings (port 7373 or VICTAURI_PORT env var).
+/// Initialize the Victauri plugin with default settings (port 7373 or `VICTAURI_PORT` env var).
 ///
 /// In debug builds: starts the embedded MCP server, injects the JS bridge, and
 /// registers all Tauri command handlers.

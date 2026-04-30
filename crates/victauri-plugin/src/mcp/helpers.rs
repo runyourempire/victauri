@@ -1,7 +1,7 @@
 use rmcp::model::{CallToolResult, Content};
 
 /// Produce a properly escaped JavaScript string literal (with double quotes).
-/// Uses serde_json which handles all special characters: \n, \r, \0, \t,
+/// Uses `serde_json` which handles all special characters: \n, \r, \0, \t,
 /// unicode escapes, quotes, backslashes, etc.
 pub(crate) fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())

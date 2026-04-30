@@ -11,7 +11,7 @@ pub struct RegistryParams {
 /// Parameters for the `invoke_command` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InvokeCommandParams {
-    /// The Tauri command name to invoke (e.g. "greet", "save_settings").
+    /// The Tauri command name to invoke (e.g. "greet", "`save_settings`").
     pub command: String,
     /// Arguments as a JSON object. Keys are parameter names. Omit for commands with no arguments.
     pub args: Option<serde_json::Value>,

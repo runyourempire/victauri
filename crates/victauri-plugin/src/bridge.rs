@@ -14,7 +14,7 @@ pub trait WebviewBridge: Send + Sync {
     /// Return the labels of all open webview windows.
     fn list_window_labels(&self) -> Vec<String>;
     /// Return the platform-native window handle for screenshot capture.
-    /// Windows: HWND, macOS: CGWindowID (window number), Linux: X11 window ID.
+    /// Windows: HWND, macOS: `CGWindowID` (window number), Linux: X11 window ID.
     ///
     /// # Errors
     ///

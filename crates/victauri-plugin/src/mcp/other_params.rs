@@ -4,7 +4,7 @@ use std::fmt;
 
 // ── Enums ──────────────────────────────────────────────────────────────────
 
-/// Condition to poll for in the wait_for tool.
+/// Condition to poll for in the `wait_for` tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitCondition {
@@ -25,7 +25,7 @@ pub enum WaitCondition {
 }
 
 impl WaitCondition {
-    /// Returns the snake_case string for JS bridge consumption.
+    /// Returns the `snake_case` string for JS bridge consumption.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
