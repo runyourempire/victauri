@@ -102,7 +102,7 @@ impl DomSnapshot {
         let name_str = element
             .name
             .as_ref()
-            .map(|n| format!(" \"{}\"", n))
+            .map(|n| format!(" \"{n}\""))
             .unwrap_or_default();
         let ref_str = if element.focusable || element.tag == "button" || element.tag == "input" {
             format!(" [ref={}]", element.ref_id)
@@ -110,7 +110,7 @@ impl DomSnapshot {
             String::new()
         };
 
-        let line = format!("{}- {}{}{}\n", prefix, role_str, name_str, ref_str);
+        let line = format!("{prefix}- {role_str}{name_str}{ref_str}\n");
         output.push_str(&line);
 
         for child in &element.children {

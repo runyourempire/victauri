@@ -141,7 +141,7 @@ impl VictauriMcpHandler {
             parts.push(format!("name: {}", js_string(n)));
         }
         if let Some(max) = params.max_results {
-            parts.push(format!("max_results: {}", max));
+            parts.push(format!("max_results: {max}"));
         }
         let code = format!(
             "return window.__VICTAURI__?.findElements({{ {} }})",
@@ -1033,7 +1033,7 @@ impl VictauriMcpHandler {
                 };
                 let color_arg = match &params.color {
                     Some(c) => match sanitize_css_color(c) {
-                        Ok(safe) => format!("\"{}\"", safe),
+                        Ok(safe) => format!("\"{safe}\""),
                         Err(e) => return tool_error(e),
                     },
                     None => "null".to_string(),
@@ -1341,12 +1341,12 @@ impl VictauriMcpHandler {
             {
                 Ok(v) => {
                     let v = v.trim_matches('"');
-                    if v != BRIDGE_VERSION {
+                    if v == BRIDGE_VERSION {
+                        tracing::debug!("Bridge version verified: {v}");
+                    } else {
                         tracing::warn!(
                             "Bridge version mismatch: Rust expects {BRIDGE_VERSION}, JS reports {v}"
                         );
-                    } else {
-                        tracing::debug!("Bridge version verified: {v}");
                     }
                 }
                 Err(e) => tracing::debug!("Bridge version check skipped: {e}"),
@@ -1468,16 +1468,15 @@ impl ServerHandler for VictauriMcpHandler {
         let uri = &request.uri;
         let json = match uri.as_str() {
             RESOURCE_URI_IPC_LOG => {
-                match self
+                if let Ok(json) = self
                     .eval_with_return("return window.__VICTAURI__?.getIpcLog()", None)
                     .await
                 {
-                    Ok(json) => json,
-                    Err(_) => {
-                        let calls = self.state.event_log.ipc_calls();
-                        serde_json::to_string_pretty(&calls)
-                            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
-                    }
+                    json
+                } else {
+                    let calls = self.state.event_log.ipc_calls();
+                    serde_json::to_string_pretty(&calls)
+                        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?
                 }
             }
             RESOURCE_URI_WINDOWS => {

@@ -56,14 +56,16 @@ pub fn inspectable(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let return_type = extract_return_type(&input.sig);
 
-    let intent_token = match &attrs.intent {
-        Some(i) => quote! { Some(#i.to_string()) },
-        None => quote! { None },
+    let intent_token = if let Some(i) = &attrs.intent {
+        quote! { Some(#i.to_string()) }
+    } else {
+        quote! { None }
     };
 
-    let category_token = match &attrs.category {
-        Some(c) => quote! { Some(#c.to_string()) },
-        None => quote! { None },
+    let category_token = if let Some(c) = &attrs.category {
+        quote! { Some(#c.to_string()) }
+    } else {
+        quote! { None }
     };
 
     let example_tokens: Vec<_> = attrs

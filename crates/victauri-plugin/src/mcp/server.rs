@@ -232,10 +232,7 @@ async fn event_drain_loop(
             continue;
         }
 
-        let code = format!(
-            "return window.__VICTAURI__?.getEventStream({})",
-            last_drain_ts
-        );
+        let code = format!("return window.__VICTAURI__?.getEventStream({last_drain_ts})");
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
 

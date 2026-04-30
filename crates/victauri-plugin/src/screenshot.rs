@@ -476,7 +476,7 @@ fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> anyh
 fn png_crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &byte in data {
-        crc ^= byte as u32;
+        crc ^= u32::from(byte);
         for _ in 0..8 {
             if crc & 1 != 0 {
                 crc = (crc >> 1) ^ 0xEDB8_8320;
@@ -504,7 +504,7 @@ fn adler32(data: &[u8]) -> u32 {
     let mut a: u32 = 1;
     let mut b: u32 = 0;
     for &byte in data {
-        a = (a + byte as u32) % 65521;
+        a = (a + u32::from(byte)) % 65521;
         b = (b + a) % 65521;
     }
     (b << 16) | a

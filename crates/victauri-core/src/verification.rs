@@ -482,13 +482,13 @@ pub fn evaluate_assertion(
         }
     };
 
-    let message = if !passed {
+    let message = if passed {
+        None
+    } else {
         Some(format!(
             "Assertion '{}' failed: expected {} {:?}, got {:?}",
             assertion.label, assertion.condition, assertion.expected, actual
         ))
-    } else {
-        None
     };
 
     AssertionResult {
