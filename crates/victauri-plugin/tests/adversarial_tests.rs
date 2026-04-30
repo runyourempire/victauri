@@ -1,114 +1,17 @@
-use std::collections::HashMap;
+mod common;
+
 use std::sync::Arc;
 
 use serde_json::json;
-use tokio::sync::Mutex;
-use victauri_core::{CommandInfo, CommandRegistry, EventLog, EventRecorder};
+use victauri_core::CommandInfo;
 use victauri_plugin::VictauriState;
 use victauri_plugin::bridge::WebviewBridge;
 use victauri_plugin::mcp::build_app;
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-fn test_state() -> Arc<VictauriState> {
-    Arc::new(VictauriState {
-        event_log: EventLog::new(1000),
-        registry: CommandRegistry::new(),
-        port: std::sync::atomic::AtomicU16::new(0),
-        pending_evals: Arc::new(Mutex::new(HashMap::new())),
-        recorder: EventRecorder::new(1000),
-        privacy: Default::default(),
-        eval_timeout: std::time::Duration::from_secs(30),
-        shutdown_tx: tokio::sync::watch::channel(false).0,
-        started_at: std::time::Instant::now(),
-        tool_invocations: std::sync::atomic::AtomicU64::new(0),
-    })
-}
-
-struct MockBridge {
-    labels: Vec<String>,
-}
-
-impl MockBridge {
-    fn with_windows(labels: &[&str]) -> Self {
-        Self {
-            labels: labels.iter().map(|s| s.to_string()).collect(),
-        }
-    }
-}
-
-impl WebviewBridge for MockBridge {
-    fn eval_webview(&self, _label: Option<&str>, _script: &str) -> Result<(), String> {
-        Err("eval not supported in MockBridge".to_string())
-    }
-
-    fn get_window_states(&self, label: Option<&str>) -> Vec<victauri_core::WindowState> {
-        self.labels
-            .iter()
-            .filter(|l| label.is_none() || label == Some(l.as_str()))
-            .map(|l| victauri_core::WindowState {
-                label: l.clone(),
-                title: format!("{l} title"),
-                url: format!("http://localhost/{l}"),
-                visible: true,
-                focused: l == "main",
-                maximized: false,
-                minimized: false,
-                fullscreen: false,
-                position: (0, 0),
-                size: (800, 600),
-            })
-            .collect()
-    }
-
-    fn list_window_labels(&self) -> Vec<String> {
-        self.labels.clone()
-    }
-
-    fn get_native_handle(&self, _label: Option<&str>) -> Result<isize, String> {
-        Err("native handle not available in tests".to_string())
-    }
-
-    fn manage_window(&self, label: Option<&str>, action: &str) -> Result<String, String> {
-        let target = label.unwrap_or("main");
-        if !self.labels.contains(&target.to_string()) {
-            return Err(format!("window not found: {target}"));
-        }
-        match action {
-            "minimize" | "maximize" | "close" | "focus" | "show" | "hide" | "fullscreen"
-            | "unfullscreen" | "unminimize" | "unmaximize" | "always_on_top"
-            | "not_always_on_top" => Ok(format!("{action} executed")),
-            _ => Err(format!("unknown action: {action}")),
-        }
-    }
-
-    fn resize_window(&self, label: Option<&str>, _width: u32, _height: u32) -> Result<(), String> {
-        let target = label.unwrap_or("main");
-        if !self.labels.contains(&target.to_string()) {
-            return Err(format!("window not found: {target}"));
-        }
-        Ok(())
-    }
-
-    fn move_window(&self, label: Option<&str>, _x: i32, _y: i32) -> Result<(), String> {
-        let target = label.unwrap_or("main");
-        if !self.labels.contains(&target.to_string()) {
-            return Err(format!("window not found: {target}"));
-        }
-        Ok(())
-    }
-
-    fn set_window_title(&self, label: Option<&str>, _title: &str) -> Result<(), String> {
-        let target = label.unwrap_or("main");
-        if !self.labels.contains(&target.to_string()) {
-            return Err(format!("window not found: {target}"));
-        }
-        Ok(())
-    }
-}
+use common::{RejectingMockBridge, test_state};
 
 async fn start_server(state: Arc<VictauriState>, labels: &[&str]) -> String {
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(labels));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(RejectingMockBridge::new(labels));
     let app = build_app(state, bridge);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

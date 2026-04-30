@@ -8,7 +8,7 @@ use tauri::Runtime;
 use crate::VictauriState;
 use crate::bridge::WebviewBridge;
 
-use super::{VictauriMcpHandler, MAX_PENDING_EVALS};
+use super::{MAX_PENDING_EVALS, VictauriMcpHandler};
 
 // ── Server startup ───────────────────────────────────────────────────────────
 

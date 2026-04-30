@@ -1,3 +1,5 @@
+//! DOM snapshot and window state types for webview introspection.
+
 use serde::{Deserialize, Serialize};
 
 /// Current state of a Tauri window including geometry, visibility, and loaded URL.

@@ -1,3 +1,6 @@
+//! Thread-safe command registry with substring search and
+//! natural-language-to-command resolution.
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};

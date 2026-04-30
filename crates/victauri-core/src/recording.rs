@@ -1,9 +1,14 @@
+//! Time-travel recording: captures event streams and state checkpoints
+//! for replay and debugging.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use crate::event::{AppEvent, IpcCall};
+
+const DEFAULT_MAX_CHECKPOINTS: usize = 1000;
 
 /// A snapshot of application state taken at a specific point during recording.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,7 +98,7 @@ impl EventRecorder {
             checkpoints: VecDeque::new(),
             event_counter: 0,
             max_events: self.max_events,
-            max_checkpoints: 1000,
+            max_checkpoints: DEFAULT_MAX_CHECKPOINTS,
         });
         true
     }
@@ -274,7 +279,7 @@ impl EventRecorder {
             checkpoints: session.checkpoints.into_iter().collect(),
             event_counter,
             max_events,
-            max_checkpoints: 1000,
+            max_checkpoints: DEFAULT_MAX_CHECKPOINTS,
         });
     }
 
@@ -300,4 +305,3 @@ impl Default for EventRecorder {
         Self::new(50_000)
     }
 }
-

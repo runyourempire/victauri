@@ -107,7 +107,7 @@ async fn settings_persist() {
 
 ## MCP Tools
 
-Victauri exposes ~20 focused MCP tools across 9 compound tools and 13 standalone tools:
+Victauri exposes 23 MCP tools — 9 compound tools and 14 standalone:
 
 | Tool | What it does |
 |---|---|
@@ -122,6 +122,7 @@ Victauri exposes ~20 focused MCP tools across 9 compound tools and 13 standalone
 | **`css`** | Inject/remove debug CSS |
 | `eval_js` | Execute JavaScript in the webview (async supported) |
 | `dom_snapshot` | Full accessibility tree with ref handles for interaction |
+| `find_elements` | Search for elements by text, role, test ID, or CSS selector without a full snapshot |
 | `invoke_command` | Call any registered Tauri command through real IPC |
 | `screenshot` | Platform-native window capture (no Chromium dependency) |
 | `verify_state` | Compare frontend DOM state against backend state — find divergences |
@@ -131,6 +132,8 @@ Victauri exposes ~20 focused MCP tools across 9 compound tools and 13 standalone
 | `assert_semantic` | Evaluate JS expression and assert against expected value |
 | `resolve_command` | Natural language → matching Tauri command |
 | `get_registry` | List all commands with schemas from `#[inspectable]` |
+| `get_memory_stats` | Real-time process memory statistics from the OS |
+| `get_plugin_info` | Victauri config: port, enabled tools, privacy settings, version |
 
 ## Instrument Your Commands
 

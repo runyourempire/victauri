@@ -1,3 +1,5 @@
+//! Shared value types: ref handles, memory deltas, and verification results.
+
 use serde::{Deserialize, Serialize};
 
 /// A short-lived handle to a DOM element, identified by a semantic ref rather than a CSS selector.

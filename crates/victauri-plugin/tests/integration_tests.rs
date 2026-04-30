@@ -1,3 +1,5 @@
+mod common;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -12,75 +14,7 @@ use victauri_plugin::bridge::WebviewBridge;
 use victauri_plugin::mcp::{VictauriMcpHandler, build_app, build_app_with_options};
 use victauri_plugin::privacy::PrivacyConfig;
 
-// ── Mock Bridge ─────────────────────────────────────────────────────────────
-
-struct MockBridge {
-    windows: Vec<victauri_core::WindowState>,
-}
-
-impl MockBridge {
-    fn with_windows(labels: &[&str]) -> Self {
-        Self {
-            windows: labels
-                .iter()
-                .map(|label| victauri_core::WindowState {
-                    label: label.to_string(),
-                    title: format!("{label} Window"),
-                    url: "http://localhost/".to_string(),
-                    visible: true,
-                    focused: labels.first() == Some(label),
-                    maximized: false,
-                    minimized: false,
-                    fullscreen: false,
-                    position: (100, 100),
-                    size: (800, 600),
-                })
-                .collect(),
-        }
-    }
-}
-
-impl WebviewBridge for MockBridge {
-    fn eval_webview(&self, _label: Option<&str>, _script: &str) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn get_window_states(&self, label: Option<&str>) -> Vec<victauri_core::WindowState> {
-        match label {
-            Some(l) => self
-                .windows
-                .iter()
-                .filter(|w| w.label == l)
-                .cloned()
-                .collect(),
-            None => self.windows.clone(),
-        }
-    }
-
-    fn list_window_labels(&self) -> Vec<String> {
-        self.windows.iter().map(|w| w.label.clone()).collect()
-    }
-
-    fn get_native_handle(&self, _label: Option<&str>) -> Result<isize, String> {
-        Err("native handle not available in mock".to_string())
-    }
-
-    fn manage_window(&self, _label: Option<&str>, action: &str) -> Result<String, String> {
-        Ok(format!("{action} executed"))
-    }
-
-    fn resize_window(&self, _label: Option<&str>, _width: u32, _height: u32) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn move_window(&self, _label: Option<&str>, _x: i32, _y: i32) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn set_window_title(&self, _label: Option<&str>, _title: &str) -> Result<(), String> {
-        Ok(())
-    }
-}
+use common::{SimpleMockBridge, test_state};
 
 // ── Callback Mock Bridge ───────────────────────────────────────────────────
 // A mock that intercepts eval_webview calls, extracts the callback ID from the
@@ -205,23 +139,8 @@ impl WebviewBridge for CallbackMockBridge {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn test_state() -> Arc<VictauriState> {
-    Arc::new(VictauriState {
-        event_log: EventLog::new(1000),
-        registry: CommandRegistry::new(),
-        port: std::sync::atomic::AtomicU16::new(0),
-        pending_evals: Arc::new(Mutex::new(HashMap::new())),
-        recorder: EventRecorder::new(1000),
-        privacy: Default::default(),
-        eval_timeout: std::time::Duration::from_secs(30),
-        shutdown_tx: tokio::sync::watch::channel(false).0,
-        started_at: std::time::Instant::now(),
-        tool_invocations: std::sync::atomic::AtomicU64::new(0),
-    })
-}
-
 async fn start_test_server(state: Arc<VictauriState>, labels: &[&str]) -> String {
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(labels));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(labels));
     let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -234,7 +153,7 @@ async fn start_test_server(state: Arc<VictauriState>, labels: &[&str]) -> String
 }
 
 async fn start_auth_test_server(state: Arc<VictauriState>, labels: &[&str], token: &str) -> String {
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(labels));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(labels));
     let app = build_app_with_options(state, bridge, Some(token.to_string()));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -325,7 +244,7 @@ fn sample_ipc_call(command: &str, result: IpcResult) -> IpcCall {
 #[test]
 fn handler_new_creates_instance() {
     let state = test_state();
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
     let _ = VictauriMcpHandler::new(state, bridge);
 }
 
@@ -334,7 +253,7 @@ fn handler_get_info_has_correct_capabilities() {
     use rmcp::ServerHandler;
 
     let state = test_state();
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
     let handler = VictauriMcpHandler::new(state, bridge);
     let info = handler.get_info();
 
@@ -352,14 +271,14 @@ fn handler_get_info_has_correct_capabilities() {
 
 #[test]
 fn mock_bridge_returns_window_states() {
-    let bridge = MockBridge::with_windows(&["main", "settings"]);
+    let bridge = SimpleMockBridge::new(&["main", "settings"]);
     let states = bridge.get_window_states(None);
     assert_eq!(states.len(), 2);
 }
 
 #[test]
 fn mock_bridge_filters_by_label() {
-    let bridge = MockBridge::with_windows(&["main", "settings"]);
+    let bridge = SimpleMockBridge::new(&["main", "settings"]);
     let states = bridge.get_window_states(Some("settings"));
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].label, "settings");
@@ -367,14 +286,14 @@ fn mock_bridge_filters_by_label() {
 
 #[test]
 fn mock_bridge_returns_empty_for_unknown_label() {
-    let bridge = MockBridge::with_windows(&["main"]);
+    let bridge = SimpleMockBridge::new(&["main"]);
     let states = bridge.get_window_states(Some("nonexistent"));
     assert!(states.is_empty());
 }
 
 #[test]
 fn mock_bridge_list_labels() {
-    let bridge = MockBridge::with_windows(&["alpha", "beta"]);
+    let bridge = SimpleMockBridge::new(&["alpha", "beta"]);
     let mut labels = bridge.list_window_labels();
     labels.sort();
     assert_eq!(labels, vec!["alpha", "beta"]);
@@ -1123,7 +1042,7 @@ async fn state_port_reflected_in_info() {
         tool_invocations: std::sync::atomic::AtomicU64::new(0),
     });
 
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
     let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1193,7 +1112,7 @@ fn builder_custom_port_reflected_in_state() {
 
 #[test]
 fn mock_bridge_native_handle_returns_error() {
-    let bridge = MockBridge::with_windows(&["main"]);
+    let bridge = SimpleMockBridge::new(&["main"]);
     let result = bridge.get_native_handle(Some("main"));
     assert!(result.is_err(), "mock bridge should not have native handle");
 }
@@ -1444,7 +1363,7 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
 
 async fn start_privacy_test_server(config: PrivacyConfig, labels: &[&str]) -> String {
     let state = privacy_state(config);
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(labels));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(labels));
     let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1988,7 +1907,7 @@ async fn mcp_delete_session_terminates() {
 #[tokio::test]
 async fn rate_limiter_returns_429_on_burst() {
     let state = test_state();
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
     let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3743,7 +3662,7 @@ async fn mcp_eval_js_exceeds_pending_limit_returns_error() {
 
     // Use a callback server that does NOT resolve callbacks — we just need
     // the handler to attempt eval_with_return and hit the limit check.
-    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
     let app = build_app(state, bridge);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

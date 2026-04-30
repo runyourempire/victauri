@@ -1,3 +1,6 @@
+//! Cross-boundary verification, ghost command detection, IPC integrity
+//! checks, and semantic test assertions.
+
 use crate::event::{EventLog, IpcResult};
 use crate::registry::CommandRegistry;
 use crate::types::{Divergence, DivergenceSeverity, VerificationResult};

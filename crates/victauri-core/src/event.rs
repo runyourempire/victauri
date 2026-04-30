@@ -1,3 +1,5 @@
+//! Application event types and a thread-safe ring-buffer event log.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
