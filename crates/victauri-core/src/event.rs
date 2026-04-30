@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 /// A single Tauri IPC call with timing, result, and source webview.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IpcCall {
     /// Unique call identifier for correlation.
     pub id: String,
@@ -25,7 +25,7 @@ pub struct IpcCall {
 }
 
 /// Outcome of an IPC call: pending, success with a JSON value, or error.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum IpcResult {
     /// Call is still in flight, awaiting a response.
@@ -37,7 +37,7 @@ pub enum IpcResult {
 }
 
 /// Application event captured by the introspection layer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum AppEvent {

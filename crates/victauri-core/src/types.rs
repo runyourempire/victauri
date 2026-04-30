@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// A short-lived handle to a DOM element, identified by a semantic ref rather than a CSS selector.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RefHandle {
     /// Unique ref identifier (e.g. "e3") assigned during DOM snapshot.
     pub id: String,
@@ -16,7 +16,7 @@ pub struct RefHandle {
 }
 
 /// Memory usage delta measured before and after a command execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MemoryDelta {
     /// Allocated bytes before the command ran.
     pub before_bytes: i64,

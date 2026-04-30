@@ -27,7 +27,7 @@ All checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and ma
 ## Code Style
 
 - `cargo fmt --all` before committing
-- `cargo clippy --workspace --all-targets` must pass with zero warnings (17 pedantic lints enforced at deny level — see `[workspace.lints.clippy]` in `Cargo.toml`)
+- `cargo clippy --workspace --all-targets` must pass with zero warnings (20 clippy lints enforced at deny level — see `[workspace.lints.clippy]` in `Cargo.toml`)
 - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` must pass
 - All public `Result`-returning functions must have `# Errors` doc sections
 - All functions that may panic must have `# Panics` doc sections

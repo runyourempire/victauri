@@ -145,7 +145,7 @@ fn classify_severity(
 // ── Ghost command detection ─────────────────────────────────────────────────
 
 /// Report of ghost commands -- commands that exist on only one side of the IPC boundary.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GhostCommandReport {
     /// Commands found on only the frontend or only the backend.
     pub ghost_commands: Vec<GhostCommand>,
@@ -156,7 +156,7 @@ pub struct GhostCommandReport {
 }
 
 /// A command that exists on only one side of the frontend/backend boundary.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GhostCommand {
     /// Command name as invoked or registered.
     pub name: String,
@@ -167,7 +167,7 @@ pub struct GhostCommand {
 }
 
 /// Indicates which side of the IPC boundary a ghost command was found on.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum GhostSource {
     /// Command invoked from the frontend but not registered in the backend.
@@ -240,7 +240,7 @@ pub fn detect_ghost_commands(
 // ── IPC round-trip integrity ────────────────────────────────────────────────
 
 /// Summary of IPC round-trip health: completed, pending, errored, and stale calls.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IpcIntegrityReport {
     /// Total number of IPC calls analyzed.
     pub total_calls: usize,
@@ -259,7 +259,7 @@ pub struct IpcIntegrityReport {
 }
 
 /// An IPC call that has been pending longer than the staleness threshold.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StaleCall {
     /// Unique call identifier.
     pub id: String,
@@ -274,7 +274,7 @@ pub struct StaleCall {
 }
 
 /// An IPC call that returned an error result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ErrorCall {
     /// Unique call identifier.
     pub id: String,
@@ -421,7 +421,7 @@ impl std::fmt::Display for AssertionCondition {
 }
 
 /// A declarative assertion to evaluate against a runtime value (e.g. "equals", "truthy").
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SemanticAssertion {
     /// Human-readable label describing what is being asserted.
     pub label: String,
@@ -432,7 +432,7 @@ pub struct SemanticAssertion {
 }
 
 /// Outcome of evaluating a semantic assertion against an actual value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AssertionResult {
     /// Label from the original assertion.
     pub label: String,

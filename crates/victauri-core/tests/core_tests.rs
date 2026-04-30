@@ -569,20 +569,16 @@ fn ipc_integrity_mixed_status() {
 #[test]
 fn command_info_with_intent_fields() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save_settings".to_string(),
-        plugin: None,
-        description: Some("Persist user settings".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: true,
-        intent: Some("persist user preferences to storage".to_string()),
-        category: Some("settings".to_string()),
-        examples: vec![
-            "save my settings".to_string(),
-            "persist preferences".to_string(),
-        ],
-    });
+    let mut cmd = CommandInfo::new("save_settings")
+        .with_description("Persist user settings")
+        .with_intent("persist user preferences to storage")
+        .with_category("settings");
+    cmd.is_async = true;
+    cmd.examples = vec![
+        "save my settings".to_string(),
+        "persist preferences".to_string(),
+    ];
+    registry.register(cmd);
 
     let cmd = registry.get("save_settings").unwrap();
     assert_eq!(
@@ -596,28 +592,8 @@ fn command_info_with_intent_fields() {
 #[test]
 fn resolve_command_by_name() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save_file".to_string(),
-        plugin: None,
-        description: Some("Save a file to disk".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
-    registry.register(CommandInfo {
-        name: "delete_file".to_string(),
-        plugin: None,
-        description: Some("Delete a file".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save_file").with_description("Save a file to disk"));
+    registry.register(CommandInfo::new("delete_file").with_description("Delete a file"));
 
     let results = registry.resolve("save file");
     assert!(!results.is_empty());
@@ -628,28 +604,18 @@ fn resolve_command_by_name() {
 #[test]
 fn resolve_command_by_intent() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "update_profile".to_string(),
-        plugin: None,
-        description: Some("Update user profile".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: Some("modify the current user's profile information".to_string()),
-        category: Some("user".to_string()),
-        examples: vec!["change my name".to_string()],
-    });
-    registry.register(CommandInfo {
-        name: "get_profile".to_string(),
-        plugin: None,
-        description: Some("Fetch user profile".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: Some("retrieve the current user's profile data".to_string()),
-        category: Some("user".to_string()),
-        examples: vec![],
-    });
+    let mut cmd = CommandInfo::new("update_profile")
+        .with_description("Update user profile")
+        .with_intent("modify the current user's profile information")
+        .with_category("user");
+    cmd.examples = vec!["change my name".to_string()];
+    registry.register(cmd);
+    registry.register(
+        CommandInfo::new("get_profile")
+            .with_description("Fetch user profile")
+            .with_intent("retrieve the current user's profile data")
+            .with_category("user"),
+    );
 
     let results = registry.resolve("modify profile");
     assert!(!results.is_empty());
@@ -659,17 +625,9 @@ fn resolve_command_by_intent() {
 #[test]
 fn resolve_command_by_example() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "export_data".to_string(),
-        plugin: None,
-        description: Some("Export data to CSV".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec!["download my data as csv".to_string()],
-    });
+    let mut cmd = CommandInfo::new("export_data").with_description("Export data to CSV");
+    cmd.examples = vec!["download my data as csv".to_string()];
+    registry.register(cmd);
 
     let results = registry.resolve("download my data as csv");
     assert!(!results.is_empty());
@@ -679,17 +637,7 @@ fn resolve_command_by_example() {
 #[test]
 fn resolve_command_no_match() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save".to_string(),
-        plugin: None,
-        description: Some("Save data".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save").with_description("Save data"));
 
     let results = registry.resolve("zzz_nonexistent_zzz");
     assert!(results.is_empty());
@@ -1224,17 +1172,10 @@ mod adversarial {
             panic!("intentional panic while holding read lock");
         })
         .join();
-        reg.register(registry::CommandInfo {
-            name: "after_poison".to_string(),
-            plugin: None,
-            description: Some("works after poisoning".to_string()),
-            args: vec![],
-            return_type: None,
-            is_async: false,
-            intent: None,
-            category: None,
-            examples: vec![],
-        });
+        reg.register(
+            registry::CommandInfo::new("after_poison")
+                .with_description("works after poisoning"),
+        );
         assert_eq!(reg.count(), 1);
     }
 
@@ -1266,17 +1207,10 @@ mod adversarial {
             let reg = Arc::clone(&reg);
             handles.push(thread::spawn(move || {
                 for j in 0..10 {
-                    reg.register(registry::CommandInfo {
-                        name: format!("cmd_{i}_{j}"),
-                        plugin: None,
-                        description: Some(format!("Command {i}-{j}")),
-                        args: vec![],
-                        return_type: None,
-                        is_async: false,
-                        intent: None,
-                        category: None,
-                        examples: vec![],
-                    });
+                    reg.register(
+                        registry::CommandInfo::new(format!("cmd_{i}_{j}"))
+                            .with_description(format!("Command {i}-{j}")),
+                    );
                 }
             }));
         }
@@ -1404,17 +1338,7 @@ mod adversarial {
     #[test]
     fn ghost_commands_perfect_match() {
         let registry = CommandRegistry::new();
-        registry.register(registry::CommandInfo {
-            name: "get_settings".to_string(),
-            plugin: None,
-            description: None,
-            args: vec![],
-            return_type: None,
-            is_async: false,
-            intent: None,
-            category: None,
-            examples: vec![],
-        });
+        registry.register(registry::CommandInfo::new("get_settings"));
         let frontend = vec!["get_settings".to_string()];
         let report = detect_ghost_commands(&frontend, &registry);
         assert!(report.ghost_commands.is_empty());
@@ -1423,17 +1347,7 @@ mod adversarial {
     #[test]
     fn ghost_commands_deduplicates_frontend() {
         let registry = CommandRegistry::new();
-        registry.register(registry::CommandInfo {
-            name: "get_settings".to_string(),
-            plugin: None,
-            description: None,
-            args: vec![],
-            return_type: None,
-            is_async: false,
-            intent: None,
-            category: None,
-            examples: vec![],
-        });
+        registry.register(registry::CommandInfo::new("get_settings"));
         let frontend = vec![
             "get_settings".to_string(),
             "get_settings".to_string(),
@@ -1543,17 +1457,7 @@ mod adversarial {
     #[test]
     fn registry_resolve_with_no_match() {
         let reg = CommandRegistry::new();
-        reg.register(registry::CommandInfo {
-            name: "alpha".to_string(),
-            plugin: None,
-            description: None,
-            args: vec![],
-            return_type: None,
-            is_async: false,
-            intent: None,
-            category: None,
-            examples: vec![],
-        });
+        reg.register(registry::CommandInfo::new("alpha"));
         let results = reg.resolve("zzz_nonexistent_query");
         assert!(results.is_empty());
     }
@@ -1561,17 +1465,7 @@ mod adversarial {
     #[test]
     fn registry_resolve_empty_query() {
         let reg = CommandRegistry::new();
-        reg.register(registry::CommandInfo {
-            name: "alpha".to_string(),
-            plugin: None,
-            description: None,
-            args: vec![],
-            return_type: None,
-            is_async: false,
-            intent: None,
-            category: None,
-            examples: vec![],
-        });
+        reg.register(registry::CommandInfo::new("alpha"));
         let results = reg.resolve("");
         assert!(results.is_empty());
     }

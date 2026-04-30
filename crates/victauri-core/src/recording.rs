@@ -12,7 +12,7 @@ use crate::event::{AppEvent, IpcCall};
 const DEFAULT_MAX_CHECKPOINTS: usize = 1000;
 
 /// A snapshot of application state taken at a specific point during recording.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StateCheckpoint {
     /// Unique identifier for this checkpoint.
     pub id: String,
@@ -27,7 +27,7 @@ pub struct StateCheckpoint {
 }
 
 /// A complete recorded session with events and state checkpoints. Serializable for export/import.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecordedSession {
     /// Unique session identifier (UUID).
     pub id: String,
@@ -40,7 +40,7 @@ pub struct RecordedSession {
 }
 
 /// A single event captured during a recording session, with its sequence index.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecordedEvent {
     /// Monotonically increasing sequence number within the recording session.
     pub index: usize,

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
 /// Metadata for a registered Tauri command, including intent and schema information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommandInfo {
     /// Fully qualified command name (e.g. "`get_settings`").
     pub name: String,
@@ -29,7 +29,7 @@ pub struct CommandInfo {
 }
 
 /// Schema for a single argument of a registered command.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CommandArg {
     /// Argument name as declared in the Rust function signature.
     pub name: String,
