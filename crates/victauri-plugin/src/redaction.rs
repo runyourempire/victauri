@@ -91,6 +91,10 @@ impl Redactor {
     }
 
     /// Build a redactor with custom patterns, logging a warning and skipping any invalid patterns.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the built-in redaction patterns fail to compile (this is a bug).
     pub fn new(custom_patterns: &[String]) -> Self {
         let builtin_set =
             RegexSet::new(BUILTIN_PATTERNS).expect("builtin redaction patterns must compile");

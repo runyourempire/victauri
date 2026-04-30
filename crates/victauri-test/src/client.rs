@@ -625,6 +625,10 @@ impl VictauriClient {
 
 /// Assert that a JSON value at the given pointer equals the expected value.
 ///
+/// # Panics
+///
+/// Panics if the value at `pointer` is missing or does not equal `expected`.
+///
 /// ```rust,ignore
 /// let state = client.get_window_state(Some("main")).await?;
 /// victauri_test::assert_json_eq(&state, "/visible", &json!(true));
@@ -639,6 +643,10 @@ pub fn assert_json_eq(value: &Value, pointer: &str, expected: &Value) {
 }
 
 /// Assert that a JSON value at the given pointer is truthy (not null/false/0/"").
+///
+/// # Panics
+///
+/// Panics if the value at `pointer` is missing, null, false, zero, or empty.
 pub fn assert_json_truthy(value: &Value, pointer: &str) {
     let actual = value.pointer(pointer);
     let is_truthy = match actual {
@@ -657,6 +665,10 @@ pub fn assert_json_truthy(value: &Value, pointer: &str) {
 }
 
 /// Assert that an accessibility audit has zero violations.
+///
+/// # Panics
+///
+/// Panics if the audit contains any violations.
 pub fn assert_no_a11y_violations(audit: &Value) {
     let violations = audit
         .pointer("/summary/violations")
@@ -669,6 +681,10 @@ pub fn assert_no_a11y_violations(audit: &Value) {
 }
 
 /// Assert that all performance metrics are within budget.
+///
+/// # Panics
+///
+/// Panics if load time exceeds `max_load_ms` or heap usage exceeds `max_heap_mb`.
 pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb: f64) {
     if let Some(load) = metrics
         .pointer("/navigation/load_event_ms")
@@ -692,6 +708,10 @@ pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb:
 }
 
 /// Assert that IPC integrity is healthy (no stale or errored calls).
+///
+/// # Panics
+///
+/// Panics if the integrity check reports an unhealthy state.
 pub fn assert_ipc_healthy(integrity: &Value) {
     let healthy = integrity
         .get("healthy")
@@ -705,6 +725,10 @@ pub fn assert_ipc_healthy(integrity: &Value) {
 }
 
 /// Assert that state verification passed with no divergences.
+///
+/// # Panics
+///
+/// Panics if the verification reports any divergences.
 pub fn assert_state_matches(verification: &Value) {
     let passed = verification
         .get("passed")

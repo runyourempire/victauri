@@ -509,6 +509,10 @@ impl VictauriBuilder {
 /// all introspection tools are completely stripped — zero overhead, zero attack surface.
 ///
 /// For custom configuration, use `VictauriBuilder::new().port(8080).build()`.
+///
+/// # Panics
+///
+/// Panics if the default builder configuration is invalid (this is a bug).
 #[must_use]
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     VictauriBuilder::new()
