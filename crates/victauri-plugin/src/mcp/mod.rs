@@ -302,7 +302,7 @@ impl VictauriMcpHandler {
     ) -> CallToolResult {
         let threshold = params.stale_threshold_ms.unwrap_or(5000);
         let code = format!(
-            r#"return (function() {{
+            r"return (function() {{
                 var log = window.__VICTAURI__?.getIpcLog() || [];
                 var now = Date.now();
                 var threshold = {threshold};
@@ -318,7 +318,7 @@ impl VictauriMcpHandler {
                     stale_calls: stale.slice(0, 20),
                     errored_calls: errored.slice(0, 20)
                 }};
-            }})()"#
+            }})()"
         );
         self.eval_bridge(&code, params.webview_label.as_deref())
             .await
@@ -1181,12 +1181,12 @@ impl VictauriMcpHandler {
                 };
                 let limit = params.limit.unwrap_or(20);
                 let code = format!(
-                    r#"return (function() {{
+                    r"return (function() {{
                         var log = window.__VICTAURI__?.getIpcLog() || [];
                         var slow = log.filter(function(c) {{ return (c.duration_ms || 0) > {threshold}; }});
                         slow.sort(function(a, b) {{ return (b.duration_ms || 0) - (a.duration_ms || 0); }});
                         return {{ threshold_ms: {threshold}, count: Math.min(slow.length, {limit}), calls: slow.slice(0, {limit}) }};
-                    }})()"#,
+                    }})()",
                 );
                 self.eval_bridge_redacted(&code, None).await
             }
@@ -1289,7 +1289,7 @@ impl VictauriMcpHandler {
         };
 
         let inject = format!(
-            r#"
+            r"
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
@@ -1304,7 +1304,7 @@ impl VictauriMcpHandler {
                     }});
                 }}
             }})();
-            "#
+            "
         );
 
         if let Err(e) = self.bridge.eval_webview(webview_label, &inject) {

@@ -16,7 +16,7 @@ pub async fn victauri_eval_js<R: Runtime>(
     state.pending_evals.lock().await.insert(id.clone(), tx);
 
     let inject = format!(
-        r#"
+        r"
         (async () => {{
             try {{
                 const __result = await (async () => {{ {code} }})();
@@ -31,7 +31,7 @@ pub async fn victauri_eval_js<R: Runtime>(
                 }});
             }}
         }})();
-        "#
+        "
     );
 
     if let Err(e) = webview.eval(&inject) {
@@ -75,7 +75,7 @@ pub async fn victauri_dom_snapshot<R: Runtime>(
     state.pending_evals.lock().await.insert(id.clone(), tx);
 
     let inject = format!(
-        r#"
+        r"
         (async () => {{
             try {{
                 const snapshot = window.__VICTAURI__?.snapshot();
@@ -90,7 +90,7 @@ pub async fn victauri_dom_snapshot<R: Runtime>(
                 }});
             }}
         }})();
-        "#
+        "
     );
 
     if let Err(e) = webview.eval(&inject) {

@@ -1943,7 +1943,7 @@ async fn rate_limiter_returns_429_on_burst() {
 
 #[test]
 fn extract_eval_id_parses_uuid() {
-    let script = r#"(async () => { id: '550e8400-e29b-41d4-a716-446655440000', result: ... })();"#;
+    let script = r"(async () => { id: '550e8400-e29b-41d4-a716-446655440000', result: ... })();";
     assert_eq!(
         extract_eval_id(script),
         Some("550e8400-e29b-41d4-a716-446655440000".to_string())
@@ -1957,14 +1957,14 @@ fn extract_eval_id_returns_none_for_missing() {
 
 #[test]
 fn extract_inner_code_gets_user_code() {
-    let script = r#"
+    let script = r"
         (async () => {
             try {
                 const __result = await (async () => { return document.title })();
                 await window.__TAURI__.core.invoke(...)
             } catch ...
         })();
-    "#;
+    ";
     assert_eq!(extract_inner_code(script), "return document.title");
 }
 

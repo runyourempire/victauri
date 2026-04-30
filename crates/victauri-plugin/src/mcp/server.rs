@@ -245,7 +245,7 @@ async fn event_drain_loop(
         }
 
         let inject = format!(
-            r#"
+            r"
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
@@ -260,7 +260,7 @@ async fn event_drain_loop(
                     }});
                 }}
             }})();
-            "#
+            "
         );
 
         if bridge.eval_webview(None, &inject).is_err() {
