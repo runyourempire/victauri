@@ -3580,3 +3580,249 @@ async fn adversarial_navigate_privacy_disabled() {
         "navigate should be blocked by privacy config, got: {body}"
     );
 }
+
+// ── Gap 1: logs compound tool actions ─────────────────────────────────────
+
+#[tokio::test]
+async fn mcp_logs_console_action() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getConsoleLogs") {
+            r#"[{"level":"warn","message":"deprecation warning","timestamp":2000}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "logs",
+        serde_json::json!({"action": "console"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("deprecation warning"),
+        "logs console should return mocked console entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_logs_network_action() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getNetworkLog") {
+            r#"[{"url":"https://cdn.example.com/bundle.js","method":"GET","status":200,"duration_ms":42}]"#
+                .to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "logs",
+        serde_json::json!({"action": "network"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("cdn.example.com"),
+        "logs network should return mocked network entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_logs_ipc_action() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("getIpcLog") {
+            r#"[{"command":"save_settings","status":200,"duration_ms":12}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "logs",
+        serde_json::json!({"action": "ipc"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("save_settings"),
+        "logs ipc should return mocked IPC entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_logs_slow_ipc_action() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        // slow_ipc calls getIpcLog internally in its JS code
+        if code.contains("getIpcLog") {
+            r#"[{"command":"heavy_query","status":200,"duration_ms":500},{"command":"fast_cmd","status":200,"duration_ms":2}]"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "logs",
+        serde_json::json!({"action": "slow_ipc", "threshold_ms": 100}),
+    )
+    .await;
+
+    // The slow_ipc action runs JS that filters and sorts locally in the webview,
+    // so the mock returns the raw IPC log and the injected JS filters it.
+    // The result should contain threshold_ms from the computed JS.
+    assert!(
+        body.contains("threshold_ms") || body.contains("heavy_query"),
+        "logs slow_ipc should return slow IPC results, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_logs_unknown_action_returns_error() {
+    let state = test_state();
+    let base = start_test_server(state, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "logs",
+        serde_json::json!({"action": "nonexistent"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("unknown action 'nonexistent' for logs"),
+        "logs with unknown action should return structured error, got: {body}"
+    );
+    assert!(
+        body.contains("CHECK_INPUT"),
+        "logs unknown action error should include CHECK_INPUT hint, got: {body}"
+    );
+}
+
+// ── Gap 2: MAX_PENDING_EVALS limit ───────────────────────────────────────
+
+#[tokio::test]
+async fn mcp_eval_js_exceeds_pending_limit_returns_error() {
+    let state = test_state();
+
+    // Fill up the pending_evals map to the limit (100) with dummy senders.
+    // These will never be resolved, simulating stalled eval requests.
+    {
+        let mut pending = state.pending_evals.lock().await;
+        for i in 0..100 {
+            let (tx, _rx) = tokio::sync::oneshot::channel::<String>();
+            pending.insert(format!("dummy-{i}"), tx);
+        }
+    }
+
+    // Use a callback server that does NOT resolve callbacks — we just need
+    // the handler to attempt eval_with_return and hit the limit check.
+    let bridge: Arc<dyn WebviewBridge> = Arc::new(MockBridge::with_windows(&["main"]));
+    let app = build_app(state, bridge);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let base = format!("http://{addr}");
+    let (client, session_id) = mcp_session(&base).await;
+
+    // Now try to call eval_js — it should fail because pending_evals is full.
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "eval_js",
+        serde_json::json!({"code": "document.title"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("too many concurrent eval requests") || body.contains("limit: 100"),
+        "eval_js should fail when pending evals at capacity, got: {body}"
+    );
+}
+
+// ── Gap 3: logs compound tool validation / structured errors ─────────────
+
+#[tokio::test]
+async fn mcp_interact_missing_ref_id_returns_structured_error() {
+    let state = test_state();
+    let base = start_test_server(state, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "interact",
+        serde_json::json!({"action": "click"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("missing required parameter 'ref_id'"),
+        "interact click without ref_id should return structured error, got: {body}"
+    );
+    assert!(
+        body.contains("CHECK_INPUT"),
+        "missing param error should include CHECK_INPUT hint, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn mcp_interact_unknown_action_returns_structured_error() {
+    let state = test_state();
+    let base = start_test_server(state, &["main"]).await;
+    let (client, session_id) = mcp_session(&base).await;
+
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "interact",
+        serde_json::json!({"action": "nonexistent"}),
+    )
+    .await;
+
+    assert!(
+        body.contains("unknown action 'nonexistent' for interact"),
+        "interact with unknown action should return structured error, got: {body}"
+    );
+    assert!(
+        body.contains("click"),
+        "error should list valid actions including 'click', got: {body}"
+    );
+    assert!(
+        body.contains("CHECK_INPUT"),
+        "unknown action error should include CHECK_INPUT hint, got: {body}"
+    );
+}
