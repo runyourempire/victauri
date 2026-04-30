@@ -91,16 +91,6 @@ pub struct NavigationLogParams {
     pub webview_label: Option<String>,
 }
 
-/// Parameters for the `navigate` tool.
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct NavigateParams {
-    /// URL to navigate to.
-    pub url: String,
-    /// Target webview label.
-    pub webview_label: Option<String>,
-}
-
 // ── Dialogs ────────────────────────────────────────────────────────────────
 
 /// Parameters for the `get_dialog_log` tool.

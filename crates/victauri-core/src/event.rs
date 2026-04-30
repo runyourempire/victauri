@@ -111,6 +111,7 @@ impl EventLog {
     }
 
     /// Returns the maximum number of events this log can hold.
+    #[must_use]
     pub fn capacity(&self) -> usize {
         self.max_capacity
     }
@@ -125,6 +126,7 @@ impl EventLog {
     }
 
     /// Returns a clone of all events currently in the log.
+    #[must_use]
     pub fn snapshot(&self) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -135,6 +137,7 @@ impl EventLog {
     }
 
     /// Returns a paginated slice of events starting at `offset`, up to `limit` items.
+    #[must_use]
     pub fn snapshot_range(&self, offset: usize, limit: usize) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -147,6 +150,7 @@ impl EventLog {
     }
 
     /// Returns all events with a timestamp at or after the given time.
+    #[must_use]
     pub fn since(&self, timestamp: DateTime<Utc>) -> Vec<AppEvent> {
         self.events
             .lock()
@@ -158,6 +162,7 @@ impl EventLog {
     }
 
     /// Returns all IPC call events, filtering out non-IPC events.
+    #[must_use]
     pub fn ipc_calls(&self) -> Vec<IpcCall> {
         self.events
             .lock()
@@ -171,6 +176,7 @@ impl EventLog {
     }
 
     /// Returns IPC calls with a timestamp at or after the given time.
+    #[must_use]
     pub fn ipc_calls_since(&self, timestamp: DateTime<Utc>) -> Vec<IpcCall> {
         self.events
             .lock()
@@ -184,11 +190,13 @@ impl EventLog {
     }
 
     /// Returns the number of events currently in the log.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.events.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Returns true if the log contains no events.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.events
             .lock()

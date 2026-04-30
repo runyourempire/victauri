@@ -1642,7 +1642,7 @@ mod adversarial {
             rec.record_event(make_ipc(&i.to_string(), "default"));
         }
         assert_eq!(rec.event_count(), 100);
-        rec.stop();
+        let _ = rec.stop();
     }
 
     // ── Registry sort stability with equal scores ───────────────────────
@@ -2558,14 +2558,14 @@ fn recorder_is_recording_lifecycle() {
     assert!(recorder.is_recording());
 
     // Stop recording
-    recorder.stop();
+    let _ = recorder.stop();
     assert!(!recorder.is_recording());
 
     // Can restart
     recorder.start("s2".to_string()).unwrap();
     assert!(recorder.is_recording());
 
-    recorder.stop();
+    let _ = recorder.stop();
     assert!(!recorder.is_recording());
 }
 

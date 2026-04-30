@@ -106,6 +106,7 @@ impl EventRecorder {
     }
 
     /// Stops the active recording and returns the completed session, or None if not recording.
+    #[must_use]
     pub fn stop(&self) -> Option<RecordedSession> {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         rec.take().map(|r| RecordedSession {
@@ -117,6 +118,7 @@ impl EventRecorder {
     }
 
     /// Returns true if a recording session is currently active.
+    #[must_use]
     pub fn is_recording(&self) -> bool {
         self.recording
             .lock()
@@ -171,6 +173,7 @@ impl EventRecorder {
     }
 
     /// Returns the number of events recorded so far, or 0 if not recording.
+    #[must_use]
     pub fn event_count(&self) -> usize {
         self.recording
             .lock()
@@ -181,6 +184,7 @@ impl EventRecorder {
     }
 
     /// Returns the number of checkpoints created so far, or 0 if not recording.
+    #[must_use]
     pub fn checkpoint_count(&self) -> usize {
         self.recording
             .lock()
@@ -191,6 +195,7 @@ impl EventRecorder {
     }
 
     /// Returns all events with an index >= the given value.
+    #[must_use]
     pub fn events_since(&self, index: usize) -> Vec<RecordedEvent> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -205,6 +210,7 @@ impl EventRecorder {
     }
 
     /// Returns events whose timestamps fall within the given inclusive range.
+    #[must_use]
     pub fn events_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<RecordedEvent> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -219,6 +225,7 @@ impl EventRecorder {
     }
 
     /// Returns all checkpoints from the active recording session.
+    #[must_use]
     pub fn get_checkpoints(&self) -> Vec<StateCheckpoint> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
@@ -273,6 +280,7 @@ impl EventRecorder {
     }
 
     /// Snapshot the current recording as a session WITHOUT stopping it.
+    #[must_use]
     pub fn export(&self) -> Option<RecordedSession> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         rec.as_ref().map(|r| RecordedSession {
@@ -300,6 +308,7 @@ impl EventRecorder {
     }
 
     /// Extracts IPC calls in order from the recording for replay.
+    #[must_use]
     pub fn ipc_replay_sequence(&self) -> Vec<IpcCall> {
         let rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         match rec.as_ref() {
