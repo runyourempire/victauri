@@ -18,6 +18,12 @@ description = "Verified Introspection & Control for Tauri Applications"
 authors = ["4DA Systems <hello@4da.ai>"]
 rust-version = "1.88"
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
 victauri-macros = { version = "0.1.0", path = "crates/victauri-macros" }

@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 #![warn(missing_docs)]
 //! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
 //!

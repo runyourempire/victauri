@@ -1,5 +1,3 @@
-#![deny(unsafe_code)]
-
 use std::time::Duration;
 
 struct Config {

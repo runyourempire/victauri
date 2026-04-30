@@ -28,3 +28,6 @@ proc-macro2 = { workspace = true }
 [dev-dependencies]
 victauri-core = { workspace = true }
 victauri-macros = { path = "." }
+
+[lints]
+workspace = true
