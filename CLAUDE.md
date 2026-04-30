@@ -14,7 +14,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 cargo build --workspace                               # Build all crates
 cargo test --workspace                                # Run all 414+ tests
 cargo bench -p victauri-core                          # Criterion benchmarks (13)
-cargo clippy --workspace --all-targets                # Lint (17 pedantic lints enforced)
+cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format check
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps  # Generate docs (zero warnings)
 ```
