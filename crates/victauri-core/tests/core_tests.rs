@@ -1552,7 +1552,6 @@ mod adversarial {
 
     // ── Assertion edge cases ────────────────────────────────────────────
 
-
     #[test]
     fn assertion_truthy_edge_cases() {
         let truthy = verification::SemanticAssertion {

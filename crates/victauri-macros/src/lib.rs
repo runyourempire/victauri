@@ -5,10 +5,10 @@ use syn::{ItemFn, parse_macro_input};
 /// Marks a `#[tauri::command]` as inspectable by Victauri.
 ///
 /// Generates a companion `<fn_name>__schema()` function that returns a
-/// [`CommandInfo`](victauri_core::registry::CommandInfo) with the command's
-/// name, description, argument types, return type, and NL-resolution metadata.
+/// `victauri_core::CommandInfo` with the command's name, description,
+/// argument types, return type, and NL-resolution metadata.
 /// Call the schema function at setup time to register the command in the
-/// Victauri [`CommandRegistry`](victauri_core::CommandRegistry).
+/// Victauri `CommandRegistry`.
 ///
 /// # Example
 ///

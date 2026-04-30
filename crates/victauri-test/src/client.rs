@@ -229,14 +229,20 @@ impl VictauriClient {
 
     /// Fill an input element with a value.
     pub async fn fill(&mut self, ref_id: &str, value: &str) -> Result<Value, TestError> {
-        self.call_tool("input", json!({"action": "fill", "ref_id": ref_id, "value": value}))
-            .await
+        self.call_tool(
+            "input",
+            json!({"action": "fill", "ref_id": ref_id, "value": value}),
+        )
+        .await
     }
 
     /// Type text into an element character by character.
     pub async fn type_text(&mut self, ref_id: &str, text: &str) -> Result<Value, TestError> {
-        self.call_tool("input", json!({"action": "type_text", "ref_id": ref_id, "text": text}))
-            .await
+        self.call_tool(
+            "input",
+            json!({"action": "type_text", "ref_id": ref_id, "text": text}),
+        )
+        .await
     }
 
     /// List all window labels.
