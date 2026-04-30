@@ -82,6 +82,36 @@ pub struct ElementBounds {
 
 impl DomSnapshot {
     /// Renders the snapshot as indented accessible text (roles, names, and ref handles).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::{DomSnapshot, DomElement};
+    /// use std::collections::HashMap;
+    ///
+    /// let snapshot = DomSnapshot {
+    ///     webview_label: "main".to_string(),
+    ///     elements: vec![DomElement {
+    ///         ref_id: "e1".to_string(),
+    ///         tag: "button".to_string(),
+    ///         role: Some("button".to_string()),
+    ///         name: Some("Submit".to_string()),
+    ///         text: None,
+    ///         value: None,
+    ///         enabled: true,
+    ///         visible: true,
+    ///         focusable: true,
+    ///         bounds: None,
+    ///         children: vec![],
+    ///         attributes: HashMap::new(),
+    ///     }],
+    ///     ref_map: HashMap::new(),
+    /// };
+    /// let text = snapshot.to_accessible_text(0);
+    /// assert!(text.contains("button"));
+    /// assert!(text.contains("Submit"));
+    /// assert!(text.contains("[ref=e1]"));
+    /// ```
     #[must_use]
     pub fn to_accessible_text(&self, indent: usize) -> String {
         let mut output = String::new();

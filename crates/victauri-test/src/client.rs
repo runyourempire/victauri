@@ -629,9 +629,14 @@ impl VictauriClient {
 ///
 /// Panics if the value at `pointer` is missing or does not equal `expected`.
 ///
-/// ```rust,ignore
-/// let state = client.get_window_state(Some("main")).await?;
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let state = json!({"visible": true, "title": "My App"});
 /// victauri_test::assert_json_eq(&state, "/visible", &json!(true));
+/// victauri_test::assert_json_eq(&state, "/title", &json!("My App"));
 /// ```
 pub fn assert_json_eq(value: &Value, pointer: &str, expected: &Value) {
     let actual = value.pointer(pointer);
@@ -647,6 +652,17 @@ pub fn assert_json_eq(value: &Value, pointer: &str, expected: &Value) {
 /// # Panics
 ///
 /// Panics if the value at `pointer` is missing, null, false, zero, or empty.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let value = json!({"active": true, "name": "test", "count": 42});
+/// victauri_test::assert_json_truthy(&value, "/active");
+/// victauri_test::assert_json_truthy(&value, "/name");
+/// victauri_test::assert_json_truthy(&value, "/count");
+/// ```
 pub fn assert_json_truthy(value: &Value, pointer: &str) {
     let actual = value.pointer(pointer);
     let is_truthy = match actual {
@@ -669,6 +685,15 @@ pub fn assert_json_truthy(value: &Value, pointer: &str) {
 /// # Panics
 ///
 /// Panics if the audit contains any violations.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let audit = json!({"summary": {"violations": 0, "passes": 12}});
+/// victauri_test::assert_no_a11y_violations(&audit);
+/// ```
 pub fn assert_no_a11y_violations(audit: &Value) {
     let violations = audit
         .pointer("/summary/violations")
@@ -685,6 +710,18 @@ pub fn assert_no_a11y_violations(audit: &Value) {
 /// # Panics
 ///
 /// Panics if load time exceeds `max_load_ms` or heap usage exceeds `max_heap_mb`.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let metrics = json!({
+///     "navigation": {"load_event_ms": 450.0},
+///     "js_heap": {"used_mb": 12.5}
+/// });
+/// victauri_test::assert_performance_budget(&metrics, 1000.0, 50.0);
+/// ```
 pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb: f64) {
     if let Some(load) = metrics
         .pointer("/navigation/load_event_ms")
@@ -712,6 +749,15 @@ pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb:
 /// # Panics
 ///
 /// Panics if the integrity check reports an unhealthy state.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let integrity = json!({"healthy": true, "stale_calls": 0, "error_calls": 0});
+/// victauri_test::assert_ipc_healthy(&integrity);
+/// ```
 pub fn assert_ipc_healthy(integrity: &Value) {
     let healthy = integrity
         .get("healthy")
@@ -729,6 +775,15 @@ pub fn assert_ipc_healthy(integrity: &Value) {
 /// # Panics
 ///
 /// Panics if the verification reports any divergences.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+///
+/// let verification = json!({"passed": true, "divergences": []});
+/// victauri_test::assert_state_matches(&verification);
+/// ```
 pub fn assert_state_matches(verification: &Value) {
     let passed = verification
         .get("passed")
