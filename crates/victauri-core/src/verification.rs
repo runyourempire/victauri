@@ -177,6 +177,30 @@ pub enum GhostSource {
 }
 
 /// Detects commands that exist on only one side of the IPC boundary (frontend vs registry).
+///
+/// # Examples
+///
+/// ```
+/// use victauri_core::verification::detect_ghost_commands;
+/// use victauri_core::{CommandRegistry, CommandInfo};
+///
+/// let registry = CommandRegistry::new();
+/// registry.register(CommandInfo {
+///     name: "save".to_string(),
+///     plugin: None,
+///     description: Some("Save data".to_string()),
+///     args: vec![],
+///     return_type: None,
+///     is_async: false,
+///     intent: None,
+///     category: None,
+///     examples: vec![],
+/// });
+///
+/// let frontend_cmds = vec!["save".to_string(), "delete".to_string()];
+/// let report = detect_ghost_commands(&frontend_cmds, &registry);
+/// assert_eq!(report.ghost_commands.len(), 1); // "delete" is frontend-only
+/// ```
 #[must_use]
 pub fn detect_ghost_commands(
     frontend_commands: &[String],
@@ -275,6 +299,18 @@ pub struct ErrorCall {
 }
 
 /// Analyzes the event log for IPC health, flagging stale and errored calls.
+///
+/// # Examples
+///
+/// ```
+/// use victauri_core::verification::check_ipc_integrity;
+/// use victauri_core::EventLog;
+///
+/// let log = EventLog::new(100);
+/// let report = check_ipc_integrity(&log, 5000);
+/// assert!(report.healthy);
+/// assert_eq!(report.total_calls, 0);
+/// ```
 #[must_use]
 pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> IpcIntegrityReport {
     let now = Utc::now();

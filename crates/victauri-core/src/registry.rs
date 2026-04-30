@@ -122,6 +122,28 @@ impl CommandRegistry {
     }
 
     /// Searches commands by substring match on name or description (case-insensitive).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::{CommandRegistry, CommandInfo};
+    ///
+    /// let registry = CommandRegistry::new();
+    /// registry.register(CommandInfo {
+    ///     name: "get_settings".to_string(),
+    ///     plugin: None,
+    ///     description: Some("Retrieve app settings".to_string()),
+    ///     args: vec![],
+    ///     return_type: None,
+    ///     is_async: false,
+    ///     intent: None,
+    ///     category: None,
+    ///     examples: vec![],
+    /// });
+    /// let results = registry.search("settings");
+    /// assert_eq!(results.len(), 1);
+    /// assert_eq!(results[0].name, "get_settings");
+    /// ```
     #[must_use]
     pub fn search(&self, query: &str) -> Vec<CommandInfo> {
         let query_lower = query.to_lowercase();
@@ -141,6 +163,28 @@ impl CommandRegistry {
     }
 
     /// Resolves a natural-language query to commands ranked by relevance score.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::{CommandRegistry, CommandInfo};
+    ///
+    /// let registry = CommandRegistry::new();
+    /// registry.register(CommandInfo {
+    ///     name: "get_settings".to_string(),
+    ///     plugin: None,
+    ///     description: Some("Retrieve app settings".to_string()),
+    ///     args: vec![],
+    ///     return_type: None,
+    ///     is_async: false,
+    ///     intent: Some("fetch configuration".to_string()),
+    ///     category: Some("settings".to_string()),
+    ///     examples: vec![],
+    /// });
+    /// let results = registry.resolve("get settings");
+    /// assert!(!results.is_empty());
+    /// assert!(results[0].score > 0.0);
+    /// ```
     #[must_use]
     pub fn resolve(&self, query: &str) -> Vec<ScoredCommand> {
         let query_lower = query.to_lowercase();

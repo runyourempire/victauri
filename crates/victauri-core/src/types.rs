@@ -29,6 +29,21 @@ pub struct MemoryDelta {
 }
 
 /// Result of comparing frontend and backend state for cross-boundary verification.
+///
+/// # Examples
+///
+/// ```
+/// use victauri_core::VerificationResult;
+/// use serde_json::json;
+///
+/// let result = VerificationResult {
+///     passed: true,
+///     frontend_state: json!({"count": 1}),
+///     backend_state: json!({"count": 1}),
+///     divergences: vec![],
+/// };
+/// assert!(result.passed);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationResult {
     /// True if no divergences were found between frontend and backend state.

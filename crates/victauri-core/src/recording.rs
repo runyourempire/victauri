@@ -92,6 +92,16 @@ impl EventRecorder {
     /// # Errors
     ///
     /// Returns [`VictauriError::RecordingAlreadyActive`] if a session is already in progress.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::EventRecorder;
+    ///
+    /// let recorder = EventRecorder::new(1000);
+    /// recorder.start("session-1".to_string()).unwrap();
+    /// assert!(recorder.is_recording());
+    /// ```
     pub fn start(&self, session_id: String) -> crate::error::Result<()> {
         let mut rec = self
             .recording
@@ -113,6 +123,18 @@ impl EventRecorder {
     }
 
     /// Stops the active recording and returns the completed session, or None if not recording.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::EventRecorder;
+    ///
+    /// let recorder = EventRecorder::new(1000);
+    /// recorder.start("session-1".to_string()).unwrap();
+    /// let session = recorder.stop().expect("should return session");
+    /// assert_eq!(session.id, "session-1");
+    /// assert!(!recorder.is_recording());
+    /// ```
     #[must_use]
     pub fn stop(&self) -> Option<RecordedSession> {
         let mut rec = self

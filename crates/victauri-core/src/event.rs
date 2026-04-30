@@ -118,6 +118,22 @@ impl EventLog {
     }
 
     /// Appends an event, evicting the oldest if at capacity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::{EventLog, AppEvent};
+    /// use chrono::Utc;
+    ///
+    /// let log = EventLog::new(100);
+    /// log.push(AppEvent::StateChange {
+    ///     key: "theme".to_string(),
+    ///     timestamp: Utc::now(),
+    ///     caused_by: None,
+    /// });
+    /// assert_eq!(log.len(), 1);
+    /// assert_eq!(log.snapshot().len(), 1);
+    /// ```
     pub fn push(&self, event: AppEvent) {
         let mut events = self
             .events
@@ -166,6 +182,25 @@ impl EventLog {
     }
 
     /// Returns all IPC call events, filtering out non-IPC events.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::{EventLog, AppEvent, IpcCall, IpcResult};
+    /// use chrono::Utc;
+    ///
+    /// let log = EventLog::new(100);
+    /// log.push(AppEvent::Ipc(IpcCall {
+    ///     id: "c1".to_string(),
+    ///     command: "greet".to_string(),
+    ///     timestamp: Utc::now(),
+    ///     duration_ms: Some(5),
+    ///     result: IpcResult::Ok(serde_json::json!("hi")),
+    ///     arg_size_bytes: 0,
+    ///     webview_label: "main".to_string(),
+    /// }));
+    /// assert_eq!(log.ipc_calls().len(), 1);
+    /// ```
     #[must_use]
     pub fn ipc_calls(&self) -> Vec<IpcCall> {
         self.events
