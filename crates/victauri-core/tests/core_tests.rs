@@ -1526,6 +1526,30 @@ mod adversarial {
         assert!(report.ghost_commands.is_empty());
     }
 
+    #[test]
+    fn ghost_commands_deduplicates_frontend() {
+        let registry = CommandRegistry::new();
+        registry.register(registry::CommandInfo {
+            name: "get_settings".to_string(),
+            plugin: None,
+            description: None,
+            args: vec![],
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: vec![],
+        });
+        let frontend = vec![
+            "get_settings".to_string(),
+            "get_settings".to_string(),
+            "get_settings".to_string(),
+        ];
+        let report = detect_ghost_commands(&frontend, &registry);
+        assert!(report.ghost_commands.is_empty());
+        assert_eq!(report.total_frontend_commands, 1);
+    }
+
     // ── Assertion edge cases ────────────────────────────────────────────
 
     #[test]

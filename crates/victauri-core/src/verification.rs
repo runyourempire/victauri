@@ -211,7 +211,7 @@ pub fn detect_ghost_commands(
 
     GhostCommandReport {
         ghost_commands,
-        total_frontend_commands: frontend_commands.len(),
+        total_frontend_commands: frontend_set.len(),
         total_registry_commands: registry_list.len(),
     }
 }
