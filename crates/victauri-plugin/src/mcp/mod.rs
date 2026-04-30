@@ -30,7 +30,7 @@ use crate::bridge::WebviewBridge;
 
 use helpers::{
     js_string, json_result, missing_param, sanitize_css_color, tool_disabled, tool_error,
-    tool_not_found, validate_url,
+    validate_url,
 };
 
 pub use backend_params::*;
@@ -525,8 +525,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn interact(&self, Parameters(params): Parameters<InteractParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "click" => {
+        match params.action {
+            InteractAction::Click => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "click"),
@@ -535,7 +535,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "double_click" => {
+            InteractAction::DoubleClick => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "double_click"),
@@ -547,7 +547,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "hover" => {
+            InteractAction::Hover => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "hover"),
@@ -556,7 +556,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "focus" => {
+            InteractAction::Focus => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "focus"),
@@ -568,7 +568,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "scroll_into_view" => {
+            InteractAction::ScrollIntoView => {
                 let ref_arg = params
                     .ref_id
                     .as_ref()
@@ -580,7 +580,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "select_option" => {
+            InteractAction::SelectOption => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "select_option"),
@@ -596,18 +596,6 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            other => tool_not_found(
-                other,
-                "interact",
-                &[
-                    "click",
-                    "double_click",
-                    "hover",
-                    "focus",
-                    "scroll_into_view",
-                    "select_option",
-                ],
-            ),
         }
     }
 
@@ -621,8 +609,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn input(&self, Parameters(params): Parameters<InputParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "fill" => {
+        match params.action {
+            InputAction::Fill => {
                 if !self.state.privacy.is_tool_enabled("fill") {
                     return tool_disabled("fill");
                 }
@@ -642,7 +630,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "type_text" => {
+            InputAction::TypeText => {
                 if !self.state.privacy.is_tool_enabled("type_text") {
                     return tool_disabled("type_text");
                 }
@@ -662,7 +650,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "press_key" => {
+            InputAction::PressKey => {
                 let key = match &params.key {
                     Some(k) => k,
                     None => return missing_param("key", "press_key"),
@@ -671,7 +659,6 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            other => tool_not_found(other, "input", &["fill", "type_text", "press_key"]),
         }
     }
 
@@ -686,29 +673,29 @@ impl VictauriMcpHandler {
     )]
     async fn window(&self, Parameters(params): Parameters<WindowParams>) -> CallToolResult {
         self.track_tool_call();
-        match params.action.as_str() {
-            "get_state" => {
+        match params.action {
+            WindowAction::GetState => {
                 let states = self.bridge.get_window_states(params.label.as_deref());
                 json_result(&states)
             }
-            "list" => {
+            WindowAction::List => {
                 let labels = self.bridge.list_window_labels();
                 json_result(&labels)
             }
-            "manage" => {
+            WindowAction::Manage => {
                 let manage_action = match &params.manage_action {
                     Some(a) => a,
                     None => return missing_param("manage_action", "manage"),
                 };
                 match self
                     .bridge
-                    .manage_window(params.label.as_deref(), manage_action)
+                    .manage_window(params.label.as_deref(), manage_action.as_str())
                 {
                     Ok(msg) => CallToolResult::success(vec![Content::text(msg)]),
                     Err(e) => tool_error(e),
                 }
             }
-            "resize" => {
+            WindowAction::Resize => {
                 let width = match params.width {
                     Some(w) => w,
                     None => return missing_param("width", "resize"),
@@ -729,7 +716,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            "move_to" => {
+            WindowAction::MoveTo => {
                 let x = match params.x {
                     Some(v) => v,
                     None => return missing_param("x", "move_to"),
@@ -746,7 +733,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            "set_title" => {
+            WindowAction::SetTitle => {
                 let title = match &params.title {
                     Some(t) => t,
                     None => return missing_param("title", "set_title"),
@@ -759,18 +746,6 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_not_found(
-                other,
-                "window",
-                &[
-                    "get_state",
-                    "list",
-                    "manage",
-                    "resize",
-                    "move_to",
-                    "set_title",
-                ],
-            ),
         }
     }
 
@@ -784,8 +759,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn storage(&self, Parameters(params): Parameters<StorageParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "get" => {
+        match params.action {
+            StorageAction::Get => {
                 let method = match params.storage_type.unwrap_or(StorageType::Local) {
                     StorageType::Session => "getSessionStorage",
                     StorageType::Local => "getLocalStorage",
@@ -799,7 +774,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge_redacted(&code, params.webview_label.as_deref())
                     .await
             }
-            "set" => {
+            StorageAction::Set => {
                 if !self.state.privacy.is_tool_enabled("set_storage") {
                     return tool_disabled("set_storage");
                 }
@@ -825,7 +800,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "delete" => {
+            StorageAction::Delete => {
                 if !self.state.privacy.is_tool_enabled("delete_storage") {
                     return tool_disabled("delete_storage");
                 }
@@ -841,14 +816,13 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "get_cookies" => {
+            StorageAction::GetCookies => {
                 self.eval_bridge_redacted(
                     "return window.__VICTAURI__?.getCookies()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            other => tool_not_found(other, "storage", &["get", "set", "delete", "get_cookies"]),
         }
     }
 
@@ -862,8 +836,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn navigate(&self, Parameters(params): Parameters<NavigateParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "go_to" => {
+        match params.action {
+            NavigateAction::GoTo => {
                 if !self.state.privacy.is_tool_enabled("navigate") {
                     return tool_disabled("navigate");
                 }
@@ -878,21 +852,21 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "go_back" => {
+            NavigateAction::GoBack => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.navigateBack()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "get_history" => {
+            NavigateAction::GetHistory => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.getNavigationLog()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "set_dialog_response" => {
+            NavigateAction::SetDialogResponse => {
                 if !self.state.privacy.is_tool_enabled("set_dialog_response") {
                     return tool_disabled("set_dialog_response");
                 }
@@ -917,24 +891,13 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "get_dialog_log" => {
+            NavigateAction::GetDialogLog => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.getDialogLog()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            other => tool_not_found(
-                other,
-                "navigate",
-                &[
-                    "go_to",
-                    "go_back",
-                    "get_history",
-                    "set_dialog_response",
-                    "get_dialog_log",
-                ],
-            ),
         }
     }
 
@@ -949,8 +912,8 @@ impl VictauriMcpHandler {
     )]
     async fn recording(&self, Parameters(params): Parameters<RecordingParams>) -> CallToolResult {
         self.track_tool_call();
-        match params.action.as_str() {
-            "start" => {
+        match params.action {
+            RecordingAction::Start => {
                 let session_id = params
                     .session_id
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -965,11 +928,11 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e.to_string()),
                 }
             }
-            "stop" => match self.state.recorder.stop() {
+            RecordingAction::Stop => match self.state.recorder.stop() {
                 Some(session) => json_result(&session),
                 None => tool_error("no recording is active"),
             },
-            "checkpoint" => {
+            RecordingAction::Checkpoint => {
                 let id = match params.checkpoint_id {
                     Some(id) => id,
                     None => return missing_param("checkpoint_id", "checkpoint"),
@@ -991,18 +954,18 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e.to_string()),
                 }
             }
-            "list_checkpoints" => {
+            RecordingAction::ListCheckpoints => {
                 let checkpoints = self.state.recorder.get_checkpoints();
                 json_result(&checkpoints)
             }
-            "get_events" => {
+            RecordingAction::GetEvents => {
                 let events = self
                     .state
                     .recorder
                     .events_since(params.since_index.unwrap_or(0));
                 json_result(&events)
             }
-            "events_between" => {
+            RecordingAction::EventsBetween => {
                 let from = match &params.from {
                     Some(f) => f,
                     None => return missing_param("from", "events_between"),
@@ -1016,11 +979,11 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e.to_string()),
                 }
             }
-            "get_replay" => {
+            RecordingAction::GetReplay => {
                 let calls = self.state.recorder.ipc_replay_sequence();
                 json_result(&calls)
             }
-            "export" => match self.state.recorder.export() {
+            RecordingAction::Export => match self.state.recorder.export() {
                 Some(s) => {
                     let json = serde_json::to_string_pretty(&s)
                         .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"));
@@ -1028,7 +991,7 @@ impl VictauriMcpHandler {
                 }
                 None => tool_error("no recording is active — start one first"),
             },
-            "import" => {
+            RecordingAction::Import => {
                 let session_json = match &params.session_json {
                     Some(j) => j,
                     None => return missing_param("session_json", "import"),
@@ -1049,21 +1012,6 @@ impl VictauriMcpHandler {
                 self.state.recorder.import(session);
                 CallToolResult::success(vec![Content::text(result.to_string())])
             }
-            other => tool_not_found(
-                other,
-                "recording",
-                &[
-                    "start",
-                    "stop",
-                    "checkpoint",
-                    "list_checkpoints",
-                    "get_events",
-                    "events_between",
-                    "get_replay",
-                    "export",
-                    "import",
-                ],
-            ),
         }
     }
 
@@ -1077,8 +1025,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn inspect(&self, Parameters(params): Parameters<InspectParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "get_styles" => {
+        match params.action {
+            InspectAction::GetStyles => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "get_styles"),
@@ -1098,7 +1046,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "get_bounding_boxes" => {
+            InspectAction::GetBoundingBoxes => {
                 let ref_ids = match &params.ref_ids {
                     Some(ids) => ids,
                     None => return missing_param("ref_ids", "get_bounding_boxes"),
@@ -1111,7 +1059,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "highlight" => {
+            InspectAction::Highlight => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
                     None => return missing_param("ref_id", "highlight"),
@@ -1136,39 +1084,27 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "clear_highlights" => {
+            InspectAction::ClearHighlights => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.clearHighlights()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "audit_accessibility" => {
+            InspectAction::AuditAccessibility => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.auditAccessibility()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "get_performance" => {
+            InspectAction::GetPerformance => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.getPerformanceMetrics()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            other => tool_not_found(
-                other,
-                "inspect",
-                &[
-                    "get_styles",
-                    "get_bounding_boxes",
-                    "highlight",
-                    "clear_highlights",
-                    "audit_accessibility",
-                    "get_performance",
-                ],
-            ),
         }
     }
 
@@ -1182,8 +1118,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn css(&self, Parameters(params): Parameters<CssParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "inject" => {
+        match params.action {
+            CssAction::Inject => {
                 if !self.state.privacy.is_tool_enabled("inject_css") {
                     return tool_disabled("inject_css");
                 }
@@ -1195,14 +1131,13 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "remove" => {
+            CssAction::Remove => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.removeInjectedCss()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            other => tool_not_found(other, "css", &["inject", "remove"]),
         }
     }
 
@@ -1216,8 +1151,8 @@ impl VictauriMcpHandler {
         )
     )]
     async fn logs(&self, Parameters(params): Parameters<LogsParams>) -> CallToolResult {
-        match params.action.as_str() {
-            "console" => {
+        match params.action {
+            LogsAction::Console => {
                 let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
                 let code = if since_arg.is_empty() {
                     "return window.__VICTAURI__?.getConsoleLogs()".to_string()
@@ -1227,7 +1162,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge_redacted(&code, params.webview_label.as_deref())
                     .await
             }
-            "network" => {
+            LogsAction::Network => {
                 let filter_arg = params
                     .filter
                     .as_ref()
@@ -1242,7 +1177,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge_redacted(&code, params.webview_label.as_deref())
                     .await
             }
-            "ipc" => {
+            LogsAction::Ipc => {
                 let limit_arg = params.limit.map(|l| format!("{l}")).unwrap_or_default();
                 let code = if limit_arg.is_empty() {
                     "return window.__VICTAURI__?.getIpcLog()".to_string()
@@ -1252,21 +1187,21 @@ impl VictauriMcpHandler {
                 self.eval_bridge_redacted(&code, params.webview_label.as_deref())
                     .await
             }
-            "navigation" => {
+            LogsAction::Navigation => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.getNavigationLog()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "dialogs" => {
+            LogsAction::Dialogs => {
                 self.eval_bridge(
                     "return window.__VICTAURI__?.getDialogLog()",
                     params.webview_label.as_deref(),
                 )
                 .await
             }
-            "events" => {
+            LogsAction::Events => {
                 let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
                 let code = if since_arg.is_empty() {
                     "return window.__VICTAURI__?.getEventStream()".to_string()
@@ -1276,7 +1211,7 @@ impl VictauriMcpHandler {
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
-            "slow_ipc" => {
+            LogsAction::SlowIpc => {
                 let threshold = match params.threshold_ms {
                     Some(t) => t,
                     None => return missing_param("threshold_ms", "slow_ipc"),
@@ -1292,19 +1227,6 @@ impl VictauriMcpHandler {
                 );
                 self.eval_bridge_redacted(&code, None).await
             }
-            other => tool_not_found(
-                other,
-                "logs",
-                &[
-                    "console",
-                    "network",
-                    "ipc",
-                    "navigation",
-                    "dialogs",
-                    "events",
-                    "slow_ipc",
-                ],
-            ),
         }
     }
 }

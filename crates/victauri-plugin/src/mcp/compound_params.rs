@@ -71,11 +71,29 @@ impl DialogAction {
 
 // ── interact ────────────────────────────────────────────────────────────────
 
+/// Action for the compound `interact` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractAction {
+    /// Click an element.
+    Click,
+    /// Double-click an element.
+    DoubleClick,
+    /// Hover over an element.
+    Hover,
+    /// Focus an element.
+    Focus,
+    /// Scroll an element into view.
+    ScrollIntoView,
+    /// Select an option in a `<select>` element.
+    SelectOption,
+}
+
 /// Parameters for the compound `interact` tool (click, hover, focus, scroll, select).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InteractParams {
     /// Action to perform: click, double_click, hover, focus, scroll_into_view, select_option.
-    pub action: String,
+    pub action: InteractAction,
     /// Ref handle ID from a DOM snapshot (e.g. "e5"). Required for click, double_click, hover, focus, select_option.
     pub ref_id: Option<String>,
     /// Option values for select_option action.
@@ -90,11 +108,23 @@ pub struct InteractParams {
 
 // ── input ───────────────────────────────────────────────────────────────────
 
+/// Action for the compound `input` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InputAction {
+    /// Set an input element's value directly.
+    Fill,
+    /// Type text character-by-character.
+    TypeText,
+    /// Press a keyboard key.
+    PressKey,
+}
+
 /// Parameters for the compound `input` tool (fill, type_text, press_key).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InputParams {
     /// Action to perform: fill, type_text, press_key.
-    pub action: String,
+    pub action: InputAction,
     /// Ref handle ID of the target element. Required for fill and type_text.
     pub ref_id: Option<String>,
     /// Value to set (for fill action).
@@ -109,15 +139,84 @@ pub struct InputParams {
 
 // ── window ──────────────────────────────────────────────────────────────────
 
+/// Action for the compound `window` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowAction {
+    /// Get the current state of a window.
+    GetState,
+    /// List all window labels.
+    List,
+    /// Manage a window (minimize, maximize, close, etc.).
+    Manage,
+    /// Resize a window.
+    Resize,
+    /// Move a window to a new position.
+    MoveTo,
+    /// Set a window's title.
+    SetTitle,
+}
+
+/// Window management sub-action for the `manage` action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ManageAction {
+    /// Minimize the window.
+    Minimize,
+    /// Restore from minimized state.
+    Unminimize,
+    /// Maximize the window.
+    Maximize,
+    /// Restore from maximized state.
+    Unmaximize,
+    /// Close the window.
+    Close,
+    /// Focus the window.
+    Focus,
+    /// Show the window.
+    Show,
+    /// Hide the window.
+    Hide,
+    /// Enter fullscreen mode.
+    Fullscreen,
+    /// Exit fullscreen mode.
+    Unfullscreen,
+    /// Set the window to always be on top.
+    AlwaysOnTop,
+    /// Remove the always-on-top flag.
+    NotAlwaysOnTop,
+}
+
+impl ManageAction {
+    /// Returns the snake_case string for bridge consumption.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Minimize => "minimize",
+            Self::Unminimize => "unminimize",
+            Self::Maximize => "maximize",
+            Self::Unmaximize => "unmaximize",
+            Self::Close => "close",
+            Self::Focus => "focus",
+            Self::Show => "show",
+            Self::Hide => "hide",
+            Self::Fullscreen => "fullscreen",
+            Self::Unfullscreen => "unfullscreen",
+            Self::AlwaysOnTop => "always_on_top",
+            Self::NotAlwaysOnTop => "not_always_on_top",
+        }
+    }
+}
+
 /// Parameters for the compound `window` tool (get_state, list, manage, resize, move, title).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WindowParams {
     /// Action to perform: get_state, list, manage, resize, move_to, set_title.
-    pub action: String,
+    pub action: WindowAction,
     /// Target window label.
     pub label: Option<String>,
     /// Window management action (for manage): minimize, unminimize, maximize, unmaximize, close, focus, show, hide, fullscreen, unfullscreen, always_on_top, not_always_on_top.
-    pub manage_action: Option<String>,
+    pub manage_action: Option<ManageAction>,
     /// Width in logical pixels (for resize).
     pub width: Option<u32>,
     /// Height in logical pixels (for resize).
@@ -132,11 +231,25 @@ pub struct WindowParams {
 
 // ── storage ─────────────────────────────────────────────────────────────────
 
+/// Action for the compound `storage` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageAction {
+    /// Read a value from storage.
+    Get,
+    /// Write a value to storage.
+    Set,
+    /// Delete a value from storage.
+    Delete,
+    /// Get all cookies.
+    GetCookies,
+}
+
 /// Parameters for the compound `storage` tool (get, set, delete, get_cookies).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageParams {
     /// Action to perform: get, set, delete, get_cookies.
-    pub action: String,
+    pub action: StorageAction,
     /// Storage type for get/set/delete. Defaults to local if omitted.
     pub storage_type: Option<StorageType>,
     /// Key to read, write, or delete.
@@ -149,11 +262,27 @@ pub struct StorageParams {
 
 // ── navigate ────────────────────────────────────────────────────────────────
 
+/// Action for the compound `navigate` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum NavigateAction {
+    /// Navigate to a URL.
+    GoTo,
+    /// Navigate back in browser history.
+    GoBack,
+    /// Get the navigation history log.
+    GetHistory,
+    /// Set an auto-response for browser dialogs.
+    SetDialogResponse,
+    /// Get the dialog event log.
+    GetDialogLog,
+}
+
 /// Parameters for the compound `navigate` tool (go_to, go_back, history, dialogs).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NavigateParams {
     /// Action to perform: go_to, go_back, get_history, set_dialog_response, get_dialog_log.
-    pub action: String,
+    pub action: NavigateAction,
     /// URL to navigate to (for go_to action).
     pub url: Option<String>,
     /// Dialog type (for set_dialog_response).
@@ -168,11 +297,35 @@ pub struct NavigateParams {
 
 // ── recording ───────────────────────────────────────────────────────────────
 
+/// Action for the compound `recording` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingAction {
+    /// Begin recording events.
+    Start,
+    /// Stop recording and return the session.
+    Stop,
+    /// Save a state checkpoint.
+    Checkpoint,
+    /// List all checkpoints in the current session.
+    ListCheckpoints,
+    /// Get events since an index.
+    GetEvents,
+    /// Get events between two checkpoints.
+    EventsBetween,
+    /// Get an IPC replay sequence.
+    GetReplay,
+    /// Export the current session as JSON.
+    Export,
+    /// Import a previously exported session.
+    Import,
+}
+
 /// Parameters for the compound `recording` tool (start, stop, checkpoint, replay, export, import).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecordingParams {
     /// Action to perform: start, stop, checkpoint, list_checkpoints, get_events, events_between, get_replay, export, import.
-    pub action: String,
+    pub action: RecordingAction,
     /// Session ID (for start — optional, UUID generated if omitted).
     pub session_id: Option<String>,
     /// Checkpoint ID (for checkpoint, required).
@@ -193,11 +346,29 @@ pub struct RecordingParams {
 
 // ── inspect ─────────────────────────────────────────────────────────────────
 
+/// Action for the compound `inspect` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InspectAction {
+    /// Get computed CSS styles for an element.
+    GetStyles,
+    /// Get bounding boxes for elements.
+    GetBoundingBoxes,
+    /// Add a debug highlight overlay to an element.
+    Highlight,
+    /// Remove all debug highlight overlays.
+    ClearHighlights,
+    /// Run an accessibility audit.
+    AuditAccessibility,
+    /// Get performance metrics (timing, heap, DOM).
+    GetPerformance,
+}
+
 /// Parameters for the compound `inspect` tool (styles, bounding boxes, highlight, a11y, perf).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InspectParams {
     /// Action to perform: get_styles, get_bounding_boxes, highlight, clear_highlights, audit_accessibility, get_performance.
-    pub action: String,
+    pub action: InspectAction,
     /// Ref handle ID (for get_styles, highlight).
     pub ref_id: Option<String>,
     /// List of ref handle IDs (for get_bounding_boxes).
@@ -215,11 +386,21 @@ pub struct InspectParams {
 
 // ── css ─────────────────────────────────────────────────────────────────────
 
+/// Action for the compound `css` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CssAction {
+    /// Inject custom CSS into the page.
+    Inject,
+    /// Remove previously injected CSS.
+    Remove,
+}
+
 /// Parameters for the compound `css` tool (inject, remove).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CssParams {
     /// Action to perform: inject, remove.
-    pub action: String,
+    pub action: CssAction,
     /// CSS text to inject (for inject action).
     pub css: Option<String>,
     /// Target webview label.
@@ -228,11 +409,31 @@ pub struct CssParams {
 
 // ── logs ────────────────────────────────────────────────────────────────────
 
+/// Action for the compound `logs` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LogsAction {
+    /// Get captured console.log/warn/error entries.
+    Console,
+    /// Get intercepted fetch/XHR network requests.
+    Network,
+    /// Get IPC call log.
+    Ipc,
+    /// Get URL change history.
+    Navigation,
+    /// Get alert/confirm/prompt dialog events.
+    Dialogs,
+    /// Get combined event stream.
+    Events,
+    /// Find slow IPC calls exceeding a threshold.
+    SlowIpc,
+}
+
 /// Parameters for the compound `logs` tool (console, network, ipc, navigation, dialogs, events).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct LogsParams {
     /// Action to perform: console, network, ipc, navigation, dialogs, events, slow_ipc.
-    pub action: String,
+    pub action: LogsAction,
     /// Only return entries after this Unix timestamp in milliseconds (for console, events).
     pub since: Option<f64>,
     /// Filter by URL substring (for network).

@@ -3636,12 +3636,12 @@ async fn mcp_logs_unknown_action_returns_error() {
     .await;
 
     assert!(
-        body.contains("unknown action 'nonexistent' for logs"),
-        "logs with unknown action should return structured error, got: {body}"
+        body.contains("unknown variant"),
+        "logs with unknown action should return deserialization error, got: {body}"
     );
     assert!(
-        body.contains("CHECK_INPUT"),
-        "logs unknown action error should include CHECK_INPUT hint, got: {body}"
+        body.contains("console"),
+        "error should list valid actions including 'console', got: {body}"
     );
 }
 
@@ -3734,15 +3734,11 @@ async fn mcp_interact_unknown_action_returns_structured_error() {
     .await;
 
     assert!(
-        body.contains("unknown action 'nonexistent' for interact"),
-        "interact with unknown action should return structured error, got: {body}"
+        body.contains("unknown variant"),
+        "interact with unknown action should return deserialization error, got: {body}"
     );
     assert!(
         body.contains("click"),
         "error should list valid actions including 'click', got: {body}"
-    );
-    assert!(
-        body.contains("CHECK_INPUT"),
-        "unknown action error should include CHECK_INPUT hint, got: {body}"
     );
 }

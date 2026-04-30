@@ -119,8 +119,8 @@ async fn adversarial_manage_window_invalid_action() {
     )
     .await;
     assert!(
-        body.contains("unknown action"),
-        "expected 'unknown action' error in: {body}"
+        body.contains("unknown variant"),
+        "expected 'unknown variant' deserialization error in: {body}"
     );
 }
 

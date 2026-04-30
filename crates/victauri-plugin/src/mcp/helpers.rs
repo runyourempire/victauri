@@ -60,16 +60,6 @@ pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -
     result
 }
 
-pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> CallToolResult {
-    tool_error_with_hint(
-        format!(
-            "unknown action '{action}' for {tool_name}. Valid actions: {}",
-            valid.join(", ")
-        ),
-        RecoveryHint::CheckInput,
-    )
-}
-
 pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("missing required parameter '{param}' for action '{action}'"),
