@@ -216,7 +216,7 @@ victauri/
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 430+ tests
+cargo test --workspace                                # Run all 435+ tests
 cargo bench -p victauri-core                          # Criterion benchmarks
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format
