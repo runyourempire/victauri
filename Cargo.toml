@@ -38,6 +38,10 @@ unnecessary_raw_string_hashes = "deny"
 if_not_else = "deny"
 missing_panics_doc = "deny"
 items_after_statements = "deny"
+# nursery lints (stable subset)
+derive_partial_eq_without_eq = "deny"
+use_self = "deny"
+redundant_pub_crate = "deny"
 
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }
