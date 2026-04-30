@@ -3,24 +3,24 @@ use rmcp::model::{CallToolResult, Content};
 /// Produce a properly escaped JavaScript string literal (with double quotes).
 /// Uses `serde_json` which handles all special characters: \n, \r, \0, \t,
 /// unicode escapes, quotes, backslashes, etc.
-pub(crate) fn js_string(s: &str) -> String {
+pub fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-pub(crate) fn json_result(value: &impl serde::Serialize) -> CallToolResult {
+pub fn json_result(value: &impl serde::Serialize) -> CallToolResult {
     match serde_json::to_string_pretty(value) {
         Ok(json) => CallToolResult::success(vec![Content::text(json)]),
         Err(e) => tool_error(e.to_string()),
     }
 }
 
-pub(crate) fn tool_error(msg: impl Into<String>) -> CallToolResult {
+pub fn tool_error(msg: impl Into<String>) -> CallToolResult {
     let mut result = CallToolResult::success(vec![Content::text(msg)]);
     result.is_error = Some(true);
     result
 }
 
-pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
+pub fn tool_disabled(name: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("tool '{name}' is disabled by privacy configuration"),
         RecoveryHint::ReportToUser,
@@ -28,7 +28,7 @@ pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum RecoveryHint {
+pub enum RecoveryHint {
     CheckInput,
     ReportToUser,
 }
@@ -42,7 +42,7 @@ impl RecoveryHint {
     }
 }
 
-pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -> CallToolResult {
+pub fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -> CallToolResult {
     let message = msg.into();
     let text = format!(
         "{message}
@@ -55,14 +55,14 @@ pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -
     result
 }
 
-pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
+pub fn missing_param(param: &str, action: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("missing required parameter '{param}' for action '{action}'"),
         RecoveryHint::CheckInput,
     )
 }
 
-pub(crate) fn validate_url(url: &str) -> Result<(), String> {
+pub fn validate_url(url: &str) -> Result<(), String> {
     let trimmed: String = url.chars().filter(|c| !c.is_control()).collect();
     match url::Url::parse(&trimmed) {
         Ok(parsed) => match parsed.scheme() {
@@ -75,7 +75,7 @@ pub(crate) fn validate_url(url: &str) -> Result<(), String> {
     }
 }
 
-pub(crate) fn sanitize_css_color(color: &str) -> Result<String, String> {
+pub fn sanitize_css_color(color: &str) -> Result<String, String> {
     let s = color.trim();
     if s.len() > 100 {
         return Err("CSS color value too long".to_string());

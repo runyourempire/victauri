@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Current state of a Tauri window including geometry, visibility, and loaded URL.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowState {
     /// Tauri window label (e.g. "main", "notification").
     pub label: String,
@@ -62,7 +62,7 @@ pub struct DomElement {
     /// Pixel-level bounding rectangle, if available.
     pub bounds: Option<ElementBounds>,
     /// Nested child elements forming the accessible subtree.
-    pub children: Vec<DomElement>,
+    pub children: Vec<Self>,
     /// Raw HTML attributes on the element.
     pub attributes: std::collections::HashMap<String, String>,
 }

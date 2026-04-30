@@ -29,7 +29,7 @@ pub struct MemoryDelta {
 }
 
 /// Result of comparing frontend and backend state for cross-boundary verification.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationResult {
     /// True if no divergences were found between frontend and backend state.
     pub passed: bool,
@@ -42,7 +42,7 @@ pub struct VerificationResult {
 }
 
 /// A single mismatch between frontend and backend state at a specific JSON path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Divergence {
     /// Dot-separated JSON path where the mismatch occurs (e.g. "settings.theme").
     pub path: String,
