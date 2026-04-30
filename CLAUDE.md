@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build                    # Build all crates
-cargo test                     # Run all tests (317)
+cargo test                     # Run all tests (406)
 cargo bench -p victauri-core   # Criterion benchmarks (13)
 cargo clippy -- -D warnings    # Lint
 cargo fmt --all -- --check     # Format check
@@ -157,10 +157,10 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-29)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.0 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 406 tests pass (120 core + 4 macro + 123 plugin unit + 38 plugin adversarial + 110 plugin integration + 5 watchdog + 6 doctests) + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.0 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 406 tests pass. Zero clippy warnings (`-D warnings`). All crates compile cleanly. + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
 
 ### Live test results (4DA, 2026-04-26):
-Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 55 tools + 3 resources + tool registration checks.**
+Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
 
 **WebView tools:**
 - **eval_js**: `document.title` → `"4DA"`, `typeof __VICTAURI__` → `"object"`, complex `JSON.stringify({url, keys})` → URL + 12 bridge methods. Auto-return prepend verified. Window targeting (`webview_label:"main"`) works.
@@ -226,23 +226,9 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 120 unit tests (including 26 adversarial tests + export/import/truthy-falsy). 13 Criterion benchmarks across 5 groups. All mutex/rwlock calls use poisoning recovery.
 - **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Uses proper `syn::meta` parsing (not string matching). Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
-- **victauri-plugin**: Full MCP server with **55 tools** + 3 resources. Tools organized by category:
-  - **WebView (11)**: eval_js, dom_snapshot, click, double_click, hover, fill, type_text, press_key, select_option, scroll_to, focus_element
-  - **Windows (7)**: get_window_state, list_windows, screenshot, manage_window, resize_window, move_window, set_window_title
-  - **Backend (5)**: invoke_command, get_ipc_log, get_registry, get_memory_stats, get_console_logs
-  - **Network (1)**: get_network_log
-  - **Storage (4)**: get_storage, set_storage, delete_storage, get_cookies
-  - **Navigation (3)**: get_navigation_log, navigate, navigate_back
-  - **Dialogs (2)**: get_dialog_log, set_dialog_response
-  - **Verification (3)**: verify_state, detect_ghost_commands, check_ipc_integrity
-  - **Streaming (1)**: get_event_stream
-  - **Intent (2)**: resolve_command, assert_semantic
-  - **Wait (1)**: wait_for
-  - **Time-Travel (7)**: start_recording, stop_recording, checkpoint, list_checkpoints, get_replay_sequence, get_recorded_events, events_between_checkpoints
-  - **CSS/Style (4)**: get_styles, get_bounding_boxes, inject_css, remove_injected_css
-  - **Visual Debug (2)**: highlight_element, clear_highlights
-  - **Accessibility (1)**: audit_accessibility
-  - **Performance (1)**: get_performance_metrics
+- **victauri-plugin**: Full MCP server with **23 tools** + 3 resources. Tools organized by category:
+  - **Standalone (14)**: eval_js, dom_snapshot, find_elements, invoke_command, screenshot, verify_state, detect_ghost_commands, check_ipc_integrity, wait_for, assert_semantic, resolve_command, get_registry, get_memory_stats, get_plugin_info
+  - **Compound (9)**: interact (click/hover/focus/scroll/select), input (fill/type/press_key), window (get_state/list/manage/resize/move/set_title), storage (get/set/delete/cookies), navigate (go_to/back/history/dialogs), recording (start/stop/checkpoint/events/export/import), inspect (styles/bounds/highlight/a11y/perf), css (inject/remove), logs (console/network/ipc/navigation/dialogs/events/slow_ipc)
   Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge v0.2.0 with IPC interception, network monitoring, storage access, navigation tracking, dialog capture, extended interactions, and waitFor. `EventRecorder` with 50,000 event capacity. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. `VictauriBuilder` for port/capacity/auth configuration + `VICTAURI_PORT`/`VICTAURI_AUTH_TOKEN` env vars. Bearer token auth middleware (**enabled by default** — auto-generates UUID token, case-insensitive per RFC 7235). `auth_disabled()` to opt out. Token-bucket rate limiter (AtomicU64, 100 req/sec default). Privacy layer with command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode. Tool enable/disable via builder. 123 unit tests + 110 integration tests + 38 adversarial tests.
 - **victauri-test**: Typed MCP HTTP client (`VictauriClient`) with auto-session management (initialize + notifications/initialized). 23 convenience methods for tool calls (eval_js, dom_snapshot, click, fill, etc). 6 assertion helpers: `assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`. Supports Bearer token auth via `connect_with_token`. Published to crates.io as standalone crate.
 - **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
@@ -255,7 +241,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - **tools.rs** — Tauri commands still work independently for in-app IPC. Both the MCP tools and Tauri commands use the same `pending_evals` mechanism for JS eval with return.
 - **screenshot.rs** — Windows: `PrintWindow` → `GetDIBits` (BGRA) → RGBA → PNG. macOS: `CGWindowListCreateImage` → `CGBitmapContext` (RGBA) → PNG. Linux: X11 `GetImage` (BGRA ZPixmap) → RGBA via `x11rb`, with Wayland fallback via `grim` subprocess (full-screen capture). All platforms use the same custom PNG encoder with flate2 zlib compression (CRC32 + Adler32).
 - **auth.rs** — Bearer token authentication, **enabled by default**. Auto-generates UUID token on startup if none provided (token logged for user). `auth_disabled()` builder method to explicitly opt out. `require_auth` axum middleware skips `/health` but protects `/mcp` and `/info`. Token from `VictauriBuilder::auth_token()`, `generate_auth_token()`, or `VICTAURI_AUTH_TOKEN` env var.
-- **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.2.0 includes network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, waitFor polling, Playwright-style actionability checks (visible, enabled, non-zero size) for click/doubleClick/hover/fill/type, and **global error capture** (`window.onerror` + `unhandledrejection` → consoleLogs with `[uncaught]` prefix). Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
+- **JS bridge injection** — Uses `js_init_script()` (persistent) instead of `on_webview_ready()` + `eval()` (one-shot). This ensures the bridge survives page navigations in Vite dev mode. MutationObserver init is deferred via `DOMContentLoaded` fallback to avoid crash when `document.documentElement` isn't ready during early script execution. Bridge v0.3.0 includes Playwright-grade actionability (10-point checks + auto-wait), stable WeakRef handles, compact accessible-text snapshots, findElements search, full IPC data capture (request args + response body), network interception (fetch + XMLHttpRequest), navigation tracking (pushState/replaceState/popstate/hashchange), dialog capture with configurable auto-responses, waitFor polling, Playwright-style actionability checks (visible, enabled, non-zero size) for click/doubleClick/hover/fill/type, and **global error capture** (`window.onerror` + `unhandledrejection` → consoleLogs with `[uncaught]` prefix). Log caps: consoleLogs 1000, networkLog 1000, navigationLog 200, dialogLog 100.
 - **IPC interception** — Tauri 2.0 freezes `__TAURI_INTERNALS__` and all its methods (`invoke`, `ipc`, `postMessage`) with `configurable:false, writable:false`. Plugin init scripts run AFTER Tauri's core init, so monkey-patching is impossible. Instead, IPC is derived from the network log: Tauri sends all IPC via `fetch()` to `http://ipc.localhost/<command>`, and our fetch interceptor captures these. `getIpcLog()` filters networkLog entries for `ipc.localhost` URLs, extracts command names from the URL path, and excludes `plugin:victauri|` calls. This approach is robust against Tauri version changes and works on all platforms.
 - **eval auto-return** — `eval_with_return()` auto-prepends `return` to bare expressions (e.g. `document.title` → `return document.title`). Only checks `starts_with("return ")` — NOT `contains("return ")` — so IIFEs with internal returns are handled correctly. Skips statement keywords (`if`, `for`, `const`, etc.).
 - **Multi-window safety** — Default window selection prefers "main" → first visible → any, avoiding silent failures when hidden windows lack plugin capabilities.

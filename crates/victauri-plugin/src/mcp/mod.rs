@@ -55,7 +55,7 @@ const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
 
-const BRIDGE_VERSION: &str = "0.2.0";
+const BRIDGE_VERSION: &str = "0.3.0";
 
 #[derive(Clone)]
 pub struct VictauriMcpHandler {
@@ -70,7 +70,8 @@ impl VictauriMcpHandler {
     // ── Standalone Tools ────────────────────────────────────────────────────
 
     #[tool(
-        description = "Evaluate JavaScript in the Tauri webview and return the result. Async expressions are wrapped automatically."
+        description = "Evaluate JavaScript in the Tauri webview and return the result. Async expressions are wrapped automatically.",
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false, open_world_hint = false)
     )]
     async fn eval_js(&self, Parameters(params): Parameters<EvalJsParams>) -> CallToolResult {
         if !self.state.privacy.is_tool_enabled("eval_js") {
@@ -86,7 +87,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Get the DOM snapshot with stable ref handles. Default: compact accessible text (70-80%% fewer tokens). Set format=\"json\" for full tree. Returns tree + stale_refs (refs invalidated since last snapshot)."
+        description = "Get the DOM snapshot with stable ref handles. Default: compact accessible text (70-80%% fewer tokens). Set format=\"json\" for full tree. Returns tree + stale_refs (refs invalidated since last snapshot).",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn dom_snapshot(&self, Parameters(params): Parameters<SnapshotParams>) -> CallToolResult {
         let format = params.format.as_deref().unwrap_or("compact");
@@ -104,7 +106,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Search for elements by text, role, test_id, CSS selector, or accessible name without a full snapshot. Returns lightweight matches with ref handles."
+        description = "Search for elements by text, role, test_id, CSS selector, or accessible name without a full snapshot. Returns lightweight matches with ref handles.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn find_elements(
         &self,
@@ -143,7 +146,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Invoke a registered Tauri command via IPC, just like the frontend would. Goes through the real IPC pipeline so calls are logged and verifiable. Returns the command's result. Subject to privacy command filtering."
+        description = "Invoke a registered Tauri command via IPC, just like the frontend would. Goes through the real IPC pipeline so calls are logged and verifiable. Returns the command's result. Subject to privacy command filtering.",
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false, open_world_hint = false)
     )]
     async fn invoke_command(
         &self,
@@ -171,7 +175,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error."
+        description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> CallToolResult {
         self.track_tool_call();
@@ -195,7 +200,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Compare frontend state (evaluated via JS expression) against backend state to detect divergences. Returns a VerificationResult with any mismatches."
+        description = "Compare frontend state (evaluated via JS expression) against backend state to detect divergences. Returns a VerificationResult with any mismatches.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn verify_state(
         &self,
@@ -227,7 +233,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads from the JS-side IPC interception log."
+        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads from the JS-side IPC interception log.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn detect_ghost_commands(
         &self,
@@ -258,7 +265,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Check IPC round-trip integrity: find stale (stuck) pending calls and errored calls. Returns health status and lists of problematic IPC calls."
+        description = "Check IPC round-trip integrity: find stale (stuck) pending calls and errored calls. Returns health status and lists of problematic IPC calls.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn check_ipc_integrity(
         &self,
@@ -294,7 +302,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Wait for a condition to be met. Polls at regular intervals until satisfied or timeout. Conditions: text (text appears), text_gone (text disappears), selector (CSS selector matches), selector_gone, url (URL contains value), ipc_idle (no pending IPC calls), network_idle (no pending network requests)."
+        description = "Wait for a condition to be met. Polls at regular intervals until satisfied or timeout. Conditions: text (text appears), text_gone (text disappears), selector (CSS selector matches), selector_gone, url (URL contains value), ipc_idle (no pending IPC calls), network_idle (no pending network requests).",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn wait_for(&self, Parameters(params): Parameters<WaitForParams>) -> CallToolResult {
         let value = params
@@ -319,7 +328,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Run a semantic assertion: evaluate a JS expression and check the result against an expected condition. Conditions: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is."
+        description = "Run a semantic assertion: evaluate a JS expression and check the result against an expected condition. Conditions: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn assert_semantic(
         &self,
@@ -353,7 +363,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Resolve a natural language query to matching Tauri commands. Returns scored results ranked by relevance, using command names, descriptions, intents, categories, and examples."
+        description = "Resolve a natural language query to matching Tauri commands. Returns scored results ranked by relevance, using command names, descriptions, intents, categories, and examples.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn resolve_command(
         &self,
@@ -370,7 +381,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "List or search all registered Tauri commands with their argument schemas."
+        description = "List or search all registered Tauri commands with their argument schemas.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn get_registry(&self, Parameters(params): Parameters<RegistryParams>) -> CallToolResult {
         self.track_tool_call();
@@ -385,7 +397,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Get real-time process memory statistics from the OS (working set, page file usage). On Windows returns detailed metrics; on Linux returns virtual/resident size."
+        description = "Get real-time process memory statistics from the OS (working set, page file usage). On Windows returns detailed metrics; on Linux returns virtual/resident size.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn get_memory_stats(&self) -> CallToolResult {
         self.track_tool_call();
@@ -397,7 +410,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Inspect the Victauri plugin's own configuration: port, enabled/disabled tools, command filters, privacy settings, capacities, and version. Useful for agents to understand their capabilities before acting."
+        description = "Inspect the Victauri plugin's own configuration: port, enabled/disabled tools, command filters, privacy settings, capacities, and version. Useful for agents to understand their capabilities before acting.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn get_plugin_info(&self) -> CallToolResult {
         self.track_tool_call();
@@ -462,7 +476,8 @@ impl VictauriMcpHandler {
     // ── Compound Tools ──────────────────────────────────────────────────────
 
     #[tool(
-        description = "DOM element interactions. Actions: click, double_click, hover, focus, scroll_into_view, select_option. Requires ref_id from a dom_snapshot for most actions."
+        description = "DOM element interactions. Actions: click, double_click, hover, focus, scroll_into_view, select_option. Requires ref_id from a dom_snapshot for most actions.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn interact(&self, Parameters(params): Parameters<InteractParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -573,7 +588,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Text and keyboard input. Actions: fill (set input value), type_text (character-by-character typing), press_key (trigger a keyboard key). Subject to privacy controls."
+        description = "Text and keyboard input. Actions: fill (set input value), type_text (character-by-character typing), press_key (trigger a keyboard key). Subject to privacy controls.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn input(&self, Parameters(params): Parameters<InputParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -648,7 +664,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Window management. Actions: get_state (window positions/sizes/visibility), list (all window labels), manage (minimize/maximize/close/focus/show/hide/fullscreen/always_on_top), resize, move_to, set_title."
+        description = "Window management. Actions: get_state (window positions/sizes/visibility), list (all window labels), manage (minimize/maximize/close/focus/show/hide/fullscreen/always_on_top), resize, move_to, set_title.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn window(&self, Parameters(params): Parameters<WindowParams>) -> CallToolResult {
         self.track_tool_call();
@@ -738,7 +755,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Browser storage operations. Actions: get (read localStorage/sessionStorage), set (write), delete (remove key), get_cookies. Subject to privacy controls for set and delete."
+        description = "Browser storage operations. Actions: get (read localStorage/sessionStorage), set (write), delete (remove key), get_cookies. Subject to privacy controls for set and delete.",
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = false, open_world_hint = false)
     )]
     async fn storage(&self, Parameters(params): Parameters<StorageParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -833,7 +851,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Navigation and dialog control. Actions: go_to (navigate to URL), go_back (browser back), get_history (navigation log), set_dialog_response (auto-respond to alert/confirm/prompt), get_dialog_log (captured dialog events). Subject to privacy controls for go_to and set_dialog_response."
+        description = "Navigation and dialog control. Actions: go_to (navigate to URL), go_back (browser back), get_history (navigation log), set_dialog_response (auto-respond to alert/confirm/prompt), get_dialog_log (captured dialog events). Subject to privacy controls for go_to and set_dialog_response.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn navigate(&self, Parameters(params): Parameters<NavigateParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -924,7 +943,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Time-travel recording. Actions: start (begin recording), stop (end and return session), checkpoint (save state snapshot), list_checkpoints, get_events (since index), events_between (two checkpoints), get_replay (IPC replay sequence), export (session as JSON), import (load session from JSON)."
+        description = "Time-travel recording. Actions: start (begin recording), stop (end and return session), checkpoint (save state snapshot), list_checkpoints, get_events (since index), events_between (two checkpoints), get_replay (IPC replay sequence), export (session as JSON), import (load session from JSON).",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn recording(&self, Parameters(params): Parameters<RecordingParams>) -> CallToolResult {
         self.track_tool_call();
@@ -1045,7 +1065,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "CSS and visual inspection. Actions: get_styles (computed CSS for element), get_bounding_boxes (layout rects), highlight (debug overlay), clear_highlights, audit_accessibility (a11y audit), get_performance (timing/heap/DOM metrics)."
+        description = "CSS and visual inspection. Actions: get_styles (computed CSS for element), get_bounding_boxes (layout rects), highlight (debug overlay), clear_highlights, audit_accessibility (a11y audit), get_performance (timing/heap/DOM metrics).",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn inspect(&self, Parameters(params): Parameters<InspectParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -1159,7 +1180,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "CSS injection. Actions: inject (add custom CSS to page), remove (remove previously injected CSS). Subject to privacy controls."
+        description = "CSS injection. Actions: inject (add custom CSS to page), remove (remove previously injected CSS). Subject to privacy controls.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = false)
     )]
     async fn css(&self, Parameters(params): Parameters<CssParams>) -> CallToolResult {
         match params.action.as_str() {
@@ -1197,7 +1219,8 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Application logs and monitoring. Actions: console (captured console.log/warn/error), network (intercepted fetch/XHR), ipc (IPC call log), navigation (URL change history), dialogs (alert/confirm/prompt events), events (combined event stream), slow_ipc (find slow IPC calls)."
+        description = "Application logs and monitoring. Actions: console (captured console.log/warn/error), network (intercepted fetch/XHR), ipc (IPC call log), navigation (URL change history), dialogs (alert/confirm/prompt events), events (combined event stream), slow_ipc (find slow IPC calls).",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false)
     )]
     async fn logs(&self, Parameters(params): Parameters<LogsParams>) -> CallToolResult {
         match params.action.as_str() {

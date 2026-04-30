@@ -223,7 +223,7 @@ impl VictauriClient {
 
     /// Click an element by ref handle ID.
     pub async fn click(&mut self, ref_id: &str) -> Result<Value, TestError> {
-        self.call_tool("click", json!({"ref_id": ref_id})).await
+        self.call_tool("interact", json!({"action": "click", "ref_id": ref_id})).await
     }
 
     /// Fill an input element with a value.
@@ -240,7 +240,7 @@ impl VictauriClient {
 
     /// List all window labels.
     pub async fn list_windows(&mut self) -> Result<Value, TestError> {
-        self.call_tool("list_windows", json!({})).await
+        self.call_tool("window", json!({"action": "list"})).await
     }
 
     /// Get the state of a specific window (or all windows).
@@ -327,12 +327,12 @@ impl VictauriClient {
 
     /// Run an accessibility audit.
     pub async fn audit_accessibility(&mut self) -> Result<Value, TestError> {
-        self.call_tool("audit_accessibility", json!({})).await
+        self.call_tool("inspect", json!({"action": "audit_accessibility"})).await
     }
 
     /// Get performance metrics (timing, heap, resources).
     pub async fn get_performance_metrics(&mut self) -> Result<Value, TestError> {
-        self.call_tool("get_performance_metrics", json!({})).await
+        self.call_tool("inspect", json!({"action": "get_performance"})).await
     }
 
     /// Get the command registry.
@@ -378,12 +378,53 @@ impl VictauriClient {
 
     /// Stop the recording and return the session.
     pub async fn stop_recording(&mut self) -> Result<Value, TestError> {
-        self.call_tool("stop_recording", json!({})).await
+        self.call_tool("recording", json!({"action": "stop"})).await
     }
 
     /// Export the current recording session as JSON.
     pub async fn export_session(&mut self) -> Result<Value, TestError> {
-        self.call_tool("export_session", json!({})).await
+        self.call_tool("recording", json!({"action": "export"})).await
+    }
+
+
+    /// Search for elements by various criteria without a full snapshot.
+    pub async fn find_elements(&mut self, query: Value) -> Result<Value, TestError> {
+        self.call_tool("find_elements", query).await
+    }
+
+    /// Hover over an element by ref handle.
+    pub async fn hover(&mut self, ref_id: &str) -> Result<Value, TestError> {
+        self.call_tool("interact", json!({"action": "hover", "ref_id": ref_id})).await
+    }
+
+    /// Focus an element by ref handle.
+    pub async fn focus(&mut self, ref_id: &str) -> Result<Value, TestError> {
+        self.call_tool("interact", json!({"action": "focus", "ref_id": ref_id})).await
+    }
+
+    /// Press a keyboard key.
+    pub async fn press_key(&mut self, key: &str) -> Result<Value, TestError> {
+        self.call_tool("input", json!({"action": "press_key", "key": key})).await
+    }
+
+    /// Navigate to a URL.
+    pub async fn navigate(&mut self, url: &str) -> Result<Value, TestError> {
+        self.call_tool("navigate", json!({"action": "go_to", "url": url})).await
+    }
+
+    /// Get logs by type (console, network, ipc, navigation, dialogs).
+    pub async fn logs(&mut self, action: &str, limit: Option<usize>) -> Result<Value, TestError> {
+        self.call_tool("logs", json!({"action": action, "limit": limit})).await
+    }
+
+    /// Scroll an element into view by ref handle.
+    pub async fn scroll_to(&mut self, ref_id: &str) -> Result<Value, TestError> {
+        self.call_tool("interact", json!({"action": "scroll_into_view", "ref_id": ref_id})).await
+    }
+
+    /// Select option(s) in a <select> element.
+    pub async fn select_option(&mut self, ref_id: &str, values: &[&str]) -> Result<Value, TestError> {
+        self.call_tool("interact", json!({"action": "select_option", "ref_id": ref_id, "values": values})).await
     }
 
     /// Get the server base URL.
