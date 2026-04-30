@@ -461,11 +461,13 @@ impl VictauriClient {
     }
 
     /// Get the server base URL.
+    #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
 
     /// Get the MCP session ID.
+    #[must_use]
     pub fn session_id(&self) -> &str {
         &self.session_id
     }

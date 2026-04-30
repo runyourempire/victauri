@@ -1,10 +1,11 @@
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 // ── Enums ──────────────────────────────────────────────────────────────────
 
 /// Condition to poll for in the wait_for tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WaitCondition {
     /// Wait for text to appear in the page.
@@ -36,6 +37,12 @@ impl WaitCondition {
             Self::IpcIdle => "ipc_idle",
             Self::NetworkIdle => "network_idle",
         }
+    }
+}
+
+impl fmt::Display for WaitCondition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

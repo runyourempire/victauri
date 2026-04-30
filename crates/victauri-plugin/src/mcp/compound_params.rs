@@ -1,10 +1,11 @@
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 // ── Enums ──────────────────────────────────────────────────────────────────
 
 /// Web storage type for browser storage operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageType {
     /// Browser localStorage (persistent across sessions).
@@ -24,8 +25,17 @@ impl StorageType {
     }
 }
 
+impl fmt::Display for StorageType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local => f.write_str("local"),
+            Self::Session => f.write_str("session"),
+        }
+    }
+}
+
 /// Browser dialog type for dialog response configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DialogType {
     /// JavaScript `alert()` dialog.
@@ -48,8 +58,14 @@ impl DialogType {
     }
 }
 
+impl fmt::Display for DialogType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Action to take on a browser dialog.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DialogAction {
     /// Accept the dialog (click OK/Yes).
@@ -69,10 +85,16 @@ impl DialogAction {
     }
 }
 
+impl fmt::Display for DialogAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 // ── interact ────────────────────────────────────────────────────────────────
 
 /// Action for the compound `interact` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InteractAction {
     /// Click an element.
@@ -87,6 +109,19 @@ pub enum InteractAction {
     ScrollIntoView,
     /// Select an option in a `<select>` element.
     SelectOption,
+}
+
+impl fmt::Display for InteractAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Click => f.write_str("click"),
+            Self::DoubleClick => f.write_str("double_click"),
+            Self::Hover => f.write_str("hover"),
+            Self::Focus => f.write_str("focus"),
+            Self::ScrollIntoView => f.write_str("scroll_into_view"),
+            Self::SelectOption => f.write_str("select_option"),
+        }
+    }
 }
 
 /// Parameters for the compound `interact` tool (click, hover, focus, scroll, select).
@@ -109,7 +144,7 @@ pub struct InteractParams {
 // ── input ───────────────────────────────────────────────────────────────────
 
 /// Action for the compound `input` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InputAction {
     /// Set an input element's value directly.
@@ -118,6 +153,16 @@ pub enum InputAction {
     TypeText,
     /// Press a keyboard key.
     PressKey,
+}
+
+impl fmt::Display for InputAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fill => f.write_str("fill"),
+            Self::TypeText => f.write_str("type_text"),
+            Self::PressKey => f.write_str("press_key"),
+        }
+    }
 }
 
 /// Parameters for the compound `input` tool (fill, type_text, press_key).
@@ -140,7 +185,7 @@ pub struct InputParams {
 // ── window ──────────────────────────────────────────────────────────────────
 
 /// Action for the compound `window` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowAction {
     /// Get the current state of a window.
@@ -157,8 +202,21 @@ pub enum WindowAction {
     SetTitle,
 }
 
+impl fmt::Display for WindowAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GetState => f.write_str("get_state"),
+            Self::List => f.write_str("list"),
+            Self::Manage => f.write_str("manage"),
+            Self::Resize => f.write_str("resize"),
+            Self::MoveTo => f.write_str("move_to"),
+            Self::SetTitle => f.write_str("set_title"),
+        }
+    }
+}
+
 /// Window management sub-action for the `manage` action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ManageAction {
     /// Minimize the window.
@@ -208,6 +266,12 @@ impl ManageAction {
     }
 }
 
+impl fmt::Display for ManageAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Parameters for the compound `window` tool (get_state, list, manage, resize, move, title).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WindowParams {
@@ -232,7 +296,7 @@ pub struct WindowParams {
 // ── storage ─────────────────────────────────────────────────────────────────
 
 /// Action for the compound `storage` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageAction {
     /// Read a value from storage.
@@ -243,6 +307,17 @@ pub enum StorageAction {
     Delete,
     /// Get all cookies.
     GetCookies,
+}
+
+impl fmt::Display for StorageAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Get => f.write_str("get"),
+            Self::Set => f.write_str("set"),
+            Self::Delete => f.write_str("delete"),
+            Self::GetCookies => f.write_str("get_cookies"),
+        }
+    }
 }
 
 /// Parameters for the compound `storage` tool (get, set, delete, get_cookies).
@@ -263,7 +338,7 @@ pub struct StorageParams {
 // ── navigate ────────────────────────────────────────────────────────────────
 
 /// Action for the compound `navigate` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NavigateAction {
     /// Navigate to a URL.
@@ -276,6 +351,18 @@ pub enum NavigateAction {
     SetDialogResponse,
     /// Get the dialog event log.
     GetDialogLog,
+}
+
+impl fmt::Display for NavigateAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GoTo => f.write_str("go_to"),
+            Self::GoBack => f.write_str("go_back"),
+            Self::GetHistory => f.write_str("get_history"),
+            Self::SetDialogResponse => f.write_str("set_dialog_response"),
+            Self::GetDialogLog => f.write_str("get_dialog_log"),
+        }
+    }
 }
 
 /// Parameters for the compound `navigate` tool (go_to, go_back, history, dialogs).
@@ -298,7 +385,7 @@ pub struct NavigateParams {
 // ── recording ───────────────────────────────────────────────────────────────
 
 /// Action for the compound `recording` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordingAction {
     /// Begin recording events.
@@ -319,6 +406,22 @@ pub enum RecordingAction {
     Export,
     /// Import a previously exported session.
     Import,
+}
+
+impl fmt::Display for RecordingAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Start => f.write_str("start"),
+            Self::Stop => f.write_str("stop"),
+            Self::Checkpoint => f.write_str("checkpoint"),
+            Self::ListCheckpoints => f.write_str("list_checkpoints"),
+            Self::GetEvents => f.write_str("get_events"),
+            Self::EventsBetween => f.write_str("events_between"),
+            Self::GetReplay => f.write_str("get_replay"),
+            Self::Export => f.write_str("export"),
+            Self::Import => f.write_str("import"),
+        }
+    }
 }
 
 /// Parameters for the compound `recording` tool (start, stop, checkpoint, replay, export, import).
@@ -347,7 +450,7 @@ pub struct RecordingParams {
 // ── inspect ─────────────────────────────────────────────────────────────────
 
 /// Action for the compound `inspect` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InspectAction {
     /// Get computed CSS styles for an element.
@@ -362,6 +465,19 @@ pub enum InspectAction {
     AuditAccessibility,
     /// Get performance metrics (timing, heap, DOM).
     GetPerformance,
+}
+
+impl fmt::Display for InspectAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GetStyles => f.write_str("get_styles"),
+            Self::GetBoundingBoxes => f.write_str("get_bounding_boxes"),
+            Self::Highlight => f.write_str("highlight"),
+            Self::ClearHighlights => f.write_str("clear_highlights"),
+            Self::AuditAccessibility => f.write_str("audit_accessibility"),
+            Self::GetPerformance => f.write_str("get_performance"),
+        }
+    }
 }
 
 /// Parameters for the compound `inspect` tool (styles, bounding boxes, highlight, a11y, perf).
@@ -387,13 +503,22 @@ pub struct InspectParams {
 // ── css ─────────────────────────────────────────────────────────────────────
 
 /// Action for the compound `css` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CssAction {
     /// Inject custom CSS into the page.
     Inject,
     /// Remove previously injected CSS.
     Remove,
+}
+
+impl fmt::Display for CssAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Inject => f.write_str("inject"),
+            Self::Remove => f.write_str("remove"),
+        }
+    }
 }
 
 /// Parameters for the compound `css` tool (inject, remove).
@@ -410,7 +535,7 @@ pub struct CssParams {
 // ── logs ────────────────────────────────────────────────────────────────────
 
 /// Action for the compound `logs` tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LogsAction {
     /// Get captured console.log/warn/error entries.
@@ -427,6 +552,20 @@ pub enum LogsAction {
     Events,
     /// Find slow IPC calls exceeding a threshold.
     SlowIpc,
+}
+
+impl fmt::Display for LogsAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Console => f.write_str("console"),
+            Self::Network => f.write_str("network"),
+            Self::Ipc => f.write_str("ipc"),
+            Self::Navigation => f.write_str("navigation"),
+            Self::Dialogs => f.write_str("dialogs"),
+            Self::Events => f.write_str("events"),
+            Self::SlowIpc => f.write_str("slow_ipc"),
+        }
+    }
 }
 
 /// Parameters for the compound `logs` tool (console, network, ipc, navigation, dialogs, events).
