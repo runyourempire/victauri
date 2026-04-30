@@ -80,7 +80,7 @@ Initial public release.
 - Release-safe: zero overhead in release builds via `#[cfg(debug_assertions)]`
 - Cross-platform CI (Linux, Windows, macOS) with clippy, tests, docs, MSRV, security audit, dependency checks, semver checks
 - 415+ tests (121 core + 4 macro + 123 plugin unit + 118 integration + 38 adversarial + 5 watchdog + 6 doctests)
-- 13 Criterion benchmarks across 5 groups
+- 16 Criterion benchmarks across 5 groups
 - Windows screenshot via `PrintWindow` + custom PNG encoder (no external dependencies)
 - macOS screenshot via `CGWindowListCreateImage` + alpha un-premultiply
 - Linux screenshot via X11 `GetImage` (x11rb) with Wayland fallback via `grim`

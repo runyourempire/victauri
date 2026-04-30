@@ -75,17 +75,12 @@ fn bench_registry(c: &mut Criterion) {
         b.iter(|| {
             let reg = CommandRegistry::new();
             for i in 0..100 {
-                reg.register(CommandInfo {
-                    name: format!("cmd_{i}"),
-                    plugin: None,
-                    description: Some(format!("Description for command {i}")),
-                    args: vec![],
-                    return_type: None,
-                    is_async: false,
-                    intent: Some(format!("intent_{i}")),
-                    category: Some("test".to_string()),
-                    examples: vec![format!("example {i}")],
-                });
+                let mut cmd = CommandInfo::new(format!("cmd_{i}"))
+                    .with_description(format!("Description for command {i}"))
+                    .with_intent(format!("intent_{i}"))
+                    .with_category("test");
+                cmd.examples = vec![format!("example {i}")];
+                reg.register(cmd);
             }
         });
     });

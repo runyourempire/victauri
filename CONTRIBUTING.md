@@ -17,7 +17,7 @@ Requires Rust 1.88+ (edition 2024).
 cargo test --workspace          # All tests (435+)
 cargo test -p victauri-core     # Core crate only
 cargo test -p victauri-plugin   # Plugin crate only
-cargo bench -p victauri-core    # Criterion benchmarks (13)
+cargo bench -p victauri-core    # Criterion benchmarks (16)
 cargo clippy --workspace -- -D warnings
 cargo fmt --all -- --check
 ```
