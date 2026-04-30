@@ -27,10 +27,17 @@ All checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and ma
 ## Code Style
 
 - `cargo fmt --all` before committing
-- `cargo clippy -- -D warnings` must pass
-- No `unwrap()` on mutexes or RwLocks — use `unwrap_or_else(|e| e.into_inner())` for poisoning recovery
+- `cargo clippy --workspace --all-targets` must pass with zero warnings (17 pedantic lints enforced at deny level — see `[workspace.lints.clippy]` in `Cargo.toml`)
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` must pass
+- All public `Result`-returning functions must have `# Errors` doc sections
+- All functions that may panic must have `# Panics` doc sections
+- All value-returning public functions must have `#[must_use]`
+- Prefer `let...else` over match for single-pattern extraction with early return
+- Prefer `map_or` over `map().unwrap_or()`
+- Use method references (`PoisonError::into_inner`) over closures (`|e| e.into_inner()`)
+- No `unwrap()` on mutexes or RwLocks — use `unwrap_or_else(PoisonError::into_inner)` for poisoning recovery
 - No `unreachable!()` in match arms that could be reached by malformed input
-- `#![deny(unsafe_code)]` is enforced in all crates — use targeted `#[allow(unsafe_code)]` with `// SAFETY:` comments for FFI
+- `unsafe_code = "deny"` is enforced workspace-wide — use targeted `#[allow(unsafe_code)]` with `// SAFETY:` comments for FFI
 
 ## Structure
 

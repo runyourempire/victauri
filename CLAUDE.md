@@ -11,12 +11,12 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 ## Commands
 
 ```bash
-cargo build                    # Build all crates
-cargo test                     # Run all tests (415+)
-cargo bench -p victauri-core   # Criterion benchmarks (13)
-cargo clippy -- -D warnings    # Lint
-cargo fmt --all -- --check     # Format check
-cargo doc --no-deps --open     # Generate docs
+cargo build --workspace                               # Build all crates
+cargo test --workspace                                # Run all 414+ tests
+cargo bench -p victauri-core                          # Criterion benchmarks (13)
+cargo clippy --workspace --all-targets                # Lint (17 pedantic lints enforced)
+cargo fmt --all -- --check                            # Format check
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps  # Generate docs (zero warnings)
 ```
 
 ## Architecture

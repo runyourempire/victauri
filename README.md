@@ -215,12 +215,15 @@ victauri/
 ## Development
 
 ```bash
-cargo build                    # Build all crates
-cargo test --workspace         # Run all tests
-cargo bench -p victauri-core   # Criterion benchmarks
-cargo clippy -- -D warnings    # Lint (zero warnings policy)
-cargo fmt --all -- --check     # Format
+cargo build --workspace                               # Build all crates
+cargo test --workspace                                # Run all 414+ tests
+cargo bench -p victauri-core                          # Criterion benchmarks
+cargo clippy --workspace --all-targets                # Lint (17 pedantic lints enforced)
+cargo fmt --all -- --check                            # Format
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps  # Docs (zero warnings)
 ```
+
+**Lint policy:** 17 clippy pedantic lints are enforced at `deny` level workspace-wide — see `[workspace.lints.clippy]` in `Cargo.toml`. PRs that introduce warnings won't compile.
 
 ## License
 
