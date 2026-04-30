@@ -643,6 +643,32 @@ fn resolve_command_no_match() {
     assert!(results.is_empty());
 }
 
+#[test]
+fn resolve_scores_normalized_across_query_lengths() {
+    let registry = CommandRegistry::new();
+    // Craft a command where many different words each independently hit the
+    // description so that adding more query words inflates the raw score.
+    registry.register(
+        CommandInfo::new("save_user_data")
+            .with_description("save the current user data to the local database")
+            .with_intent("persist user data locally")
+            .with_category("storage"),
+    );
+
+    let one_word = registry.resolve("save");
+    let four_word = registry.resolve("save user data locally");
+
+    assert!(!one_word.is_empty(), "one-word query must match");
+    assert!(!four_word.is_empty(), "four-word query must match");
+    let ratio = four_word[0].score / one_word[0].score;
+    // Without normalization this ratio would be ~3-4x; with normalization it
+    // should stay well below 1.8.
+    assert!(
+        ratio < 1.8,
+        "score ratio {ratio} suggests missing normalization"
+    );
+}
+
 // ── Phase 4: Semantic assertions ────────────────────────────────────────────
 
 #[test]
@@ -1173,8 +1199,7 @@ mod adversarial {
         })
         .join();
         reg.register(
-            registry::CommandInfo::new("after_poison")
-                .with_description("works after poisoning"),
+            registry::CommandInfo::new("after_poison").with_description("works after poisoning"),
         );
         assert_eq!(reg.count(), 1);
     }

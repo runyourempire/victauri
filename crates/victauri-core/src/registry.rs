@@ -266,13 +266,18 @@ const SCORE_CATEGORY: f64 = 1.0;
 const SCORE_EXAMPLE_FULL: f64 = 4.0;
 const SCORE_EXAMPLE_WORD: f64 = 0.5;
 
+/// Scores a command against a query. Per-word contributions (substring, word,
+/// description, intent, category, example-word matches) are normalized by query
+/// length so scores remain comparable across queries of different word counts.
+/// Whole-query bonuses (exact name match, full example match) are not normalized.
 fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> f64 {
     let mut score = 0.0;
+    let mut exact_bonus = 0.0;
     let name_lower = cmd.name.to_lowercase();
     let name_words: Vec<&str> = name_lower.split('_').collect();
 
     if name_lower == query_lower.replace(' ', "_") {
-        score += SCORE_EXACT_NAME;
+        exact_bonus += SCORE_EXACT_NAME;
     }
 
     for word in query_words {
@@ -314,7 +319,7 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
     for example in &cmd.examples {
         let ex_lower = example.to_lowercase();
         if ex_lower.contains(query_lower) {
-            score += SCORE_EXAMPLE_FULL;
+            exact_bonus += SCORE_EXAMPLE_FULL;
             break;
         }
         for word in query_words {
@@ -324,5 +329,8 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
         }
     }
 
-    score
+    // Normalize per-word contributions so scores are comparable across queries of different lengths.
+    let word_count = query_words.len() as f64;
+    let per_word_score = score / word_count;
+    exact_bonus + per_word_score
 }
