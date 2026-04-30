@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 414+ tests
+cargo test --workspace                                # Run all 430+ tests
 cargo bench -p victauri-core                          # Criterion benchmarks (13)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format check
@@ -157,7 +157,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-04-29)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.0 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 415+ tests pass. Zero clippy warnings (`-D warnings`). All crates compile cleanly. + 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.0 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 430+ tests pass. Zero clippy warnings (`-D warnings`, 20 enforced lints). 23 runnable doc-test examples. 13 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
@@ -224,7 +224,7 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 **Bridge methods:** version, snapshot, getRef, click, fill, type, pressKey, getConsoleLogs, clearConsoleLogs, getMutationLog, clearMutationLog, getEventStream, getStyles, getBoundingBoxes, highlightElement, clearHighlights, injectCss, removeInjectedCss, auditAccessibility, getPerformanceMetrics.
 
 ### What exists and works:
-- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 120 unit tests (including 26 adversarial tests + export/import/truthy-falsy). 13 Criterion benchmarks across 5 groups. All mutex/rwlock calls use poisoning recovery.
+- **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 121 unit tests (including 26 adversarial tests + export/import/truthy-falsy + score normalization). 13 Criterion benchmarks across 5 groups. All mutex/rwlock calls use poisoning recovery.
 - **victauri-macros**: `#[inspectable]` proc macro with `description`, `intent`, `category`, `example` attributes. Uses proper `syn::meta` parsing (not string matching). Generates `<fn>__schema()` returning `CommandInfo` with full intent metadata. 4 integration tests.
 - **victauri-plugin**: Full MCP server with **23 tools** + 3 resources. Tools organized by category:
   - **Standalone (14)**: eval_js, dom_snapshot, find_elements, invoke_command, screenshot, verify_state, detect_ghost_commands, check_ipc_integrity, wait_for, assert_semantic, resolve_command, get_registry, get_memory_stats, get_plugin_info
