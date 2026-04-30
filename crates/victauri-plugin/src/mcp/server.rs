@@ -274,7 +274,10 @@ async fn event_drain_loop(
         };
 
         for ev in &events {
-            let ts = ev.get("timestamp").and_then(|t| t.as_f64()).unwrap_or(0.0);
+            let ts = ev
+                .get("timestamp")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0);
             if ts > last_drain_ts {
                 last_drain_ts = ts;
             }
@@ -292,12 +295,15 @@ async fn event_drain_loop(
                     caused_by: ev
                         .get("message")
                         .and_then(|m| m.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                 },
                 "dom_mutation" => AppEvent::DomMutation {
                     webview_label: "main".to_string(),
                     timestamp: now,
-                    mutation_count: ev.get("count").and_then(|c| c.as_u64()).unwrap_or(0) as u32,
+                    mutation_count: ev
+                        .get("count")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0) as u32,
                 },
                 "ipc" => {
                     let cmd = ev
@@ -315,7 +321,7 @@ async fn event_drain_loop(
                         },
                         duration_ms: ev
                             .get("duration_ms")
-                            .and_then(|d| d.as_f64())
+                            .and_then(serde_json::Value::as_f64)
                             .map(|d| d as u64),
                         arg_size_bytes: 0,
                         webview_label: "main".to_string(),
@@ -330,7 +336,7 @@ async fn event_drain_loop(
                     caused_by: ev
                         .get("url")
                         .and_then(|u| u.as_str())
-                        .map(|s| s.to_string()),
+                        .map(std::string::ToString::to_string),
                 },
                 "navigation" => AppEvent::WindowEvent {
                     label: "main".to_string(),

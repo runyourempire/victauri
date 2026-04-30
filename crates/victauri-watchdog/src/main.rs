@@ -166,7 +166,9 @@ mod tests {
 
     #[test]
     fn config_defaults() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
         let config = Config::from_env();
         assert_eq!(config.port, 7373);
@@ -177,7 +179,9 @@ mod tests {
 
     #[test]
     fn config_from_env_vars() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
         unsafe {
             std::env::set_var("VICTAURI_PORT", "9999");
@@ -195,7 +199,9 @@ mod tests {
 
     #[test]
     fn config_invalid_env_uses_defaults() {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
         unsafe {
             std::env::set_var("VICTAURI_PORT", "not_a_number");

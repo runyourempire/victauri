@@ -461,21 +461,21 @@ impl VictauriMcpHandler {
             .privacy
             .disabled_tools
             .iter()
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
         let blocklist: Vec<&str> = self
             .state
             .privacy
             .command_blocklist
             .iter()
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
         let allowlist: Option<Vec<&str>> = self
             .state
             .privacy
             .command_allowlist
             .as_ref()
-            .map(|s| s.iter().map(|s| s.as_str()).collect());
+            .map(|s| s.iter().map(std::string::String::as_str).collect());
         let all_tools = Self::tool_router().list_all();
         let enabled_tools: Vec<&str> = all_tools
             .iter()

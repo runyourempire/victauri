@@ -486,7 +486,7 @@ pub fn assert_json_eq(value: &Value, pointer: &str, expected: &Value) {
     assert!(
         actual == Some(expected),
         "JSON pointer {pointer}: expected {expected}, got {}",
-        actual.map_or("missing".to_string(), |v| v.to_string())
+        actual.map_or("missing".to_string(), std::string::ToString::to_string)
     );
 }
 
@@ -504,7 +504,7 @@ pub fn assert_json_truthy(value: &Value, pointer: &str) {
     assert!(
         is_truthy,
         "JSON pointer {pointer}: expected truthy, got {}",
-        actual.map_or("missing".to_string(), |v| v.to_string())
+        actual.map_or("missing".to_string(), std::string::ToString::to_string)
     );
 }
 
@@ -512,7 +512,7 @@ pub fn assert_json_truthy(value: &Value, pointer: &str) {
 pub fn assert_no_a11y_violations(audit: &Value) {
     let violations = audit
         .pointer("/summary/violations")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .unwrap_or(u64::MAX);
     assert_eq!(
         violations, 0,
@@ -524,7 +524,7 @@ pub fn assert_no_a11y_violations(audit: &Value) {
 pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb: f64) {
     if let Some(load) = metrics
         .pointer("/navigation/load_event_ms")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
     {
         assert!(
             load <= max_load_ms,
@@ -532,7 +532,10 @@ pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb:
         );
     }
 
-    if let Some(heap) = metrics.pointer("/js_heap/used_mb").and_then(|v| v.as_f64()) {
+    if let Some(heap) = metrics
+        .pointer("/js_heap/used_mb")
+        .and_then(serde_json::Value::as_f64)
+    {
         assert!(
             heap <= max_heap_mb,
             "JS heap is {heap}MB, budget is {max_heap_mb}MB"
@@ -544,7 +547,7 @@ pub fn assert_performance_budget(metrics: &Value, max_load_ms: f64, max_heap_mb:
 pub fn assert_ipc_healthy(integrity: &Value) {
     let healthy = integrity
         .get("healthy")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     assert!(
         healthy,
@@ -557,7 +560,7 @@ pub fn assert_ipc_healthy(integrity: &Value) {
 pub fn assert_state_matches(verification: &Value) {
     let passed = verification
         .get("passed")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     assert!(
         passed,

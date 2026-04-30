@@ -119,7 +119,10 @@ impl EventLog {
 
     /// Appends an event, evicting the oldest if at capacity.
     pub fn push(&self, event: AppEvent) {
-        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if events.len() >= self.max_capacity {
             events.pop_front();
         }
@@ -131,7 +134,7 @@ impl EventLog {
     pub fn snapshot(&self) -> Vec<AppEvent> {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .cloned()
             .collect()
@@ -142,7 +145,7 @@ impl EventLog {
     pub fn snapshot_range(&self, offset: usize, limit: usize) -> Vec<AppEvent> {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .skip(offset)
             .take(limit)
@@ -155,7 +158,7 @@ impl EventLog {
     pub fn since(&self, timestamp: DateTime<Utc>) -> Vec<AppEvent> {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter(|e| e.timestamp() >= timestamp)
             .cloned()
@@ -167,7 +170,7 @@ impl EventLog {
     pub fn ipc_calls(&self) -> Vec<IpcCall> {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter_map(|e| match e {
                 AppEvent::Ipc(call) => Some(call.clone()),
@@ -181,7 +184,7 @@ impl EventLog {
     pub fn ipc_calls_since(&self, timestamp: DateTime<Utc>) -> Vec<IpcCall> {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .filter_map(|e| match e {
                 AppEvent::Ipc(call) if call.timestamp >= timestamp => Some(call.clone()),
@@ -193,7 +196,10 @@ impl EventLog {
     /// Returns the number of events currently in the log.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.events.lock().unwrap_or_else(|e| e.into_inner()).len()
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     }
 
     /// Returns true if the log contains no events.
@@ -201,7 +207,7 @@ impl EventLog {
     pub fn is_empty(&self) -> bool {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .is_empty()
     }
 
@@ -209,7 +215,7 @@ impl EventLog {
     pub fn clear(&self) {
         self.events
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
     }
 }

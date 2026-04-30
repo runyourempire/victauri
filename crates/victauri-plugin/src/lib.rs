@@ -200,19 +200,27 @@ impl VictauriBuilder {
 
     /// Disable specific MCP tools by name (e.g., `["eval_js", "screenshot"]`).
     pub fn disable_tools(mut self, tools: &[&str]) -> Self {
-        self.disabled_tools = tools.iter().map(|s| s.to_string()).collect();
+        self.disabled_tools = tools.iter().map(std::string::ToString::to_string).collect();
         self
     }
 
     /// Only allow these Tauri commands to be invoked via MCP (positive allowlist).
     pub fn command_allowlist(mut self, commands: &[&str]) -> Self {
-        self.command_allowlist = Some(commands.iter().map(|s| s.to_string()).collect());
+        self.command_allowlist = Some(
+            commands
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
+        );
         self
     }
 
     /// Block specific Tauri commands from being invoked via MCP.
     pub fn command_blocklist(mut self, commands: &[&str]) -> Self {
-        self.command_blocklist = commands.iter().map(|s| s.to_string()).collect();
+        self.command_blocklist = commands
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         self
     }
 

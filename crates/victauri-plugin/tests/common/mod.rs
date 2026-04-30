@@ -112,7 +112,10 @@ pub struct RejectingMockBridge {
 impl RejectingMockBridge {
     pub fn new(labels: &[&str]) -> Self {
         Self {
-            labels: labels.iter().map(|s| s.to_string()).collect(),
+            labels: labels
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         }
     }
 }

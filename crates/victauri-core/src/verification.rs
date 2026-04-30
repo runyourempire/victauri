@@ -185,8 +185,10 @@ pub fn detect_ghost_commands(
     let registry_list = registry.list();
     let registry_names: std::collections::HashSet<&str> =
         registry_list.iter().map(|c| c.name.as_str()).collect();
-    let frontend_set: std::collections::HashSet<&str> =
-        frontend_commands.iter().map(|s| s.as_str()).collect();
+    let frontend_set: std::collections::HashSet<&str> = frontend_commands
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
 
     let mut ghost_commands = Vec::new();
 

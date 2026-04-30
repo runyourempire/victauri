@@ -63,7 +63,7 @@ pub fn strict_privacy_config() -> PrivacyConfig {
         command_blocklist: HashSet::new(),
         disabled_tools: STRICT_DISABLED_TOOLS
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         redactor: Redactor::default(),
         redaction_enabled: true,

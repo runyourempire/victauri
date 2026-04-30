@@ -87,7 +87,7 @@ impl CommandRegistry {
     pub fn register(&self, info: CommandInfo) {
         self.commands
             .write()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(info.name.clone(), info);
     }
 
@@ -96,7 +96,7 @@ impl CommandRegistry {
     pub fn get(&self, name: &str) -> Option<CommandInfo> {
         self.commands
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(name)
             .cloned()
     }
@@ -106,7 +106,7 @@ impl CommandRegistry {
     pub fn list(&self) -> Vec<CommandInfo> {
         self.commands
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
             .cloned()
             .collect()
@@ -117,7 +117,7 @@ impl CommandRegistry {
     pub fn count(&self) -> usize {
         self.commands
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .len()
     }
 
@@ -127,7 +127,7 @@ impl CommandRegistry {
         let query_lower = query.to_lowercase();
         self.commands
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
             .filter(|cmd| {
                 cmd.name.to_lowercase().contains(&query_lower)
@@ -152,7 +152,7 @@ impl CommandRegistry {
         let mut scored: Vec<ScoredCommand> = self
             .commands
             .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
             .filter_map(|cmd| {
                 let score = score_command(cmd, &query_lower, &query_words);
