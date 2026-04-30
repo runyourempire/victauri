@@ -185,17 +185,7 @@ pub enum GhostSource {
 /// use victauri_core::{CommandRegistry, CommandInfo};
 ///
 /// let registry = CommandRegistry::new();
-/// registry.register(CommandInfo {
-///     name: "save".to_string(),
-///     plugin: None,
-///     description: Some("Save data".to_string()),
-///     args: vec![],
-///     return_type: None,
-///     is_async: false,
-///     intent: None,
-///     category: None,
-///     examples: vec![],
-/// });
+/// registry.register(CommandInfo::new("save").with_description("Save data"));
 ///
 /// let frontend_cmds = vec!["save".to_string(), "delete".to_string()];
 /// let report = detect_ghost_commands(&frontend_cmds, &registry);

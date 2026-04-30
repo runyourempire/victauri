@@ -911,17 +911,9 @@ async fn adversarial_get_registry_empty() {
 #[tokio::test]
 async fn adversarial_get_registry_with_query() {
     let state = test_state();
-    state.registry.register(CommandInfo {
-        name: "test_cmd".to_string(),
-        plugin: None,
-        description: Some("A test command".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    state
+        .registry
+        .register(CommandInfo::new("test_cmd").with_description("A test command"));
 
     let base = start_server(state, &["main"]).await;
     let (client, sid) = mcp_session(&base).await;

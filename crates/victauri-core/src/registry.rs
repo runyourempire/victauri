@@ -41,6 +41,55 @@ pub struct CommandArg {
     pub schema: Option<serde_json::Value>,
 }
 
+impl CommandInfo {
+    /// Creates a new command with the given name and all optional fields set to `None`/empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use victauri_core::CommandInfo;
+    ///
+    /// let cmd = CommandInfo::new("greet");
+    /// assert_eq!(cmd.name, "greet");
+    /// assert!(cmd.description.is_none());
+    /// ```
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            plugin: None,
+            description: None,
+            args: Vec::new(),
+            return_type: None,
+            is_async: false,
+            intent: None,
+            category: None,
+            examples: Vec::new(),
+        }
+    }
+
+    /// Sets the description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the intent phrase for natural-language resolution.
+    #[must_use]
+    pub fn with_intent(mut self, intent: impl Into<String>) -> Self {
+        self.intent = Some(intent.into());
+        self
+    }
+
+    /// Sets the category.
+    #[must_use]
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = Some(category.into());
+        self
+    }
+}
+
 /// Thread-safe registry of known Tauri commands, indexed by name.
 #[derive(Debug, Clone)]
 pub struct CommandRegistry {
@@ -70,17 +119,7 @@ impl CommandRegistry {
     /// use victauri_core::{CommandRegistry, CommandInfo};
     ///
     /// let registry = CommandRegistry::new();
-    /// registry.register(CommandInfo {
-    ///     name: "greet".to_string(),
-    ///     plugin: None,
-    ///     description: Some("Say hello".to_string()),
-    ///     args: vec![],
-    ///     return_type: None,
-    ///     is_async: false,
-    ///     intent: None,
-    ///     category: None,
-    ///     examples: vec![],
-    /// });
+    /// registry.register(CommandInfo::new("greet").with_description("Say hello"));
     /// assert_eq!(registry.count(), 1);
     /// assert!(registry.get("greet").is_some());
     /// ```
@@ -129,17 +168,9 @@ impl CommandRegistry {
     /// use victauri_core::{CommandRegistry, CommandInfo};
     ///
     /// let registry = CommandRegistry::new();
-    /// registry.register(CommandInfo {
-    ///     name: "get_settings".to_string(),
-    ///     plugin: None,
-    ///     description: Some("Retrieve app settings".to_string()),
-    ///     args: vec![],
-    ///     return_type: None,
-    ///     is_async: false,
-    ///     intent: None,
-    ///     category: None,
-    ///     examples: vec![],
-    /// });
+    /// registry.register(
+    ///     CommandInfo::new("get_settings").with_description("Retrieve app settings"),
+    /// );
     /// let results = registry.search("settings");
     /// assert_eq!(results.len(), 1);
     /// assert_eq!(results[0].name, "get_settings");
@@ -170,17 +201,12 @@ impl CommandRegistry {
     /// use victauri_core::{CommandRegistry, CommandInfo};
     ///
     /// let registry = CommandRegistry::new();
-    /// registry.register(CommandInfo {
-    ///     name: "get_settings".to_string(),
-    ///     plugin: None,
-    ///     description: Some("Retrieve app settings".to_string()),
-    ///     args: vec![],
-    ///     return_type: None,
-    ///     is_async: false,
-    ///     intent: Some("fetch configuration".to_string()),
-    ///     category: Some("settings".to_string()),
-    ///     examples: vec![],
-    /// });
+    /// registry.register(
+    ///     CommandInfo::new("get_settings")
+    ///         .with_description("Retrieve app settings")
+    ///         .with_intent("fetch configuration")
+    ///         .with_category("settings"),
+    /// );
     /// let results = registry.resolve("get settings");
     /// assert!(!results.is_empty());
     /// assert!(results[0].score > 0.0);

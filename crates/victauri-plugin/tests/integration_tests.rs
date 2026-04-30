@@ -214,17 +214,9 @@ async fn mcp_call_tool(
 }
 
 fn sample_command(name: &str) -> CommandInfo {
-    CommandInfo {
-        name: name.to_string(),
-        plugin: None,
-        description: Some(format!("{name} command")),
-        args: vec![],
-        return_type: Some("String".to_string()),
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    }
+    let mut cmd = CommandInfo::new(name).with_description(format!("{name} command"));
+    cmd.return_type = Some("String".to_string());
+    cmd
 }
 
 fn sample_ipc_call(command: &str, result: IpcResult) -> IpcCall {
@@ -2353,17 +2345,9 @@ async fn callback_mock_press_key_returns_ok() {
 #[tokio::test]
 async fn callback_mock_ghost_commands_detected() {
     let state = test_state();
-    state.registry.register(CommandInfo {
-        name: "greet".to_string(),
-        plugin: None,
-        description: Some("greet command".to_string()),
-        args: vec![],
-        return_type: Some("String".to_string()),
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    let mut cmd = CommandInfo::new("greet").with_description("greet command");
+    cmd.return_type = Some("String".to_string());
+    state.registry.register(cmd);
 
     let base = start_callback_server(state, &["main"], |code| {
         if code.contains("getIpcLog") {

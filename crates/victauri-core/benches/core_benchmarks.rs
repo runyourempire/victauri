@@ -93,17 +93,10 @@ fn bench_registry(c: &mut Criterion) {
     group.bench_function("search_100_commands", |b| {
         let reg = CommandRegistry::new();
         for i in 0..100 {
-            reg.register(CommandInfo {
-                name: format!("cmd_{i}"),
-                plugin: None,
-                description: Some(format!("Description for command {i}")),
-                args: vec![],
-                return_type: None,
-                is_async: false,
-                intent: None,
-                category: None,
-                examples: vec![],
-            });
+            reg.register(
+                CommandInfo::new(format!("cmd_{i}"))
+                    .with_description(format!("Description for command {i}")),
+            );
         }
         b.iter(|| {
             black_box(reg.search("cmd_5"));
@@ -113,17 +106,12 @@ fn bench_registry(c: &mut Criterion) {
     group.bench_function("resolve_100_commands", |b| {
         let reg = CommandRegistry::new();
         for i in 0..100 {
-            reg.register(CommandInfo {
-                name: format!("get_user_{i}"),
-                plugin: None,
-                description: Some(format!("Fetch user data for user {i}")),
-                args: vec![],
-                return_type: None,
-                is_async: false,
-                intent: Some("read user data".to_string()),
-                category: Some("users".to_string()),
-                examples: vec!["get user info".to_string()],
-            });
+            reg.register(
+                CommandInfo::new(format!("get_user_{i}"))
+                    .with_description(format!("Fetch user data for user {i}"))
+                    .with_intent("read user data")
+                    .with_category("users"),
+            );
         }
         b.iter(|| {
             black_box(reg.resolve("get user info"));
@@ -258,17 +246,7 @@ fn bench_ghost_commands(c: &mut Criterion) {
     group.bench_function("detect_100_commands", |b| {
         let reg = CommandRegistry::new();
         for i in 0..100 {
-            reg.register(CommandInfo {
-                name: format!("backend_cmd_{i}"),
-                plugin: None,
-                description: None,
-                args: vec![],
-                return_type: None,
-                is_async: false,
-                intent: None,
-                category: None,
-                examples: vec![],
-            });
+            reg.register(CommandInfo::new(format!("backend_cmd_{i}")));
         }
         let frontend: Vec<String> = (0..100).map(|i| format!("frontend_cmd_{i}")).collect();
         b.iter(|| {

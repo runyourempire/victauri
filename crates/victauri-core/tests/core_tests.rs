@@ -110,22 +110,16 @@ fn command_registry_register_and_list() {
     let registry = CommandRegistry::new();
     assert_eq!(registry.count(), 0);
 
-    registry.register(CommandInfo {
-        name: "save_file".to_string(),
-        plugin: None,
-        description: Some("Save a file to disk".to_string()),
-        args: vec![CommandArg {
-            name: "path".to_string(),
-            type_name: "String".to_string(),
-            required: true,
-            schema: None,
-        }],
-        return_type: Some("Result<(), String>".to_string()),
-        is_async: true,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    let mut cmd = CommandInfo::new("save_file").with_description("Save a file to disk");
+    cmd.args = vec![CommandArg {
+        name: "path".to_string(),
+        type_name: "String".to_string(),
+        required: true,
+        schema: None,
+    }];
+    cmd.return_type = Some("Result<(), String>".to_string());
+    cmd.is_async = true;
+    registry.register(cmd);
 
     assert_eq!(registry.count(), 1);
     let cmd = registry.get("save_file").unwrap();
@@ -138,41 +132,11 @@ fn command_registry_register_and_list() {
 fn command_registry_search() {
     let registry = CommandRegistry::new();
 
-    registry.register(CommandInfo {
-        name: "get_users".to_string(),
-        plugin: None,
-        description: Some("Fetch all users".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("get_users").with_description("Fetch all users"));
 
-    registry.register(CommandInfo {
-        name: "save_settings".to_string(),
-        plugin: None,
-        description: Some("Save app settings".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save_settings").with_description("Save app settings"));
 
-    registry.register(CommandInfo {
-        name: "delete_user".to_string(),
-        plugin: None,
-        description: Some("Remove a user".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("delete_user").with_description("Remove a user"));
 
     let results = registry.search("user");
     assert_eq!(results.len(), 2);
@@ -398,28 +362,8 @@ fn verify_state_type_mismatch() {
 #[test]
 fn ghost_commands_all_matched() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save".to_string(),
-        plugin: None,
-        description: None,
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
-    registry.register(CommandInfo {
-        name: "load".to_string(),
-        plugin: None,
-        description: None,
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save"));
+    registry.register(CommandInfo::new("load"));
 
     let frontend = vec!["save".to_string(), "load".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
@@ -432,17 +376,7 @@ fn ghost_commands_all_matched() {
 #[test]
 fn ghost_commands_frontend_only() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save".to_string(),
-        plugin: None,
-        description: None,
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save"));
 
     let frontend = vec!["save".to_string(), "unknown_cmd".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
@@ -458,28 +392,8 @@ fn ghost_commands_frontend_only() {
 #[test]
 fn ghost_commands_registry_only() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "save".to_string(),
-        plugin: None,
-        description: Some("Save data".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
-    registry.register(CommandInfo {
-        name: "unused_cmd".to_string(),
-        plugin: None,
-        description: Some("Never called".to_string()),
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("save").with_description("Save data"));
+    registry.register(CommandInfo::new("unused_cmd").with_description("Never called"));
 
     let frontend = vec!["save".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
@@ -495,28 +409,8 @@ fn ghost_commands_registry_only() {
 #[test]
 fn ghost_commands_bidirectional() {
     let registry = CommandRegistry::new();
-    registry.register(CommandInfo {
-        name: "shared".to_string(),
-        plugin: None,
-        description: None,
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
-    registry.register(CommandInfo {
-        name: "backend_only".to_string(),
-        plugin: None,
-        description: None,
-        args: vec![],
-        return_type: None,
-        is_async: false,
-        intent: None,
-        category: None,
-        examples: vec![],
-    });
+    registry.register(CommandInfo::new("shared"));
+    registry.register(CommandInfo::new("backend_only"));
 
     let frontend = vec!["shared".to_string(), "frontend_only".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
