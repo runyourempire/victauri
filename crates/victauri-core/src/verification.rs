@@ -1,6 +1,8 @@
 //! Cross-boundary verification, ghost command detection, IPC integrity
 //! checks, and semantic test assertions.
 
+use std::fmt;
+
 use crate::event::{EventLog, IpcResult};
 use crate::registry::CommandRegistry;
 use crate::types::{Divergence, DivergenceSeverity, VerificationResult};
@@ -174,6 +176,106 @@ pub enum GhostSource {
     FrontendOnly,
     /// Command registered in the backend but never invoked from the frontend.
     RegistryOnly,
+}
+
+impl fmt::Display for GhostSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::FrontendOnly => "frontend-only",
+            Self::RegistryOnly => "registry-only",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for GhostCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.name, self.source)
+    }
+}
+
+/// # Examples
+///
+/// ```
+/// use victauri_core::{GhostCommandReport, GhostCommand, GhostSource};
+///
+/// let report = GhostCommandReport {
+///     ghost_commands: vec![
+///         GhostCommand {
+///             name: "delete".to_string(),
+///             source: GhostSource::FrontendOnly,
+///             description: None,
+///         },
+///     ],
+///     total_frontend_commands: 3,
+///     total_registry_commands: 2,
+/// };
+/// assert_eq!(
+///     report.to_string(),
+///     "1 ghost command(s) (3 frontend, 2 registry)"
+/// );
+/// ```
+impl fmt::Display for GhostCommandReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.ghost_commands.len();
+        write!(
+            f,
+            "{n} ghost command(s) ({} frontend, {} registry)",
+            self.total_frontend_commands, self.total_registry_commands
+        )
+    }
+}
+
+/// # Examples
+///
+/// ```
+/// use victauri_core::verification::IpcIntegrityReport;
+///
+/// let healthy = IpcIntegrityReport {
+///     total_calls: 10,
+///     completed: 10,
+///     pending: 0,
+///     errored: 0,
+///     stale_calls: vec![],
+///     error_calls: vec![],
+///     healthy: true,
+/// };
+/// assert_eq!(
+///     healthy.to_string(),
+///     "IPC healthy: 10/10 completed"
+/// );
+///
+/// let unhealthy = IpcIntegrityReport {
+///     total_calls: 10,
+///     completed: 7,
+///     pending: 2,
+///     errored: 1,
+///     stale_calls: vec![],
+///     error_calls: vec![],
+///     healthy: false,
+/// };
+/// assert_eq!(
+///     unhealthy.to_string(),
+///     "IPC unhealthy: 0 stale, 1 errored of 10 calls"
+/// );
+/// ```
+impl fmt::Display for IpcIntegrityReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.healthy {
+            write!(
+                f,
+                "IPC healthy: {}/{} completed",
+                self.completed, self.total_calls
+            )
+        } else {
+            let stale = self.stale_calls.len();
+            write!(
+                f,
+                "IPC unhealthy: {stale} stale, {} errored of {} calls",
+                self.errored, self.total_calls
+            )
+        }
+    }
 }
 
 /// Detects commands that exist on only one side of the IPC boundary (frontend vs registry).

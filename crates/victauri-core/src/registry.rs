@@ -1,9 +1,11 @@
 //! Thread-safe command registry with substring search and
 //! natural-language-to-command resolution.
 
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::{Arc, RwLock};
+
+use serde::{Deserialize, Serialize};
 
 /// Metadata for a registered Tauri command, including intent and schema information.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -255,6 +257,12 @@ pub struct ScoredCommand {
     pub command: CommandInfo,
     /// Relevance score (higher is better); 0 means no match.
     pub score: f64,
+}
+
+impl fmt::Display for ScoredCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (score: {:.2})", self.command.name, self.score)
+    }
 }
 
 const SCORE_EXACT_NAME: f64 = 10.0;

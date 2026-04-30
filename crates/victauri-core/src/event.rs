@@ -1,9 +1,11 @@
 //! Application event types and a thread-safe ring-buffer event log.
 
+use std::collections::VecDeque;
+use std::fmt;
+use std::sync::{Arc, Mutex};
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 
 /// A single Tauri IPC call with timing, result, and source webview.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,6 +36,28 @@ pub enum IpcResult {
     Ok(serde_json::Value),
     /// Call failed with an error message.
     Err(String),
+}
+
+impl fmt::Display for IpcResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pending => f.write_str("pending"),
+            Self::Ok(_) => f.write_str("ok"),
+            Self::Err(msg) => write!(f, "error: {msg}"),
+        }
+    }
+}
+
+impl fmt::Display for IpcCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} [{}] \u{2192} {}", self.command, self.id, self.result)
+    }
+}
+
+impl From<IpcCall> for AppEvent {
+    fn from(call: IpcCall) -> Self {
+        Self::Ipc(call)
+    }
 }
 
 /// Application event captured by the introspection layer.

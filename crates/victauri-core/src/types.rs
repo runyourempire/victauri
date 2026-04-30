@@ -1,5 +1,7 @@
 //! Shared value types: ref handles, memory deltas, and verification results.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// A short-lived handle to a DOM element, identified by a semantic ref rather than a CSS selector.
@@ -79,4 +81,65 @@ pub enum DivergenceSeverity {
     Warning,
     /// Definite mismatch between frontend and backend values.
     Error,
+}
+
+impl fmt::Display for DivergenceSeverity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        };
+        f.write_str(s)
+    }
+}
+
+impl fmt::Display for Divergence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}: {} \u{2260} {} ({})",
+            self.path, self.frontend_value, self.backend_value, self.severity
+        )
+    }
+}
+
+/// # Examples
+///
+/// ```
+/// use victauri_core::{VerificationResult, Divergence, DivergenceSeverity};
+/// use serde_json::json;
+///
+/// let passed = VerificationResult {
+///     passed: true,
+///     frontend_state: json!({}),
+///     backend_state: json!({}),
+///     divergences: vec![],
+/// };
+/// assert_eq!(passed.to_string(), "verification passed");
+///
+/// let failed = VerificationResult {
+///     passed: false,
+///     frontend_state: json!({"a": 1}),
+///     backend_state: json!({"a": 2}),
+///     divergences: vec![
+///         Divergence {
+///             path: "a".to_string(),
+///             frontend_value: json!(1),
+///             backend_value: json!(2),
+///             severity: DivergenceSeverity::Error,
+///         },
+///     ],
+/// };
+/// assert_eq!(failed.to_string(), "verification failed: 1 divergence(s)");
+/// ```
+impl fmt::Display for VerificationResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.passed {
+            f.write_str("verification passed")
+        } else {
+            let n = self.divergences.len();
+            write!(f, "verification failed: {n} divergence(s)")
+        }
+    }
 }

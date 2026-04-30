@@ -17,7 +17,7 @@ pub use event::{AppEvent, EventLog, IpcCall, IpcResult};
 pub use recording::{EventRecorder, RecordedEvent, RecordedSession, StateCheckpoint};
 pub use registry::{CommandArg, CommandInfo, CommandRegistry, ScoredCommand};
 pub use snapshot::{DomElement, DomSnapshot, WindowState};
-pub use types::{MemoryDelta, RefHandle, VerificationResult};
+pub use types::{Divergence, DivergenceSeverity, MemoryDelta, RefHandle, VerificationResult};
 pub use verification::{
     AssertionCondition, AssertionResult, GhostCommand, GhostCommandReport, GhostSource,
     IpcIntegrityReport, SemanticAssertion, check_ipc_integrity, detect_ghost_commands,
