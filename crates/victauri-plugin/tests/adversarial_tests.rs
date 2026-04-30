@@ -333,8 +333,8 @@ async fn adversarial_checkpoint_without_recording() {
     )
     .await;
     assert!(
-        body.contains("no recording"),
-        "expected 'no recording' error when checkpointing without recording: {body}"
+        body.contains("no active recording"),
+        "expected 'no active recording' error when checkpointing without recording: {body}"
     );
 }
 
@@ -661,8 +661,8 @@ async fn adversarial_double_start_recording() {
     )
     .await;
     assert!(
-        second.contains("false"),
-        "second start_recording should return started:false: {second}"
+        second.contains("already active") || second.contains("isError"),
+        "second start_recording should return an error: {second}"
     );
 
     let _ = call_tool(&client, &base, &sid, "recording", json!({"action": "stop"})).await;

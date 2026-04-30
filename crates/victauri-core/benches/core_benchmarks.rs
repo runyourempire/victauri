@@ -204,7 +204,7 @@ fn bench_recording(c: &mut Criterion) {
     group.bench_function("record_1k_events", |b| {
         b.iter(|| {
             let rec = EventRecorder::new(10_000);
-            rec.start("bench".to_string());
+            rec.start("bench".to_string()).unwrap();
             for i in 0..1_000 {
                 rec.record_event(make_ipc(&i.to_string(), "bench_cmd"));
             }
@@ -225,13 +225,14 @@ fn bench_recording(c: &mut Criterion) {
     group.bench_function("checkpoint_100", |b| {
         b.iter(|| {
             let rec = EventRecorder::new(10_000);
-            rec.start("bench".to_string());
+            rec.start("bench".to_string()).unwrap();
             for i in 0..100 {
                 rec.checkpoint(
                     format!("cp_{i}"),
                     Some(format!("Checkpoint {i}")),
                     serde_json::json!({"step": i}),
-                );
+                )
+                .unwrap();
             }
             black_box(rec.stop());
         });

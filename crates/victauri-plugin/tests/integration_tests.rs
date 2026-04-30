@@ -1124,8 +1124,7 @@ async fn recording_start_stop_via_state() {
     let state = test_state();
     assert!(!state.recorder.is_recording());
 
-    let started = state.recorder.start("test-session".to_string());
-    assert!(started);
+    state.recorder.start("test-session".to_string()).unwrap();
     assert!(state.recorder.is_recording());
 
     let session = state.recorder.stop();
@@ -1141,15 +1140,15 @@ async fn recording_start_stop_via_state() {
 #[tokio::test]
 async fn recording_prevents_double_start() {
     let state = test_state();
-    assert!(state.recorder.start("session-1".to_string()));
-    assert!(!state.recorder.start("session-2".to_string()));
+    state.recorder.start("session-1".to_string()).unwrap();
+    assert!(state.recorder.start("session-2".to_string()).is_err());
     let _ = state.recorder.stop();
 }
 
 #[tokio::test]
 async fn recording_captures_events_and_checkpoints() {
     let state = test_state();
-    state.recorder.start("test".to_string());
+    state.recorder.start("test".to_string()).unwrap();
 
     state
         .recorder
@@ -1159,12 +1158,14 @@ async fn recording_captures_events_and_checkpoints() {
         IpcResult::Ok(serde_json::json!("ok")),
     )));
 
-    let cp = state.recorder.checkpoint(
-        "cp1".to_string(),
-        Some("after cmd2".to_string()),
-        serde_json::json!({"counter": 1}),
-    );
-    assert!(cp);
+    state
+        .recorder
+        .checkpoint(
+            "cp1".to_string(),
+            Some("after cmd2".to_string()),
+            serde_json::json!({"counter": 1}),
+        )
+        .unwrap();
 
     assert_eq!(state.recorder.event_count(), 2);
     assert_eq!(state.recorder.checkpoint_count(), 1);
@@ -1178,7 +1179,7 @@ async fn recording_captures_events_and_checkpoints() {
 #[tokio::test]
 async fn ipc_replay_sequence_returns_only_ipc() {
     let state = test_state();
-    state.recorder.start("test".to_string());
+    state.recorder.start("test".to_string()).unwrap();
 
     state
         .recorder

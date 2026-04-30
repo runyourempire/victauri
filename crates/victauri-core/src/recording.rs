@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use crate::error::VictauriError;
 use crate::event::{AppEvent, IpcCall};
 
 const DEFAULT_MAX_CHECKPOINTS: usize = 1000;
@@ -85,11 +86,11 @@ impl EventRecorder {
         }
     }
 
-    /// Starts a new recording session; returns false if one is already active.
-    pub fn start(&self, session_id: String) -> bool {
+    /// Starts a new recording session; returns `Err` if one is already active.
+    pub fn start(&self, session_id: String) -> crate::error::Result<()> {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if rec.is_some() {
-            return false;
+            return Err(VictauriError::RecordingAlreadyActive);
         }
         *rec = Some(ActiveRecording {
             session_id,
@@ -100,7 +101,7 @@ impl EventRecorder {
             max_events: self.max_events,
             max_checkpoints: DEFAULT_MAX_CHECKPOINTS,
         });
-        true
+        Ok(())
     }
 
     /// Stops the active recording and returns the completed session, or None if not recording.
@@ -142,8 +143,13 @@ impl EventRecorder {
         }
     }
 
-    /// Creates a named state checkpoint at the current event index; returns false if not recording.
-    pub fn checkpoint(&self, id: String, label: Option<String>, state: serde_json::Value) -> bool {
+    /// Creates a named state checkpoint at the current event index; returns `Err` if not recording.
+    pub fn checkpoint(
+        &self,
+        id: String,
+        label: Option<String>,
+        state: serde_json::Value,
+    ) -> crate::error::Result<()> {
         let mut rec = self.recording.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut active) = *rec {
             let event_index = active.event_counter;
@@ -157,9 +163,9 @@ impl EventRecorder {
                 state,
                 event_index,
             });
-            true
+            Ok(())
         } else {
-            false
+            Err(VictauriError::NoActiveRecording)
         }
     }
 

@@ -911,9 +911,9 @@ fn recorder_start_stop() {
     let recorder = EventRecorder::new(1000);
     assert!(!recorder.is_recording());
 
-    assert!(recorder.start("session-1".to_string()));
+    recorder.start("session-1".to_string()).unwrap();
     assert!(recorder.is_recording());
-    assert!(!recorder.start("session-2".to_string()));
+    assert!(recorder.start("session-2".to_string()).is_err());
 
     let session = recorder.stop().unwrap();
     assert_eq!(session.id, "session-1");
@@ -924,7 +924,7 @@ fn recorder_start_stop() {
 #[test]
 fn recorder_record_events() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "1".to_string(),
@@ -953,9 +953,13 @@ fn recorder_record_events() {
 #[test]
 fn recorder_checkpoints() {
     let recorder = EventRecorder::new(1000);
-    assert!(!recorder.checkpoint("cp1".to_string(), None, serde_json::json!({})));
+    assert!(
+        recorder
+            .checkpoint("cp1".to_string(), None, serde_json::json!({}))
+            .is_err()
+    );
 
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "1".to_string(),
@@ -967,11 +971,13 @@ fn recorder_checkpoints() {
         webview_label: "main".to_string(),
     }));
 
-    assert!(recorder.checkpoint(
-        "before-save".to_string(),
-        Some("Before saving".to_string()),
-        serde_json::json!({"count": 0}),
-    ));
+    recorder
+        .checkpoint(
+            "before-save".to_string(),
+            Some("Before saving".to_string()),
+            serde_json::json!({"count": 0}),
+        )
+        .unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "2".to_string(),
@@ -983,11 +989,13 @@ fn recorder_checkpoints() {
         webview_label: "main".to_string(),
     }));
 
-    assert!(recorder.checkpoint(
-        "after-save".to_string(),
-        Some("After saving".to_string()),
-        serde_json::json!({"count": 1}),
-    ));
+    recorder
+        .checkpoint(
+            "after-save".to_string(),
+            Some("After saving".to_string()),
+            serde_json::json!({"count": 1}),
+        )
+        .unwrap();
 
     assert_eq!(recorder.checkpoint_count(), 2);
 
@@ -1002,7 +1010,7 @@ fn recorder_checkpoints() {
 #[test]
 fn recorder_events_since() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     for i in 0..5 {
         recorder.record_event(AppEvent::Ipc(IpcCall {
@@ -1025,7 +1033,7 @@ fn recorder_events_since() {
 #[test]
 fn recorder_events_between_checkpoints() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "0".to_string(),
@@ -1037,7 +1045,9 @@ fn recorder_events_between_checkpoints() {
         webview_label: "main".to_string(),
     }));
 
-    recorder.checkpoint("cp1".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp1".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "1".to_string(),
@@ -1059,7 +1069,9 @@ fn recorder_events_between_checkpoints() {
         webview_label: "main".to_string(),
     }));
 
-    recorder.checkpoint("cp2".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp2".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     let between = recorder.events_between_checkpoints("cp1", "cp2").unwrap();
     assert_eq!(between.len(), 2);
@@ -1074,7 +1086,7 @@ fn recorder_events_between_checkpoints() {
 #[test]
 fn recorder_ipc_replay_sequence() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     recorder.record_event(AppEvent::Ipc(IpcCall {
         id: "1".to_string(),
@@ -1121,7 +1133,7 @@ fn recorder_not_recording_returns_empty() {
 #[test]
 fn recorder_export_does_not_stop_recording() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
     recorder.record_event(AppEvent::StateChange {
         key: "k".to_string(),
         timestamp: Utc::now(),
@@ -1157,7 +1169,7 @@ fn recorder_export_returns_none_when_not_recording() {
 #[test]
 fn recorder_import_replaces_active_recording() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("original".to_string());
+    recorder.start("original".to_string()).unwrap();
     recorder.record_event(AppEvent::StateChange {
         key: "k".to_string(),
         timestamp: Utc::now(),
@@ -1304,7 +1316,7 @@ mod adversarial {
         // After poisoning, operations should still work via recovery
         assert!(!rec.is_recording());
         assert_eq!(rec.event_count(), 0);
-        assert!(rec.start("after-poison".to_string()));
+        rec.start("after-poison".to_string()).unwrap();
         rec.record_event(make_ipc("1", "test"));
         assert_eq!(rec.event_count(), 1);
     }
@@ -1407,7 +1419,7 @@ mod adversarial {
     #[test]
     fn recorder_ring_buffer_wraps_correctly() {
         let rec = EventRecorder::new(3);
-        rec.start("wrap-test".to_string());
+        rec.start("wrap-test".to_string()).unwrap();
         for i in 0..5 {
             rec.record_event(make_ipc(&i.to_string(), &format!("cmd_{i}")));
         }
@@ -1422,7 +1434,7 @@ mod adversarial {
     #[test]
     fn recorder_event_index_stays_monotonic_after_wrap() {
         let rec = EventRecorder::new(2);
-        rec.start("mono-test".to_string());
+        rec.start("mono-test".to_string()).unwrap();
         for i in 0..10 {
             rec.record_event(make_ipc(&i.to_string(), "wrap"));
         }
@@ -1599,8 +1611,8 @@ mod adversarial {
     #[test]
     fn recorder_double_start_returns_false() {
         let rec = EventRecorder::new(100);
-        assert!(rec.start("first".to_string()));
-        assert!(!rec.start("second".to_string()));
+        rec.start("first".to_string()).unwrap();
+        assert!(rec.start("second".to_string()).is_err());
         let session = rec.stop().unwrap();
         assert_eq!(session.id, "first");
     }
@@ -1608,14 +1620,17 @@ mod adversarial {
     #[test]
     fn recorder_checkpoint_without_recording_returns_false() {
         let rec = EventRecorder::new(100);
-        assert!(!rec.checkpoint("cp1".to_string(), None, serde_json::json!({})));
+        assert!(
+            rec.checkpoint("cp1".to_string(), None, serde_json::json!({}))
+                .is_err()
+        );
     }
 
     #[test]
     fn recorder_default_impl() {
         let rec = EventRecorder::default();
         assert!(!rec.is_recording());
-        assert!(rec.start("default-test".to_string()));
+        rec.start("default-test".to_string()).unwrap();
         for i in 0..100 {
             rec.record_event(make_ipc(&i.to_string(), "default"));
         }
@@ -1666,7 +1681,7 @@ mod adversarial {
     #[test]
     fn recorder_concurrent_events() {
         let rec = Arc::new(EventRecorder::new(10_000));
-        rec.start("concurrent".to_string());
+        rec.start("concurrent".to_string()).unwrap();
         let mut handles = Vec::new();
         for i in 0..10 {
             let r = Arc::clone(&rec);
@@ -1687,7 +1702,7 @@ mod adversarial {
     #[test]
     fn recorder_concurrent_checkpoints() {
         let rec = Arc::new(EventRecorder::new(10_000));
-        rec.start("cp-concurrent".to_string());
+        rec.start("cp-concurrent".to_string()).unwrap();
         let mut handles = Vec::new();
         for i in 0..5 {
             let r = Arc::clone(&rec);
@@ -1697,7 +1712,8 @@ mod adversarial {
                         format!("cp-{i}-{j}"),
                         Some(format!("Thread {i} checkpoint {j}")),
                         serde_json::json!({"thread": i, "seq": j}),
-                    );
+                    )
+                    .unwrap();
                 }
             }));
         }
@@ -1710,7 +1726,7 @@ mod adversarial {
     #[test]
     fn recorder_stop_while_recording() {
         let rec = Arc::new(EventRecorder::new(10_000));
-        rec.start("stop-test".to_string());
+        rec.start("stop-test".to_string()).unwrap();
 
         let r = Arc::clone(&rec);
         let writer = thread::spawn(move || {
@@ -1735,14 +1751,15 @@ mod adversarial {
     #[test]
     fn recorded_session_serde_roundtrip() {
         let rec = EventRecorder::new(1000);
-        rec.start("serde-test".to_string());
+        rec.start("serde-test".to_string()).unwrap();
         rec.record_event(make_ipc("1", "save"));
         rec.record_event(make_ipc("2", "load"));
         rec.checkpoint(
             "cp1".to_string(),
             Some("mid".to_string()),
             serde_json::json!({"count": 1}),
-        );
+        )
+        .unwrap();
         let session = rec.stop().unwrap();
 
         let json = serde_json::to_string(&session).unwrap();
@@ -2311,28 +2328,32 @@ fn event_log_ring_buffer_eviction_mixed_event_types() {
 #[test]
 fn recorder_events_between_checkpoints_with_multiple_events() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     // Events before first checkpoint
     recorder.record_event(make_ipc_simple("0", "before_all"));
     recorder.record_event(make_ipc_simple("1", "before_all_2"));
 
-    recorder.checkpoint(
-        "cp_start".to_string(),
-        Some("Start".to_string()),
-        serde_json::json!({"phase": "start"}),
-    );
+    recorder
+        .checkpoint(
+            "cp_start".to_string(),
+            Some("Start".to_string()),
+            serde_json::json!({"phase": "start"}),
+        )
+        .unwrap();
 
     // Events between checkpoints
     recorder.record_event(make_ipc_simple("2", "between_1"));
     recorder.record_event(make_ipc_simple("3", "between_2"));
     recorder.record_event(make_ipc_simple("4", "between_3"));
 
-    recorder.checkpoint(
-        "cp_end".to_string(),
-        Some("End".to_string()),
-        serde_json::json!({"phase": "end"}),
-    );
+    recorder
+        .checkpoint(
+            "cp_end".to_string(),
+            Some("End".to_string()),
+            serde_json::json!({"phase": "end"}),
+        )
+        .unwrap();
 
     // Events after second checkpoint
     recorder.record_event(make_ipc_simple("5", "after_all"));
@@ -2361,11 +2382,15 @@ fn recorder_events_between_checkpoints_with_multiple_events() {
 #[test]
 fn recorder_events_between_checkpoints_reversed_order() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
-    recorder.checkpoint("cp_a".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_a".to_string(), None, serde_json::json!(null))
+        .unwrap();
     recorder.record_event(make_ipc_simple("1", "mid"));
-    recorder.checkpoint("cp_b".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_b".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     // Reversed order: from cp_b to cp_a should still work (handled by min/max in source)
     let between = recorder.events_between_checkpoints("cp_b", "cp_a").unwrap();
@@ -2379,10 +2404,12 @@ fn recorder_events_between_checkpoints_reversed_order() {
 #[test]
 fn recorder_events_between_checkpoints_same_checkpoint() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     recorder.record_event(make_ipc_simple("1", "before"));
-    recorder.checkpoint("cp_same".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_same".to_string(), None, serde_json::json!(null))
+        .unwrap();
     recorder.record_event(make_ipc_simple("2", "after"));
 
     // Same checkpoint for both from and to => range is [idx, idx) which is empty
@@ -2395,9 +2422,11 @@ fn recorder_events_between_checkpoints_same_checkpoint() {
 #[test]
 fn recorder_events_between_checkpoints_nonexistent_from() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
-    recorder.checkpoint("cp_real".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_real".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     let result = recorder.events_between_checkpoints("nonexistent", "cp_real");
     assert!(result.is_none());
@@ -2406,9 +2435,11 @@ fn recorder_events_between_checkpoints_nonexistent_from() {
 #[test]
 fn recorder_events_between_checkpoints_nonexistent_to() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
-    recorder.checkpoint("cp_real".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_real".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     let result = recorder.events_between_checkpoints("cp_real", "nonexistent");
     assert!(result.is_none());
@@ -2417,7 +2448,7 @@ fn recorder_events_between_checkpoints_nonexistent_to() {
 #[test]
 fn recorder_events_between_checkpoints_both_nonexistent() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     let result = recorder.events_between_checkpoints("fake_a", "fake_b");
     assert!(result.is_none());
@@ -2434,11 +2465,15 @@ fn recorder_events_between_checkpoints_not_recording() {
 #[test]
 fn recorder_events_between_checkpoints_no_events_between() {
     let recorder = EventRecorder::new(1000);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     // Two consecutive checkpoints with no events between
-    recorder.checkpoint("cp_a".to_string(), None, serde_json::json!(null));
-    recorder.checkpoint("cp_b".to_string(), None, serde_json::json!(null));
+    recorder
+        .checkpoint("cp_a".to_string(), None, serde_json::json!(null))
+        .unwrap();
+    recorder
+        .checkpoint("cp_b".to_string(), None, serde_json::json!(null))
+        .unwrap();
 
     let between = recorder.events_between_checkpoints("cp_a", "cp_b").unwrap();
     assert!(between.is_empty());
@@ -2451,7 +2486,7 @@ fn recorder_event_count_increments() {
     // Not recording => 0
     assert_eq!(recorder.event_count(), 0);
 
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
     assert_eq!(recorder.event_count(), 0);
 
     recorder.record_event(make_ipc_simple("1", "cmd1"));
@@ -2471,7 +2506,7 @@ fn recorder_event_count_increments() {
 #[test]
 fn recorder_event_count_with_eviction() {
     let recorder = EventRecorder::new(3);
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
 
     for i in 0..10 {
         recorder.record_event(make_ipc_simple(&i.to_string(), "cmd"));
@@ -2489,7 +2524,7 @@ fn recorder_is_recording_lifecycle() {
     assert!(!recorder.is_recording());
 
     // Start recording
-    recorder.start("s1".to_string());
+    recorder.start("s1".to_string()).unwrap();
     assert!(recorder.is_recording());
 
     // Record some events — still recording
@@ -2501,7 +2536,7 @@ fn recorder_is_recording_lifecycle() {
     assert!(!recorder.is_recording());
 
     // Can restart
-    recorder.start("s2".to_string());
+    recorder.start("s2".to_string()).unwrap();
     assert!(recorder.is_recording());
 
     recorder.stop();

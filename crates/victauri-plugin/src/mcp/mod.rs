@@ -983,12 +983,16 @@ impl VictauriMcpHandler {
                 let session_id = params
                     .session_id
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                let started = self.state.recorder.start(session_id.clone());
-                let result = serde_json::json!({
-                    "started": started,
-                    "session_id": session_id,
-                });
-                CallToolResult::success(vec![Content::text(result.to_string())])
+                match self.state.recorder.start(session_id.clone()) {
+                    Ok(()) => {
+                        let result = serde_json::json!({
+                            "started": true,
+                            "session_id": session_id,
+                        });
+                        CallToolResult::success(vec![Content::text(result.to_string())])
+                    }
+                    Err(e) => tool_error(e.to_string()),
+                }
             }
             "stop" => match self.state.recorder.stop() {
                 Some(session) => match serde_json::to_string_pretty(&session) {
@@ -1003,19 +1007,20 @@ impl VictauriMcpHandler {
                     None => return missing_param("checkpoint_id", "checkpoint"),
                 };
                 let state = params.state.unwrap_or(serde_json::Value::Null);
-                let created =
-                    self.state
-                        .recorder
-                        .checkpoint(id.clone(), params.checkpoint_label, state);
-                if created {
-                    let result = serde_json::json!({
-                        "created": true,
-                        "checkpoint_id": id,
-                        "event_index": self.state.recorder.event_count(),
-                    });
-                    CallToolResult::success(vec![Content::text(result.to_string())])
-                } else {
-                    tool_error("no recording is active — start one first")
+                match self
+                    .state
+                    .recorder
+                    .checkpoint(id.clone(), params.checkpoint_label, state)
+                {
+                    Ok(()) => {
+                        let result = serde_json::json!({
+                            "created": true,
+                            "checkpoint_id": id,
+                            "event_index": self.state.recorder.event_count(),
+                        });
+                        CallToolResult::success(vec![Content::text(result.to_string())])
+                    }
+                    Err(e) => tool_error(e.to_string()),
                 }
             }
             "list_checkpoints" => {
