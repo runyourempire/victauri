@@ -337,8 +337,7 @@ impl VictauriMcpHandler {
         let value = params
             .value
             .as_ref()
-            .map(|v| js_string(v))
-            .unwrap_or_else(|| "null".to_string());
+            .map_or_else(|| "null".to_string(), |v| js_string(v));
         let timeout_ms = params.timeout_ms.unwrap_or(10000);
         let poll = params.poll_ms.unwrap_or(200);
         let code = format!(
@@ -566,8 +565,7 @@ impl VictauriMcpHandler {
                 let ref_arg = params
                     .ref_id
                     .as_ref()
-                    .map(|r| js_string(r))
-                    .unwrap_or_else(|| "null".to_string());
+                    .map_or_else(|| "null".to_string(), |r| js_string(r));
                 let x = params.x.unwrap_or(0.0);
                 let y = params.y.unwrap_or(0.0);
                 let code = format!("return window.__VICTAURI__?.scrollTo({ref_arg}, {x}, {y})");
@@ -858,8 +856,7 @@ impl VictauriMcpHandler {
                 let text_arg = params
                     .text
                     .as_ref()
-                    .map(|t| js_string(t))
-                    .unwrap_or_else(|| "undefined".to_string());
+                    .map_or_else(|| "undefined".to_string(), |t| js_string(t));
                 let code = format!(
                     "return window.__VICTAURI__?.setDialogAutoResponse({}, {}, {text_arg})",
                     js_string(dialog_type.as_str()),
@@ -1135,12 +1132,10 @@ impl VictauriMcpHandler {
                 let filter_arg = params
                     .filter
                     .as_ref()
-                    .map(|f| js_string(f))
-                    .unwrap_or_else(|| "null".to_string());
+                    .map_or_else(|| "null".to_string(), |f| js_string(f));
                 let limit_arg = params
                     .limit
-                    .map(|l| l.to_string())
-                    .unwrap_or_else(|| "null".to_string());
+                    .map_or_else(|| "null".to_string(), |l| l.to_string());
                 let code =
                     format!("return window.__VICTAURI__?.getNetworkLog({filter_arg}, {limit_arg})");
                 self.eval_bridge_redacted(&code, params.webview_label.as_deref())

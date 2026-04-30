@@ -170,7 +170,7 @@ pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Respons
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let host_name = if host.starts_with('[') {
-        host.split(']').next().map(|s| &s[1..]).unwrap_or(host)
+        host.split(']').next().map_or(host, |s| &s[1..])
     } else {
         host.split(':').next().unwrap_or(host)
     };

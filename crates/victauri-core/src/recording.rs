@@ -199,8 +199,7 @@ impl EventRecorder {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
-            .map(|r| r.events.len())
-            .unwrap_or(0)
+            .map_or(0, |r| r.events.len())
     }
 
     /// Returns the number of checkpoints created so far, or 0 if not recording.
@@ -210,8 +209,7 @@ impl EventRecorder {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .as_ref()
-            .map(|r| r.checkpoints.len())
-            .unwrap_or(0)
+            .map_or(0, |r| r.checkpoints.len())
     }
 
     /// Returns all events with an index >= the given value.
@@ -328,7 +326,7 @@ impl EventRecorder {
 
     /// Import a previously exported session, replacing any active recording.
     pub fn import(&self, session: RecordedSession) {
-        let event_counter = session.events.last().map(|e| e.index + 1).unwrap_or(0);
+        let event_counter = session.events.last().map_or(0, |e| e.index + 1);
         let max_events = self.max_events;
         let mut rec = self
             .recording
