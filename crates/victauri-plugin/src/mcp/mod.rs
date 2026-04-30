@@ -187,7 +187,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Currently supported on Windows; other platforms return an error.",
+        description = "Capture a screenshot of a Tauri window as a base64-encoded PNG image. Works on Windows (PrintWindow), macOS (CGWindowListCreateImage), and Linux (X11/Wayland).",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -276,7 +276,10 @@ impl VictauriMcpHandler {
             Err(e) => return tool_error(format!("failed to read IPC log: {e}")),
         };
 
-        let ipc_calls: Vec<serde_json::Value> = serde_json::from_str(&ipc_json).unwrap_or_default();
+        let ipc_calls: Vec<serde_json::Value> = match serde_json::from_str(&ipc_json) {
+            Ok(v) => v,
+            Err(e) => return tool_error(format!("failed to parse IPC log JSON: {e}")),
+        };
         let frontend_commands: Vec<String> = ipc_calls
             .iter()
             .filter_map(|c| c.get("command").and_then(|v| v.as_str()).map(String::from))
@@ -423,7 +426,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "List or search all registered Tauri commands with their argument schemas.",
+        description = "List or search all registered Tauri commands with their argument schemas. Pass query to filter by name/description substring. Commands are registered via #[inspectable] macro.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
