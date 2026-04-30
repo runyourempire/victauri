@@ -184,7 +184,7 @@ fn bench_verification(c: &mut Criterion) {
     group.bench_function("evaluate_assertion", |b| {
         let assertion = verification::SemanticAssertion {
             label: "check_count".to_string(),
-            condition: "greater_than".to_string(),
+            condition: verification::AssertionCondition::GreaterThan,
             expected: serde_json::json!(10),
         };
         b.iter(|| {

@@ -7,6 +7,9 @@ use crate::types::{Divergence, DivergenceSeverity, VerificationResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Tolerance for floating-point comparisons in severity classification.
+const FLOAT_EPSILON: f64 = 1e-9;
+
 // ── Cross-boundary state verification ───────────────────────────────────────
 
 /// Compares frontend and backend state trees, returning all divergences found.
@@ -131,7 +134,7 @@ fn classify_severity(
         (serde_json::Value::Null, _) | (_, serde_json::Value::Null) => DivergenceSeverity::Warning,
         (serde_json::Value::Number(f), serde_json::Value::Number(b)) => {
             match (f.as_f64(), b.as_f64()) {
-                (Some(fv), Some(bv)) if (fv - bv).abs() < 1e-9 => DivergenceSeverity::Info,
+                (Some(fv), Some(bv)) if (fv - bv).abs() < FLOAT_EPSILON => DivergenceSeverity::Info,
                 _ => DivergenceSeverity::Error,
             }
         }
@@ -325,13 +328,77 @@ pub fn check_ipc_integrity(event_log: &EventLog, stale_threshold_ms: i64) -> Ipc
 
 // ── Semantic test assertions ────────────────────────────────────────────────
 
+/// Recognized assertion condition operators for [`evaluate_assertion`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AssertionCondition {
+    /// Actual value must equal the expected value.
+    Equals,
+    /// Actual value must not equal the expected value.
+    NotEquals,
+    /// String must contain substring, or array must contain element.
+    Contains,
+    /// Numeric actual must be greater than expected.
+    GreaterThan,
+    /// Numeric actual must be less than expected.
+    LessThan,
+    /// Value must be truthy (non-null, non-false, non-empty, non-zero).
+    Truthy,
+    /// Value must be falsy (null, false, empty string, zero).
+    Falsy,
+    /// Value must not be null.
+    Exists,
+    /// Value must be of the specified JSON type (string, number, boolean, array, object, null).
+    TypeIs,
+}
+
+impl std::str::FromStr for AssertionCondition {
+    type Err = crate::error::VictauriError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "equals" => Ok(Self::Equals),
+            "not_equals" => Ok(Self::NotEquals),
+            "contains" => Ok(Self::Contains),
+            "greater_than" => Ok(Self::GreaterThan),
+            "less_than" => Ok(Self::LessThan),
+            "truthy" => Ok(Self::Truthy),
+            "falsy" => Ok(Self::Falsy),
+            "exists" => Ok(Self::Exists),
+            "type_is" => Ok(Self::TypeIs),
+            other => Err(crate::error::VictauriError::UnknownCondition {
+                condition: other.to_string(),
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for AssertionCondition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Equals => "equals",
+            Self::NotEquals => "not_equals",
+            Self::Contains => "contains",
+            Self::GreaterThan => "greater_than",
+            Self::LessThan => "less_than",
+            Self::Truthy => "truthy",
+            Self::Falsy => "falsy",
+            Self::Exists => "exists",
+            Self::TypeIs => "type_is",
+        };
+        f.write_str(s)
+    }
+}
+
 /// A declarative assertion to evaluate against a runtime value (e.g. "equals", "truthy").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticAssertion {
     /// Human-readable label describing what is being asserted.
     pub label: String,
-    /// Condition operator: "equals", "contains", "greater_than", "truthy", etc.
-    pub condition: String,
+    /// Condition operator to evaluate.
+    pub condition: AssertionCondition,
     /// Expected value to compare against (interpretation depends on condition).
     pub expected: serde_json::Value,
 }
@@ -354,12 +421,12 @@ pub struct AssertionResult {
 /// Evaluates a semantic assertion against an actual runtime value.
 ///
 /// ```
-/// use victauri_core::verification::{evaluate_assertion, SemanticAssertion};
+/// use victauri_core::verification::{evaluate_assertion, AssertionCondition, SemanticAssertion};
 /// use serde_json::json;
 ///
 /// let assertion = SemanticAssertion {
 ///     label: "check count".to_string(),
-///     condition: "equals".to_string(),
+///     condition: AssertionCondition::Equals,
 ///     expected: json!(42),
 /// };
 /// let result = evaluate_assertion(json!(42), &assertion);
@@ -370,36 +437,36 @@ pub fn evaluate_assertion(
     actual: serde_json::Value,
     assertion: &SemanticAssertion,
 ) -> AssertionResult {
-    let passed = match assertion.condition.as_str() {
-        "equals" => actual == assertion.expected,
-        "not_equals" => actual != assertion.expected,
-        "contains" => match (&actual, &assertion.expected) {
+    let passed = match assertion.condition {
+        AssertionCondition::Equals => actual == assertion.expected,
+        AssertionCondition::NotEquals => actual != assertion.expected,
+        AssertionCondition::Contains => match (&actual, &assertion.expected) {
             (serde_json::Value::String(a), serde_json::Value::String(e)) => a.contains(e.as_str()),
             (serde_json::Value::Array(arr), val) => arr.contains(val),
             _ => false,
         },
-        "greater_than" => match (actual.as_f64(), assertion.expected.as_f64()) {
+        AssertionCondition::GreaterThan => match (actual.as_f64(), assertion.expected.as_f64()) {
             (Some(a), Some(e)) => a > e,
             _ => false,
         },
-        "less_than" => match (actual.as_f64(), assertion.expected.as_f64()) {
+        AssertionCondition::LessThan => match (actual.as_f64(), assertion.expected.as_f64()) {
             (Some(a), Some(e)) => a < e,
             _ => false,
         },
-        "truthy" => match &actual {
+        AssertionCondition::Truthy => match &actual {
             serde_json::Value::Null | serde_json::Value::Bool(false) => false,
             serde_json::Value::String(s) => !s.is_empty(),
             serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
             _ => true,
         },
-        "falsy" => match &actual {
+        AssertionCondition::Falsy => match &actual {
             serde_json::Value::Null | serde_json::Value::Bool(false) => true,
             serde_json::Value::String(s) => s.is_empty(),
             serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) == 0.0,
             _ => false,
         },
-        "exists" => actual != serde_json::Value::Null,
-        "type_is" => {
+        AssertionCondition::Exists => actual != serde_json::Value::Null,
+        AssertionCondition::TypeIs => {
             let type_name = assertion.expected.as_str().unwrap_or("");
             match type_name {
                 "string" => actual.is_string(),
@@ -410,18 +477,6 @@ pub fn evaluate_assertion(
                 "null" => actual.is_null(),
                 _ => false,
             }
-        }
-        unknown => {
-            return AssertionResult {
-                label: assertion.label.clone(),
-                passed: false,
-                actual,
-                expected: assertion.expected.clone(),
-                message: Some(format!(
-                    "Unknown assertion condition '{}' in '{}'",
-                    unknown, assertion.label
-                )),
-            };
         }
     };
 

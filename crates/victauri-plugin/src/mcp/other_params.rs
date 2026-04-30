@@ -30,8 +30,8 @@ pub struct SemanticAssertParams {
     pub expression: String,
     /// Human-readable label for this assertion (e.g. "user is logged in").
     pub label: String,
-    /// Condition: equals, not_equals, contains, greater_than, less_than, truthy, falsy, exists, type_is.
-    pub condition: String,
+    /// Condition to evaluate against the actual value.
+    pub condition: victauri_core::AssertionCondition,
     /// Expected value for the assertion.
     pub expected: serde_json::Value,
     /// Target webview label.

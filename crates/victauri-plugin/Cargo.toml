@@ -20,7 +20,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-victauri-core = { workspace = true }
+victauri-core = { workspace = true, features = ["schema"] }
 victauri-macros = { workspace = true }
 tauri = { workspace = true, features = ["wry"] }
 rmcp = { workspace = true }

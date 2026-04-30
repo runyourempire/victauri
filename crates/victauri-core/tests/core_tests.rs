@@ -807,7 +807,7 @@ fn resolve_command_no_match() {
 fn semantic_assertion_equals() {
     let assertion = victauri_core::SemanticAssertion {
         label: "count is 5".to_string(),
-        condition: "equals".to_string(),
+        condition: victauri_core::AssertionCondition::Equals,
         expected: serde_json::json!(5),
     };
 
@@ -824,7 +824,7 @@ fn semantic_assertion_equals() {
 fn semantic_assertion_truthy_falsy() {
     let truthy = victauri_core::SemanticAssertion {
         label: "value is truthy".to_string(),
-        condition: "truthy".to_string(),
+        condition: victauri_core::AssertionCondition::Truthy,
         expected: serde_json::Value::Null,
     };
 
@@ -835,7 +835,7 @@ fn semantic_assertion_truthy_falsy() {
 
     let falsy = victauri_core::SemanticAssertion {
         label: "value is falsy".to_string(),
-        condition: "falsy".to_string(),
+        condition: victauri_core::AssertionCondition::Falsy,
         expected: serde_json::Value::Null,
     };
 
@@ -849,7 +849,7 @@ fn semantic_assertion_truthy_falsy() {
 fn semantic_assertion_contains() {
     let assertion = victauri_core::SemanticAssertion {
         label: "string contains hello".to_string(),
-        condition: "contains".to_string(),
+        condition: victauri_core::AssertionCondition::Contains,
         expected: serde_json::json!("hello"),
     };
 
@@ -863,7 +863,7 @@ fn semantic_assertion_contains() {
 fn semantic_assertion_comparisons() {
     let gt = victauri_core::SemanticAssertion {
         label: "greater than 10".to_string(),
-        condition: "greater_than".to_string(),
+        condition: victauri_core::AssertionCondition::GreaterThan,
         expected: serde_json::json!(10),
     };
 
@@ -872,7 +872,7 @@ fn semantic_assertion_comparisons() {
 
     let lt = victauri_core::SemanticAssertion {
         label: "less than 10".to_string(),
-        condition: "less_than".to_string(),
+        condition: victauri_core::AssertionCondition::LessThan,
         expected: serde_json::json!(10),
     };
 
@@ -884,7 +884,7 @@ fn semantic_assertion_comparisons() {
 fn semantic_assertion_type_is() {
     let assertion = victauri_core::SemanticAssertion {
         label: "is a string".to_string(),
-        condition: "type_is".to_string(),
+        condition: victauri_core::AssertionCondition::TypeIs,
         expected: serde_json::json!("string"),
     };
 
@@ -896,7 +896,7 @@ fn semantic_assertion_type_is() {
 fn semantic_assertion_exists() {
     let assertion = victauri_core::SemanticAssertion {
         label: "value exists".to_string(),
-        condition: "exists".to_string(),
+        condition: victauri_core::AssertionCondition::Exists,
         expected: serde_json::Value::Null,
     };
 
@@ -1233,12 +1233,12 @@ fn truthy_falsy_are_never_both_true() {
     use victauri_core::verification;
     let truthy = verification::SemanticAssertion {
         label: "t".to_string(),
-        condition: "truthy".to_string(),
+        condition: verification::AssertionCondition::Truthy,
         expected: serde_json::Value::Null,
     };
     let falsy = verification::SemanticAssertion {
         label: "f".to_string(),
-        condition: "falsy".to_string(),
+        condition: verification::AssertionCondition::Falsy,
         expected: serde_json::Value::Null,
     };
     let test_values = vec![
@@ -1552,29 +1552,12 @@ mod adversarial {
 
     // ── Assertion edge cases ────────────────────────────────────────────
 
-    #[test]
-    fn assertion_unknown_condition_reports_error() {
-        let assertion = verification::SemanticAssertion {
-            label: "bogus".to_string(),
-            condition: "definitely_not_a_condition".to_string(),
-            expected: serde_json::json!(true),
-        };
-        let result = verification::evaluate_assertion(serde_json::json!(true), &assertion);
-        assert!(!result.passed);
-        assert!(
-            result
-                .message
-                .as_ref()
-                .unwrap()
-                .contains("Unknown assertion condition")
-        );
-    }
 
     #[test]
     fn assertion_truthy_edge_cases() {
         let truthy = verification::SemanticAssertion {
             label: "t".to_string(),
-            condition: "truthy".to_string(),
+            condition: verification::AssertionCondition::Truthy,
             expected: serde_json::json!(null),
         };
         // 0 is falsy (JS semantics — Victauri evaluates JS expressions)
@@ -1595,7 +1578,7 @@ mod adversarial {
     fn assertion_contains_in_array() {
         let assertion = verification::SemanticAssertion {
             label: "arr".to_string(),
-            condition: "contains".to_string(),
+            condition: verification::AssertionCondition::Contains,
             expected: serde_json::json!(2),
         };
         assert!(verification::evaluate_assertion(serde_json::json!([1, 2, 3]), &assertion).passed);

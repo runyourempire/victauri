@@ -20,7 +20,7 @@ pub use registry::{CommandArg, CommandInfo, CommandRegistry, ScoredCommand};
 pub use snapshot::{DomElement, DomSnapshot, WindowState};
 pub use types::{MemoryDelta, RefHandle, VerificationResult};
 pub use verification::{
-    AssertionResult, GhostCommand, GhostCommandReport, GhostSource, IpcIntegrityReport,
-    SemanticAssertion, check_ipc_integrity, detect_ghost_commands, evaluate_assertion,
-    verify_state,
+    AssertionCondition, AssertionResult, GhostCommand, GhostCommandReport, GhostSource,
+    IpcIntegrityReport, SemanticAssertion, check_ipc_integrity, detect_ghost_commands,
+    evaluate_assertion, verify_state,
 };
