@@ -214,7 +214,7 @@ fn bench_recording(c: &mut Criterion) {
 
     group.bench_function("record_with_eviction", |b| {
         let rec = EventRecorder::new(100);
-        rec.start("bench".to_string());
+        rec.start("bench".to_string()).unwrap();
         let mut i = 0u64;
         b.iter(|| {
             rec.record_event(make_ipc(&i.to_string(), "bench_cmd"));
@@ -240,7 +240,7 @@ fn bench_recording(c: &mut Criterion) {
 
     group.bench_function("events_since_in_1k", |b| {
         let rec = EventRecorder::new(10_000);
-        rec.start("bench".to_string());
+        rec.start("bench".to_string()).unwrap();
         for i in 0..1_000 {
             rec.record_event(make_ipc(&i.to_string(), "cmd"));
         }
