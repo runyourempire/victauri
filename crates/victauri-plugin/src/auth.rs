@@ -139,7 +139,7 @@ pub async fn rate_limit(
 
 const DEFAULT_RATE_LIMIT: u64 = 1000;
 
-/// Create a rate limiter with the default capacity of 100 requests per second.
+/// Create a rate limiter with the default capacity of 1000 requests per second.
 pub fn default_rate_limiter() -> Arc<RateLimiterState> {
     Arc::new(RateLimiterState::new(DEFAULT_RATE_LIMIT))
 }

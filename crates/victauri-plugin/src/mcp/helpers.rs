@@ -20,8 +20,8 @@ pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
     )
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub(crate) enum RecoveryHint {
     RetryLater,
     CheckInput,
@@ -53,7 +53,6 @@ pub(crate) fn tool_error_with_hint(msg: impl Into<String>, hint: RecoveryHint) -
     result
 }
 
-#[allow(dead_code)]
 pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> CallToolResult {
     tool_error_with_hint(
         format!(
@@ -64,7 +63,6 @@ pub(crate) fn tool_not_found(action: &str, tool_name: &str, valid: &[&str]) -> C
     )
 }
 
-#[allow(dead_code)]
 pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("missing required parameter '{param}' for action '{action}'"),
@@ -110,13 +108,8 @@ pub(crate) fn sanitize_css_color(color: &str) -> Result<String, String> {
     if !valid {
         return Err("invalid characters in CSS color value".to_string());
     }
-    if s.contains(';')
-        || s.contains('{')
-        || s.contains('}')
-        || s.to_lowercase().contains("url(")
-        || s.to_lowercase().contains("expression(")
-        || s.to_lowercase().contains("import")
-    {
+    let lower = s.to_lowercase();
+    if lower.contains("url(") || lower.contains("expression(") {
         return Err("invalid CSS color value".to_string());
     }
     Ok(s.to_string())

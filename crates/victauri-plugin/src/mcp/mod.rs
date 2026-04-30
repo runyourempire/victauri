@@ -28,7 +28,7 @@ use tokio::sync::Mutex;
 use crate::VictauriState;
 use crate::bridge::WebviewBridge;
 
-use helpers::{js_string, sanitize_css_color, tool_disabled, tool_error, validate_url};
+use helpers::{js_string, missing_param, sanitize_css_color, tool_disabled, tool_error, tool_not_found, validate_url};
 
 pub use backend_params::*;
 pub use compound_params::*;
@@ -483,7 +483,7 @@ impl VictauriMcpHandler {
             "click" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for click"),
+                    None => return missing_param("ref_id", "click"),
                 };
                 let code = format!("return window.__VICTAURI__?.click({})", js_string(ref_id));
                 match self
@@ -497,7 +497,7 @@ impl VictauriMcpHandler {
             "double_click" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for double_click"),
+                    None => return missing_param("ref_id", "double_click"),
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.doubleClick({})",
@@ -514,7 +514,7 @@ impl VictauriMcpHandler {
             "hover" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for hover"),
+                    None => return missing_param("ref_id", "hover"),
                 };
                 let code = format!("return window.__VICTAURI__?.hover({})", js_string(ref_id));
                 match self
@@ -528,7 +528,7 @@ impl VictauriMcpHandler {
             "focus" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for focus"),
+                    None => return missing_param("ref_id", "focus"),
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.focusElement({})",
@@ -562,7 +562,7 @@ impl VictauriMcpHandler {
             "select_option" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for select_option"),
+                    None => return missing_param("ref_id", "select_option"),
                 };
                 let values = params.values.as_deref().unwrap_or(&[]);
                 let values_json =
@@ -580,9 +580,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown interact action '{other}'; expected: click, double_click, hover, focus, scroll_into_view, select_option"
-            )),
+            other => tool_not_found(other, "interact", &["click", "double_click", "hover", "focus", "scroll_into_view", "select_option"]),
         }
     }
 
@@ -598,11 +596,11 @@ impl VictauriMcpHandler {
                 }
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for fill"),
+                    None => return missing_param("ref_id", "fill"),
                 };
                 let value = match &params.value {
                     Some(v) => v,
-                    None => return tool_error("value is required for fill"),
+                    None => return missing_param("value", "fill"),
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.fill({}, {})",
@@ -623,11 +621,11 @@ impl VictauriMcpHandler {
                 }
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for type_text"),
+                    None => return missing_param("ref_id", "type_text"),
                 };
                 let text = match &params.text {
                     Some(t) => t,
-                    None => return tool_error("text is required for type_text"),
+                    None => return missing_param("text", "type_text"),
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.type({}, {})",
@@ -645,7 +643,7 @@ impl VictauriMcpHandler {
             "press_key" => {
                 let key = match &params.key {
                     Some(k) => k,
-                    None => return tool_error("key is required for press_key"),
+                    None => return missing_param("key", "press_key"),
                 };
                 let code = format!("return window.__VICTAURI__?.pressKey({})", js_string(key));
                 match self
@@ -656,9 +654,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown input action '{other}'; expected: fill, type_text, press_key"
-            )),
+            other => tool_not_found(other, "input", &["fill", "type_text", "press_key"]),
         }
     }
 
@@ -686,7 +682,7 @@ impl VictauriMcpHandler {
             "manage" => {
                 let manage_action = match &params.manage_action {
                     Some(a) => a,
-                    None => return tool_error("manage_action is required for manage"),
+                    None => return missing_param("manage_action", "manage"),
                 };
                 match self
                     .bridge
@@ -699,11 +695,11 @@ impl VictauriMcpHandler {
             "resize" => {
                 let width = match params.width {
                     Some(w) => w,
-                    None => return tool_error("width is required for resize"),
+                    None => return missing_param("width", "resize"),
                 };
                 let height = match params.height {
                     Some(h) => h,
-                    None => return tool_error("height is required for resize"),
+                    None => return missing_param("height", "resize"),
                 };
                 match self
                     .bridge
@@ -720,11 +716,11 @@ impl VictauriMcpHandler {
             "move_to" => {
                 let x = match params.x {
                     Some(v) => v,
-                    None => return tool_error("x is required for move_to"),
+                    None => return missing_param("x", "move_to"),
                 };
                 let y = match params.y {
                     Some(v) => v,
-                    None => return tool_error("y is required for move_to"),
+                    None => return missing_param("y", "move_to"),
                 };
                 match self.bridge.move_window(params.label.as_deref(), x, y) {
                     Ok(()) => {
@@ -737,7 +733,7 @@ impl VictauriMcpHandler {
             "set_title" => {
                 let title = match &params.title {
                     Some(t) => t,
-                    None => return tool_error("title is required for set_title"),
+                    None => return missing_param("title", "set_title"),
                 };
                 match self.bridge.set_window_title(params.label.as_deref(), title) {
                     Ok(()) => {
@@ -747,9 +743,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown window action '{other}'; expected: get_state, list, manage, resize, move_to, set_title"
-            )),
+            other => tool_not_found(other, "window", &["get_state", "list", "manage", "resize", "move_to", "set_title"]),
         }
     }
 
@@ -790,7 +784,7 @@ impl VictauriMcpHandler {
                 };
                 let key = match &params.key {
                     Some(k) => k,
-                    None => return tool_error("key is required for set"),
+                    None => return missing_param("key", "set"),
                 };
                 let value = params
                     .value
@@ -822,7 +816,7 @@ impl VictauriMcpHandler {
                 };
                 let key = match &params.key {
                     Some(k) => k,
-                    None => return tool_error("key is required for delete"),
+                    None => return missing_param("key", "delete"),
                 };
                 let code = format!("return window.__VICTAURI__?.{method}({})", js_string(key));
                 match self
@@ -843,9 +837,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown storage action '{other}'; expected: get, set, delete, get_cookies"
-            )),
+            other => tool_not_found(other, "storage", &["get", "set", "delete", "get_cookies"]),
         }
     }
 
@@ -861,7 +853,7 @@ impl VictauriMcpHandler {
                 }
                 let url = match &params.url {
                     Some(u) => u,
-                    None => return tool_error("url is required for go_to"),
+                    None => return missing_param("url", "go_to"),
                 };
                 if let Err(e) = validate_url(url) {
                     return tool_error(e);
@@ -901,11 +893,11 @@ impl VictauriMcpHandler {
                 }
                 let dialog_type = match &params.dialog_type {
                     Some(t) => t,
-                    None => return tool_error("dialog_type is required for set_dialog_response"),
+                    None => return missing_param("dialog_type", "set_dialog_response"),
                 };
                 let dialog_action = match &params.dialog_action {
                     Some(a) => a,
-                    None => return tool_error("dialog_action is required for set_dialog_response"),
+                    None => return missing_param("dialog_action", "set_dialog_response"),
                 };
                 let text_arg = params
                     .text
@@ -935,9 +927,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown navigate action '{other}'; expected: go_to, go_back, get_history, set_dialog_response, get_dialog_log"
-            )),
+            other => tool_not_found(other, "navigate", &["go_to", "go_back", "get_history", "set_dialog_response", "get_dialog_log"]),
         }
     }
 
@@ -969,7 +959,7 @@ impl VictauriMcpHandler {
             "checkpoint" => {
                 let id = match params.checkpoint_id {
                     Some(id) => id,
-                    None => return tool_error("checkpoint_id is required for checkpoint"),
+                    None => return missing_param("checkpoint_id", "checkpoint"),
                 };
                 let state = params.state.unwrap_or(serde_json::Value::Null);
                 let created =
@@ -1007,11 +997,11 @@ impl VictauriMcpHandler {
             "events_between" => {
                 let from = match &params.from {
                     Some(f) => f,
-                    None => return tool_error("from is required for events_between"),
+                    None => return missing_param("from", "events_between"),
                 };
                 let to = match &params.to {
                     Some(t) => t,
-                    None => return tool_error("to is required for events_between"),
+                    None => return missing_param("to", "events_between"),
                 };
                 match self.state.recorder.events_between_checkpoints(from, to) {
                     Some(events) => match serde_json::to_string_pretty(&events) {
@@ -1039,7 +1029,7 @@ impl VictauriMcpHandler {
             "import" => {
                 let session_json = match &params.session_json {
                     Some(j) => j,
-                    None => return tool_error("session_json is required for import"),
+                    None => return missing_param("session_json", "import"),
                 };
                 let session: victauri_core::RecordedSession =
                     match serde_json::from_str(session_json) {
@@ -1057,9 +1047,7 @@ impl VictauriMcpHandler {
                 self.state.recorder.import(session);
                 CallToolResult::success(vec![Content::text(result.to_string())])
             }
-            other => tool_error(format!(
-                "unknown recording action '{other}'; expected: start, stop, checkpoint, list_checkpoints, get_events, events_between, get_replay, export, import"
-            )),
+            other => tool_not_found(other, "recording", &["start", "stop", "checkpoint", "list_checkpoints", "get_events", "events_between", "get_replay", "export", "import"]),
         }
     }
 
@@ -1072,7 +1060,7 @@ impl VictauriMcpHandler {
             "get_styles" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for get_styles"),
+                    None => return missing_param("ref_id", "get_styles"),
                 };
                 let props_arg = match &params.properties {
                     Some(props) => {
@@ -1097,7 +1085,7 @@ impl VictauriMcpHandler {
             "get_bounding_boxes" => {
                 let ref_ids = match &params.ref_ids {
                     Some(ids) => ids,
-                    None => return tool_error("ref_ids is required for get_bounding_boxes"),
+                    None => return missing_param("ref_ids", "get_bounding_boxes"),
                 };
                 let refs: Vec<String> = ref_ids.iter().map(|r| js_string(r)).collect();
                 let code = format!(
@@ -1115,7 +1103,7 @@ impl VictauriMcpHandler {
             "highlight" => {
                 let ref_id = match &params.ref_id {
                     Some(r) => r,
-                    None => return tool_error("ref_id is required for highlight"),
+                    None => return missing_param("ref_id", "highlight"),
                 };
                 let color_arg = match &params.color {
                     Some(c) => match sanitize_css_color(c) {
@@ -1172,9 +1160,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown inspect action '{other}'; expected: get_styles, get_bounding_boxes, highlight, clear_highlights, audit_accessibility, get_performance"
-            )),
+            other => tool_not_found(other, "inspect", &["get_styles", "get_bounding_boxes", "highlight", "clear_highlights", "audit_accessibility", "get_performance"]),
         }
     }
 
@@ -1190,7 +1176,7 @@ impl VictauriMcpHandler {
                 }
                 let css = match &params.css {
                     Some(c) => c,
-                    None => return tool_error("css is required for inject"),
+                    None => return missing_param("css", "inject"),
                 };
                 let code = format!("return window.__VICTAURI__?.injectCss({})", js_string(css));
                 match self
@@ -1211,9 +1197,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown css action '{other}'; expected: inject, remove"
-            )),
+            other => tool_not_found(other, "css", &["inject", "remove"]),
         }
     }
 
@@ -1311,7 +1295,7 @@ impl VictauriMcpHandler {
             "slow_ipc" => {
                 let threshold = match params.threshold_ms {
                     Some(t) => t,
-                    None => return tool_error("threshold_ms is required for slow_ipc"),
+                    None => return missing_param("threshold_ms", "slow_ipc"),
                 };
                 let limit = params.limit.unwrap_or(20);
                 let code = format!(
@@ -1327,9 +1311,7 @@ impl VictauriMcpHandler {
                     Err(e) => tool_error(e),
                 }
             }
-            other => tool_error(format!(
-                "unknown logs action '{other}'; expected: console, network, ipc, navigation, dialogs, events, slow_ipc"
-            )),
+            other => tool_not_found(other, "logs", &["console", "network", "ipc", "navigation", "dialogs", "events", "slow_ipc"]),
         }
     }
 }

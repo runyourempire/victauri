@@ -67,8 +67,15 @@ const INIT_SCRIPT_BODY: &str = r#"
         return null;
     }
 
+    var REF_MAP_LIMIT = 10000;
+
     function registerRef(node) {
         var ref_id = 'e' + (refCounter++);
+        if (refMap.size >= REF_MAP_LIMIT) {
+            var oldest = refMap.keys().next().value;
+            refMap.delete(oldest);
+            weakRefMap.delete(oldest);
+        }
         refMap.set(ref_id, node);
         if (typeof WeakRef !== 'undefined') {
             weakRefMap.set(ref_id, new WeakRef(node));
@@ -158,7 +165,7 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Public API ───────────────────────────────────────────────────────────
 
     window.__VICTAURI__ = {
-        version: '0.2.0',
+        version: '0.3.0',
 
         // ── DOM ──────────────────────────────────────────────────────────────
 
