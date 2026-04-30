@@ -25,6 +25,17 @@ unsafe_code = "deny"
 all = { level = "deny", priority = -1 }
 redundant_closure_for_method_calls = "deny"
 missing_errors_doc = "deny"
+must_use_candidate = "deny"
+return_self_not_must_use = "deny"
+manual_let_else = "deny"
+map_unwrap_or = "deny"
+doc_markdown = "deny"
+uninlined_format_args = "deny"
+single_match_else = "deny"
+default_trait_access = "deny"
+cast_lossless = "deny"
+unnecessary_raw_string_hashes = "deny"
+if_not_else = "deny"
 
 [workspace.dependencies]
 victauri-core = { version = "0.1.0", path = "crates/victauri-core" }

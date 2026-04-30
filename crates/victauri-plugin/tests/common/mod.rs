@@ -37,7 +37,7 @@ pub fn test_state() -> Arc<VictauriState> {
         port: std::sync::atomic::AtomicU16::new(0),
         pending_evals: Arc::new(Mutex::new(HashMap::new())),
         recorder: EventRecorder::new(1000),
-        privacy: Default::default(),
+        privacy: victauri_plugin::privacy::PrivacyConfig::default(),
         eval_timeout: std::time::Duration::from_secs(30),
         shutdown_tx: tokio::sync::watch::channel(false).0,
         started_at: std::time::Instant::now(),
