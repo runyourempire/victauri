@@ -1,3 +1,5 @@
+//! Demo Tauri application showcasing Victauri introspection and MCP tools.
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};

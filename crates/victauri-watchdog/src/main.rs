@@ -1,3 +1,5 @@
+//! Watchdog process that monitors and restarts the Victauri MCP server if it becomes unresponsive.
+
 use std::time::Duration;
 
 struct Config {

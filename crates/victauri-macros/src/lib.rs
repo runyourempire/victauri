@@ -1,3 +1,6 @@
+//! Procedural macros for Victauri — currently provides the `#[inspectable]` attribute
+//! for auto-registering Tauri commands with the MCP introspection layer.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};

@@ -1,3 +1,5 @@
+//! Build script that generates the Tauri command allowlist.
+
 const COMMANDS: &[&str] = &[
     "victauri_eval_js",
     "victauri_eval_callback",
