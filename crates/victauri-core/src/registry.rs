@@ -181,21 +181,30 @@ pub struct ScoredCommand {
     pub score: f64,
 }
 
+const SCORE_EXACT_NAME: f64 = 10.0;
+const SCORE_NAME_SUBSTRING: f64 = 3.0;
+const SCORE_NAME_WORD: f64 = 2.0;
+const SCORE_DESCRIPTION: f64 = 1.5;
+const SCORE_INTENT: f64 = 2.5;
+const SCORE_CATEGORY: f64 = 1.0;
+const SCORE_EXAMPLE_FULL: f64 = 4.0;
+const SCORE_EXAMPLE_WORD: f64 = 0.5;
+
 fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> f64 {
     let mut score = 0.0;
     let name_lower = cmd.name.to_lowercase();
     let name_words: Vec<&str> = name_lower.split('_').collect();
 
     if name_lower == query_lower.replace(' ', "_") {
-        score += 10.0;
+        score += SCORE_EXACT_NAME;
     }
 
     for word in query_words {
         if name_lower.contains(word) {
-            score += 3.0;
+            score += SCORE_NAME_SUBSTRING;
         }
         if name_words.contains(word) {
-            score += 2.0;
+            score += SCORE_NAME_WORD;
         }
     }
 
@@ -203,7 +212,7 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
         let desc_lower = desc.to_lowercase();
         for word in query_words {
             if desc_lower.contains(word) {
-                score += 1.5;
+                score += SCORE_DESCRIPTION;
             }
         }
     }
@@ -212,7 +221,7 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
         let intent_lower = intent.to_lowercase();
         for word in query_words {
             if intent_lower.contains(word) {
-                score += 2.5;
+                score += SCORE_INTENT;
             }
         }
     }
@@ -221,7 +230,7 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
         let cat_lower = category.to_lowercase();
         for word in query_words {
             if cat_lower.contains(word) {
-                score += 1.0;
+                score += SCORE_CATEGORY;
             }
         }
     }
@@ -229,12 +238,12 @@ fn score_command(cmd: &CommandInfo, query_lower: &str, query_words: &[&str]) -> 
     for example in &cmd.examples {
         let ex_lower = example.to_lowercase();
         if ex_lower.contains(query_lower) {
-            score += 4.0;
+            score += SCORE_EXAMPLE_FULL;
             break;
         }
         for word in query_words {
             if ex_lower.contains(word) {
-                score += 0.5;
+                score += SCORE_EXAMPLE_WORD;
             }
         }
     }
