@@ -153,6 +153,7 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
 fn macos_window_number(ns_view: *mut std::ffi::c_void) -> Result<isize, String> {
     extern "C" {
         fn objc_msgSend(obj: *mut std::ffi::c_void, sel: *mut std::ffi::c_void) -> isize;

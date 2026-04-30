@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! Victauri — full-stack introspection for Tauri apps via an embedded MCP server.
 //!
 //! Add this plugin to your Tauri app for AI-agent-driven testing and debugging:
@@ -507,9 +508,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn builder_default_port() {
         let builder = VictauriBuilder::new();
-        // Clear env var to test default
+        // SAFETY: test-only — no concurrent env reads in this test binary.
         unsafe { std::env::remove_var("VICTAURI_PORT") };
         assert_eq!(builder.resolve_port(), DEFAULT_PORT);
     }

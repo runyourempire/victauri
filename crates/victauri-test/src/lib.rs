@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+#![warn(missing_docs)]
 //! Test assertion helpers for AI-agent and CI testing of Tauri apps via Victauri.
 //!
 //! This crate provides a typed HTTP client for the Victauri MCP server,

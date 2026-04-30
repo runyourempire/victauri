@@ -11,6 +11,7 @@ pub fn current_stats() -> serde_json::Value {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn process_memory_windows() -> serde_json::Value {
     use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use windows::Win32::System::Threading::GetCurrentProcess;

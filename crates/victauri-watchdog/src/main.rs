@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use std::time::Duration;
 
 struct Config {
@@ -148,6 +150,7 @@ async fn run_recovery(cmd: &str) -> anyhow::Result<std::process::ExitStatus> {
 }
 
 #[cfg(test)]
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
     use std::sync::Mutex;

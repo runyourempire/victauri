@@ -434,7 +434,7 @@ impl VictauriClient {
         .await
     }
 
-    /// Select option(s) in a <select> element.
+    /// Select option(s) in a `<select>` element.
     pub async fn select_option(
         &mut self,
         ref_id: &str,

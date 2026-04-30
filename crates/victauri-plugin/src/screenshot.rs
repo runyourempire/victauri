@@ -1,5 +1,5 @@
 #[cfg(windows)]
-#[allow(dead_code)]
+#[allow(dead_code, unsafe_code)]
 pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
@@ -121,7 +121,7 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
 }
 
 #[cfg(target_os = "macos")]
-#[allow(dead_code)]
+#[allow(dead_code, unsafe_code)]
 pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
     tokio::task::spawn_blocking(move || unsafe {
         // CoreGraphics FFI types and functions
