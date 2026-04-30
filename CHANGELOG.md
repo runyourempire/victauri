@@ -16,20 +16,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `SnapshotParams.format` is now `Option<SnapshotFormat>` enum instead of `Option<String>`
 - `events_between_checkpoints` returns `Result` with specific error variants instead of `Option`
 - Extracted `json_result` helper in MCP handler, eliminating 14 repeated serialization blocks
+- All match-based extractions replaced with `let...else` (32 sites)
+- All `map().unwrap_or()` chains replaced with `map_or()` (10 sites)
+- All redundant closures replaced with method references (53 sites)
+- `Default::default()` replaced with explicit type calls per `default_trait_access`
+- Scoped `use` imports moved before statements per `items_after_statements`
 
 ### Added
 
 - `AssertionCondition` enum with `FromStr`, `Display`, `Serialize`/`Deserialize`, and feature-gated `JsonSchema` (`schema` feature on victauri-core)
 - 16 typed enums replacing string parameters across plugin and core crates
-- `#[must_use]` on all pure constructors, getters, and analysis functions across entire public API
+- `Serialize` and `Display` implemented on all 13 action enums for symmetric serde and ergonomic formatting
+- `#[must_use]` on all 26 value-returning public functions (constructors, getters, builders, analysis)
+- `# Errors` documentation on all public `Result`-returning functions
+- `# Panics` documentation on all functions containing panicking assertions
+- Backticks on all code items in doc comments (73 sites)
+- Crate-level documentation on all crates, binaries, and build scripts
 - `#[warn(missing_docs)]` enforced in victauri-core, victauri-plugin, and victauri-test
 - `FLOAT_EPSILON` named constant for floating-point severity classification
+- **17 pedantic clippy lints enforced at deny level** in workspace config: `redundant_closure_for_method_calls`, `missing_errors_doc`, `must_use_candidate`, `return_self_not_must_use`, `manual_let_else`, `map_unwrap_or`, `doc_markdown`, `uninlined_format_args`, `single_match_else`, `default_trait_access`, `cast_lossless`, `unnecessary_raw_string_hashes`, `if_not_else`, `missing_panics_doc`, `items_after_statements`, `clippy::all`
+- Centralized lint configuration in `[workspace.lints]` (Cargo edition 2024)
 
 ### Removed
 
 - 39 dead param structs from pre-compound-tool era (replaced by compound params)
 - `tool_not_found` helper (no longer needed with typed action enums)
 - `introspection_params.rs` and `recording_params.rs` modules (all structs superseded)
+- Dead `RecoveryHint` variants (`RetryLater`, `TryAlternative`) and `ref_not_found` helper
+- Per-crate `#![deny(unsafe_code)]` attributes (now in workspace lints)
 
 ### Fixed
 
