@@ -105,10 +105,10 @@ impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
     }
 
     fn get_native_handle(&self, label: Option<&str>) -> Result<isize, String> {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
         let windows = self.webview_windows();
         let _webview = find_window(&windows, label)?;
-
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
         let handle = _webview.window_handle().map_err(|e| e.to_string())?;
         match handle.as_raw() {
             #[cfg(windows)]

@@ -573,13 +573,13 @@ mod tests {
 
     #[test]
     fn deflate_compress_roundtrip_structure() {
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+
         let data = b"hello world";
         let compressed = deflate_compress(data);
         // zlib header: CMF=0x78 (deflate, 32K window)
         assert_eq!(compressed[0], 0x78);
-        // Must decompress back to original
-        use flate2::read::ZlibDecoder;
-        use std::io::Read;
         let mut decoder = ZlibDecoder::new(&compressed[..]);
         let mut decompressed = Vec::new();
         decoder.read_to_end(&mut decompressed).unwrap();
