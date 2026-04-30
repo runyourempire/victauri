@@ -37,8 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **20 clippy lints enforced at deny level** (17 pedantic + 3 nursery) in workspace config: `redundant_closure_for_method_calls`, `missing_errors_doc`, `must_use_candidate`, `return_self_not_must_use`, `manual_let_else`, `map_unwrap_or`, `doc_markdown`, `uninlined_format_args`, `single_match_else`, `default_trait_access`, `cast_lossless`, `needless_raw_string_hashes`, `if_not_else`, `missing_panics_doc`, `items_after_statements`, `clippy::all`, `derive_partial_eq_without_eq`, `use_self`, `redundant_pub_crate`
 - Centralized lint configuration in `[workspace.lints]` (Cargo edition 2024)
 - `CommandInfo::new()` builder pattern with `with_description`/`with_intent`/`with_category` — eliminates 9-field struct literal boilerplate
-- 16 runnable doc-test examples on core public API (up from 6): `verify_state`, `detect_ghost_commands`, `check_ipc_integrity`, `EventLog::push`, `EventLog::ipc_calls`, `EventRecorder::start`/`stop`, `VerificationResult`, `CommandRegistry::search`/`resolve`, `CommandInfo::new`
-- Named constants replacing magic numbers: PNG encoding (`PNG_SIGNATURE`, `CRC32_POLYNOMIAL`, `ADLER32_MOD`), server (`DEFAULT_WEBVIEW_LABEL`), auth (`BEARER_PREFIX_LEN`), builder validation (`MAX_EVENT_CAPACITY`, `MAX_RECORDER_CAPACITY`, `MAX_EVAL_TIMEOUT_SECS`)
+- 23 runnable doc-test examples across core + test crates (up from 6): `verify_state`, `detect_ghost_commands`, `check_ipc_integrity`, `EventLog::push`, `EventLog::ipc_calls`, `EventRecorder::start`/`stop`, `VerificationResult`, `CommandRegistry::search`/`resolve`, `CommandInfo::new`, `DomSnapshot::to_accessible_text`, `assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`
+- Named constants replacing magic numbers: PNG encoding (`PNG_SIGNATURE`, `CRC32_POLYNOMIAL`, `ADLER32_MOD`), server (`DEFAULT_WEBVIEW_LABEL`), auth (`BEARER_PREFIX_LEN`), builder validation (`MAX_EVENT_CAPACITY`, `MAX_RECORDER_CAPACITY`, `MAX_EVAL_TIMEOUT_SECS`), recorder (`DEFAULT_MAX_EVENTS`)
+- `// SAFETY:` comments on all `unsafe` blocks (FFI, macOS bridge, watchdog env tests)
+- `Eq, PartialEq` derived on 18 core data types for ergonomic `assert_eq!` in tests
 - `clippy.toml` with `too-many-lines-threshold = 100` and `type-complexity-threshold = 300`
 
 ### Removed
@@ -51,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `score_command` per-word score normalization — multi-word queries no longer inflate scores ~Nx compared to single-word queries, making cross-query ranking reliable
 - 6 ghost tool names in `VictauriClient` test client (`fill`, `type_text`, `get_window_state`, `get_ipc_log`, `start_recording`, `wait_for` parameter name)
 - Benchmark code silently discarding `Result` from `EventRecorder::start`
 - README code examples using non-existent API methods
