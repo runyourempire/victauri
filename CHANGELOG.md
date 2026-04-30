@@ -10,15 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** `SemanticAssertion.condition` is now `AssertionCondition` enum instead of `String` — invalid conditions are caught at deserialization, not deep in evaluation logic
+- **BREAKING:** All 9 compound tool `action` parameters are now typed enums (`InteractAction`, `InputAction`, `WindowAction`, `StorageAction`, `NavigateAction`, `RecordingAction`, `InspectAction`, `CssAction`, `LogsAction`) — invalid actions are rejected at JSON deserialization with clear variant listings
+- **BREAKING:** `WaitForParams.condition` is now `WaitCondition` enum instead of `String`
+- **BREAKING:** `StorageParams.storage_type` is now `Option<StorageType>` enum, `NavigateParams.dialog_type`/`dialog_action` are now `Option<DialogType>`/`Option<DialogAction>` enums, `WindowParams.manage_action` is now `Option<ManageAction>` enum
+- **BREAKING:** `SnapshotParams.format` is now `Option<SnapshotFormat>` enum instead of `Option<String>`
 - `events_between_checkpoints` returns `Result` with specific error variants instead of `Option`
 - Extracted `json_result` helper in MCP handler, eliminating 14 repeated serialization blocks
 
 ### Added
 
 - `AssertionCondition` enum with `FromStr`, `Display`, `Serialize`/`Deserialize`, and feature-gated `JsonSchema` (`schema` feature on victauri-core)
-- `#[must_use]` on all pure constructors and analysis functions
+- 16 typed enums replacing string parameters across plugin and core crates
+- `#[must_use]` on all pure constructors, getters, and analysis functions across entire public API
 - `#[warn(missing_docs)]` enforced in victauri-core, victauri-plugin, and victauri-test
 - `FLOAT_EPSILON` named constant for floating-point severity classification
+
+### Removed
+
+- 39 dead param structs from pre-compound-tool era (replaced by compound params)
+- `tool_not_found` helper (no longer needed with typed action enums)
+- `introspection_params.rs` and `recording_params.rs` modules (all structs superseded)
 
 ### Fixed
 
