@@ -14,7 +14,7 @@ Requires Rust 1.88+ (edition 2024).
 ## Running Tests
 
 ```bash
-cargo test --workspace          # All tests (287)
+cargo test --workspace          # All tests (415+)
 cargo test -p victauri-core     # Core crate only
 cargo test -p victauri-plugin   # Plugin crate only
 cargo bench -p victauri-core    # Criterion benchmarks (13)
@@ -30,6 +30,7 @@ All checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and ma
 - `cargo clippy -- -D warnings` must pass
 - No `unwrap()` on mutexes or RwLocks — use `unwrap_or_else(|e| e.into_inner())` for poisoning recovery
 - No `unreachable!()` in match arms that could be reached by malformed input
+- `#![deny(unsafe_code)]` is enforced in all crates — use targeted `#[allow(unsafe_code)]` with `// SAFETY:` comments for FFI
 
 ## Structure
 
@@ -43,8 +44,8 @@ All checks (test, clippy, fmt) must pass. CI runs them on Linux, Windows, and ma
 
 ## Adding MCP Tools
 
-1. Add the handler function in `crates/victauri-plugin/src/mcp.rs`
-2. Register it in the tool list and router
+1. Add the `#[tool]` handler in `crates/victauri-plugin/src/mcp/mod.rs`
+2. Add parameter struct in the appropriate `*_params.rs` module
 3. Add tests in the appropriate test module
 4. Update the tool count in README and CHANGELOG
 
