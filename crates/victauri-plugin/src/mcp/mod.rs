@@ -525,18 +525,16 @@ impl VictauriMcpHandler {
     async fn interact(&self, Parameters(params): Parameters<InteractParams>) -> CallToolResult {
         match params.action {
             InteractAction::Click => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "click"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "click");
                 };
                 let code = format!("return window.__VICTAURI__?.click({})", js_string(ref_id));
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             InteractAction::DoubleClick => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "double_click"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "double_click");
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.doubleClick({})",
@@ -546,18 +544,16 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::Hover => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "hover"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "hover");
                 };
                 let code = format!("return window.__VICTAURI__?.hover({})", js_string(ref_id));
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             InteractAction::Focus => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "focus"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "focus");
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.focusElement({})",
@@ -579,9 +575,8 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::SelectOption => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "select_option"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "select_option");
                 };
                 let values = params.values.as_deref().unwrap_or(&[]);
                 let values_json =
@@ -612,13 +607,11 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("fill") {
                     return tool_disabled("fill");
                 }
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "fill"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "fill");
                 };
-                let value = match &params.value {
-                    Some(v) => v,
-                    None => return missing_param("value", "fill"),
+                let Some(value) = &params.value else {
+                    return missing_param("value", "fill");
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.fill({}, {})",
@@ -632,13 +625,11 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("type_text") {
                     return tool_disabled("type_text");
                 }
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "type_text"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "type_text");
                 };
-                let text = match &params.text {
-                    Some(t) => t,
-                    None => return missing_param("text", "type_text"),
+                let Some(text) = &params.text else {
+                    return missing_param("text", "type_text");
                 };
                 let code = format!(
                     "return window.__VICTAURI__?.type({}, {})",
@@ -649,9 +640,8 @@ impl VictauriMcpHandler {
                     .await
             }
             InputAction::PressKey => {
-                let key = match &params.key {
-                    Some(k) => k,
-                    None => return missing_param("key", "press_key"),
+                let Some(key) = &params.key else {
+                    return missing_param("key", "press_key");
                 };
                 let code = format!("return window.__VICTAURI__?.pressKey({})", js_string(key));
                 self.eval_bridge(&code, params.webview_label.as_deref())
@@ -681,9 +671,8 @@ impl VictauriMcpHandler {
                 json_result(&labels)
             }
             WindowAction::Manage => {
-                let manage_action = match &params.manage_action {
-                    Some(a) => a,
-                    None => return missing_param("manage_action", "manage"),
+                let Some(manage_action) = &params.manage_action else {
+                    return missing_param("manage_action", "manage");
                 };
                 match self
                     .bridge
@@ -694,13 +683,11 @@ impl VictauriMcpHandler {
                 }
             }
             WindowAction::Resize => {
-                let width = match params.width {
-                    Some(w) => w,
-                    None => return missing_param("width", "resize"),
+                let Some(width) = params.width else {
+                    return missing_param("width", "resize");
                 };
-                let height = match params.height {
-                    Some(h) => h,
-                    None => return missing_param("height", "resize"),
+                let Some(height) = params.height else {
+                    return missing_param("height", "resize");
                 };
                 match self
                     .bridge
@@ -715,13 +702,11 @@ impl VictauriMcpHandler {
                 }
             }
             WindowAction::MoveTo => {
-                let x = match params.x {
-                    Some(v) => v,
-                    None => return missing_param("x", "move_to"),
+                let Some(x) = params.x else {
+                    return missing_param("x", "move_to");
                 };
-                let y = match params.y {
-                    Some(v) => v,
-                    None => return missing_param("y", "move_to"),
+                let Some(y) = params.y else {
+                    return missing_param("y", "move_to");
                 };
                 match self.bridge.move_window(params.label.as_deref(), x, y) {
                     Ok(()) => {
@@ -732,9 +717,8 @@ impl VictauriMcpHandler {
                 }
             }
             WindowAction::SetTitle => {
-                let title = match &params.title {
-                    Some(t) => t,
-                    None => return missing_param("title", "set_title"),
+                let Some(title) = &params.title else {
+                    return missing_param("title", "set_title");
                 };
                 match self.bridge.set_window_title(params.label.as_deref(), title) {
                     Ok(()) => {
@@ -780,9 +764,8 @@ impl VictauriMcpHandler {
                     StorageType::Session => "setSessionStorage",
                     StorageType::Local => "setLocalStorage",
                 };
-                let key = match &params.key {
-                    Some(k) => k,
-                    None => return missing_param("key", "set"),
+                let Some(key) = &params.key else {
+                    return missing_param("key", "set");
                 };
                 let value = params
                     .value
@@ -806,9 +789,8 @@ impl VictauriMcpHandler {
                     StorageType::Session => "deleteSessionStorage",
                     StorageType::Local => "deleteLocalStorage",
                 };
-                let key = match &params.key {
-                    Some(k) => k,
-                    None => return missing_param("key", "delete"),
+                let Some(key) = &params.key else {
+                    return missing_param("key", "delete");
                 };
                 let code = format!("return window.__VICTAURI__?.{method}({})", js_string(key));
                 self.eval_bridge(&code, params.webview_label.as_deref())
@@ -839,9 +821,8 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("navigate") {
                     return tool_disabled("navigate");
                 }
-                let url = match &params.url {
-                    Some(u) => u,
-                    None => return missing_param("url", "go_to"),
+                let Some(url) = &params.url else {
+                    return missing_param("url", "go_to");
                 };
                 if let Err(e) = validate_url(url) {
                     return tool_error(e);
@@ -868,13 +849,11 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("set_dialog_response") {
                     return tool_disabled("set_dialog_response");
                 }
-                let dialog_type = match params.dialog_type {
-                    Some(t) => t,
-                    None => return missing_param("dialog_type", "set_dialog_response"),
+                let Some(dialog_type) = params.dialog_type else {
+                    return missing_param("dialog_type", "set_dialog_response");
                 };
-                let dialog_action = match params.dialog_action {
-                    Some(a) => a,
-                    None => return missing_param("dialog_action", "set_dialog_response"),
+                let Some(dialog_action) = params.dialog_action else {
+                    return missing_param("dialog_action", "set_dialog_response");
                 };
                 let text_arg = params
                     .text
@@ -931,9 +910,8 @@ impl VictauriMcpHandler {
                 None => tool_error("no recording is active"),
             },
             RecordingAction::Checkpoint => {
-                let id = match params.checkpoint_id {
-                    Some(id) => id,
-                    None => return missing_param("checkpoint_id", "checkpoint"),
+                let Some(id) = params.checkpoint_id else {
+                    return missing_param("checkpoint_id", "checkpoint");
                 };
                 let state = params.state.unwrap_or(serde_json::Value::Null);
                 match self
@@ -964,13 +942,11 @@ impl VictauriMcpHandler {
                 json_result(&events)
             }
             RecordingAction::EventsBetween => {
-                let from = match &params.from {
-                    Some(f) => f,
-                    None => return missing_param("from", "events_between"),
+                let Some(from) = &params.from else {
+                    return missing_param("from", "events_between");
                 };
-                let to = match &params.to {
-                    Some(t) => t,
-                    None => return missing_param("to", "events_between"),
+                let Some(to) = &params.to else {
+                    return missing_param("to", "events_between");
                 };
                 match self.state.recorder.events_between_checkpoints(from, to) {
                     Ok(events) => json_result(&events),
@@ -990,9 +966,8 @@ impl VictauriMcpHandler {
                 None => tool_error("no recording is active — start one first"),
             },
             RecordingAction::Import => {
-                let session_json = match &params.session_json {
-                    Some(j) => j,
-                    None => return missing_param("session_json", "import"),
+                let Some(session_json) = &params.session_json else {
+                    return missing_param("session_json", "import");
                 };
                 let session: victauri_core::RecordedSession =
                     match serde_json::from_str(session_json) {
@@ -1025,9 +1000,8 @@ impl VictauriMcpHandler {
     async fn inspect(&self, Parameters(params): Parameters<InspectParams>) -> CallToolResult {
         match params.action {
             InspectAction::GetStyles => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "get_styles"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "get_styles");
                 };
                 let props_arg = match &params.properties {
                     Some(props) => {
@@ -1045,9 +1019,8 @@ impl VictauriMcpHandler {
                     .await
             }
             InspectAction::GetBoundingBoxes => {
-                let ref_ids = match &params.ref_ids {
-                    Some(ids) => ids,
-                    None => return missing_param("ref_ids", "get_bounding_boxes"),
+                let Some(ref_ids) = &params.ref_ids else {
+                    return missing_param("ref_ids", "get_bounding_boxes");
                 };
                 let refs: Vec<String> = ref_ids.iter().map(|r| js_string(r)).collect();
                 let code = format!(
@@ -1058,9 +1031,8 @@ impl VictauriMcpHandler {
                     .await
             }
             InspectAction::Highlight => {
-                let ref_id = match &params.ref_id {
-                    Some(r) => r,
-                    None => return missing_param("ref_id", "highlight"),
+                let Some(ref_id) = &params.ref_id else {
+                    return missing_param("ref_id", "highlight");
                 };
                 let color_arg = match &params.color {
                     Some(c) => match sanitize_css_color(c) {
@@ -1121,9 +1093,8 @@ impl VictauriMcpHandler {
                 if !self.state.privacy.is_tool_enabled("inject_css") {
                     return tool_disabled("inject_css");
                 }
-                let css = match &params.css {
-                    Some(c) => c,
-                    None => return missing_param("css", "inject"),
+                let Some(css) = &params.css else {
+                    return missing_param("css", "inject");
                 };
                 let code = format!("return window.__VICTAURI__?.injectCss({})", js_string(css));
                 self.eval_bridge(&code, params.webview_label.as_deref())
@@ -1210,9 +1181,8 @@ impl VictauriMcpHandler {
                     .await
             }
             LogsAction::SlowIpc => {
-                let threshold = match params.threshold_ms {
-                    Some(t) => t,
-                    None => return missing_param("threshold_ms", "slow_ipc"),
+                let Some(threshold) = params.threshold_ms else {
+                    return missing_param("threshold_ms", "slow_ipc");
                 };
                 let limit = params.limit.unwrap_or(20);
                 let code = format!(

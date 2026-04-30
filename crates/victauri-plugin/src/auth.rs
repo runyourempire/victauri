@@ -28,9 +28,8 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let expected = match &auth.token {
-        Some(t) => t,
-        None => return Ok(next.run(request).await),
+    let Some(expected) = &auth.token else {
+        return Ok(next.run(request).await);
     };
 
     let provided = request

@@ -271,12 +271,10 @@ async fn event_drain_loop(
             continue;
         }
 
-        let result = match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
-            Ok(Ok(r)) => r,
-            _ => {
-                state.pending_evals.lock().await.remove(&id);
-                continue;
-            }
+        let Ok(Ok(result)) = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await
+        else {
+            state.pending_evals.lock().await.remove(&id);
+            continue;
         };
 
         let events: Vec<serde_json::Value> = match serde_json::from_str(&result) {
