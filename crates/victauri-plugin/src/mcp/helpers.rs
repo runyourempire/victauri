@@ -28,20 +28,15 @@ pub(crate) fn tool_disabled(name: &str) -> CallToolResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub(crate) enum RecoveryHint {
-    RetryLater,
     CheckInput,
-    TryAlternative,
     ReportToUser,
 }
 
 impl RecoveryHint {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::RetryLater => "RETRY_LATER",
             Self::CheckInput => "CHECK_INPUT",
-            Self::TryAlternative => "TRY_ALTERNATIVE",
             Self::ReportToUser => "REPORT_TO_USER",
         }
     }
@@ -64,16 +59,6 @@ pub(crate) fn missing_param(param: &str, action: &str) -> CallToolResult {
     tool_error_with_hint(
         format!("missing required parameter '{param}' for action '{action}'"),
         RecoveryHint::CheckInput,
-    )
-}
-
-#[allow(dead_code)]
-pub(crate) fn ref_not_found(ref_id: &str) -> CallToolResult {
-    tool_error_with_hint(
-        format!(
-            "ref handle '{ref_id}' not found -- it may have been invalidated. Take a new dom_snapshot to get fresh refs."
-        ),
-        RecoveryHint::TryAlternative,
     )
 }
 
