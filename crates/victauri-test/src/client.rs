@@ -212,7 +212,7 @@ impl VictauriClient {
 
         let resp =
             resp.ok_or_else(|| TestError::Connection("tool call failed after retries".into()))?;
-        let body: Value = resp.json().await?;
+        let body = Self::parse_response(resp).await?;
 
         if let Some(error) = body.get("error") {
             return Err(TestError::Mcp {
@@ -233,6 +233,47 @@ impl VictauriClient {
         }
 
         Ok(body)
+    }
+
+    /// Parse a response that may be JSON or SSE (text/event-stream).
+    ///
+    /// rmcp's Streamable HTTP transport always returns SSE format with the
+    /// JSON-RPC payload in a `data:` line. This method handles both formats.
+    async fn parse_response(resp: reqwest::Response) -> Result<Value, TestError> {
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        let text = resp.text().await?;
+
+        if content_type.contains("text/event-stream") {
+            for line in text.lines() {
+                let data = line
+                    .strip_prefix("data: ")
+                    .or_else(|| line.strip_prefix("data:"));
+                let Some(data) = data else { continue };
+                let trimmed = data.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+                    return Ok(parsed);
+                }
+            }
+            Err(TestError::Connection(
+                "SSE stream contained no JSON-RPC data".into(),
+            ))
+        } else {
+            serde_json::from_str(&text).map_err(|e| {
+                TestError::Connection(format!(
+                    "JSON parse error: {e}, body: {}",
+                    &text[..200.min(text.len())]
+                ))
+            })
+        }
     }
 
     /// Evaluate JavaScript in the webview and return the result.
