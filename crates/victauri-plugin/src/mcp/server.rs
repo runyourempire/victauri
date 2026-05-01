@@ -101,7 +101,9 @@ pub fn build_app_with_options(
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub mod tests_support {
+    /// Expose memory stats for integration tests.
     #[must_use]
     pub fn get_memory_stats() -> serde_json::Value {
         crate::memory::current_stats()

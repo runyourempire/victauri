@@ -24,3 +24,7 @@ Thumbs.db
 
 # Data artifacts
 data/
+
+# Bridge test dependencies (npm)
+**/node_modules/
+**/package-lock.json

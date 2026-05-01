@@ -1,10 +1,16 @@
 /// JS bridge log capacity configuration.
 pub struct BridgeCapacities {
+    /// Maximum console log entries to retain.
     pub console_logs: usize,
+    /// Maximum DOM mutation batches to retain.
     pub mutation_log: usize,
+    /// Maximum network request entries to retain.
     pub network_log: usize,
+    /// Maximum navigation history entries to retain.
     pub navigation_log: usize,
+    /// Maximum dialog event entries to retain.
     pub dialog_log: usize,
+    /// Maximum long task entries to retain.
     pub long_tasks: usize,
 }
 
@@ -22,6 +28,7 @@ impl Default for BridgeCapacities {
 }
 
 /// Generate the JS init script with custom log capacities.
+#[must_use]
 pub fn init_script(caps: &BridgeCapacities) -> String {
     format!(
         "\n(function() {{\

@@ -37,7 +37,8 @@
 /// Runtime-erased webview bridge trait and its Tauri implementation.
 pub mod bridge;
 pub mod error;
-mod js_bridge;
+/// JS bridge script generation for webview injection.
+pub mod js_bridge;
 /// MCP server, tool handler, and parameter types.
 pub mod mcp;
 mod memory;
