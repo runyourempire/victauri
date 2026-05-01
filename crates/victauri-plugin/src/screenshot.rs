@@ -7,8 +7,8 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
         DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP, HDC, HGDIOBJ, ReleaseDC,
         SRCCOPY, SelectObject,
     };
-    use windows::Win32::Storage::Xps::{PW_CLIENTONLY, PrintWindow};
-    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+    use windows::Win32::Storage::Xps::{PW_CLIENTONLY, PRINT_WINDOW_FLAGS, PrintWindow};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, PW_RENDERFULLCONTENT};
 
     /// RAII guard that releases GDI handles on drop, preventing leaks when
     /// early returns (`?`) occur after handle acquisition.
@@ -65,7 +65,8 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
                 old,
             };
 
-            let captured = PrintWindow(hwnd, hdc_mem, PW_CLIENTONLY);
+            let flags = PRINT_WINDOW_FLAGS(PW_CLIENTONLY.0 | PW_RENDERFULLCONTENT);
+            let captured = PrintWindow(hwnd, hdc_mem, flags);
             if !captured.as_bool() {
                 BitBlt(
                     hdc_mem,
