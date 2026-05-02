@@ -660,6 +660,213 @@ impl VictauriClient {
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
+
+    // ── High-Level Playwright-Style API ─────────────────────────────────────
+
+    /// Click the first element whose accessible text contains the given string.
+    ///
+    /// Takes a DOM snapshot, finds the element, and clicks it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no matching element is found.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn click_by_text(&mut self, text: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_text(text).await?;
+        self.click(&ref_id).await
+    }
+
+    /// Click the element with the given HTML `id` attribute.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn click_by_id(&mut self, id: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.click(&ref_id).await
+    }
+
+    /// Fill an input identified by HTML `id` with the given value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn fill_by_id(&mut self, id: &str, value: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.fill(&ref_id, value).await
+    }
+
+    /// Type text into an input identified by HTML `id`, character by character.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn type_by_id(&mut self, id: &str, text: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.type_text(&ref_id, text).await
+    }
+
+    /// Wait until the page contains the given text (polls DOM snapshots).
+    ///
+    /// Default timeout: 5000ms, poll interval: 200ms.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Timeout`] if the text doesn't appear within the timeout.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn expect_text(&mut self, text: &str) -> Result<(), TestError> {
+        self.expect_text_with_timeout(text, 5000).await
+    }
+
+    /// Wait until the page contains the given text, with a custom timeout in ms.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Timeout`] if the text doesn't appear within the timeout.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn expect_text_with_timeout(
+        &mut self,
+        text: &str,
+        timeout_ms: u64,
+    ) -> Result<(), TestError> {
+        let result = self
+            .wait_for("text", Some(text), Some(timeout_ms), Some(200))
+            .await?;
+        if result.get("ok").and_then(Value::as_bool) == Some(true) {
+            Ok(())
+        } else {
+            Err(TestError::Timeout(format!(
+                "text \"{text}\" did not appear within {timeout_ms}ms"
+            )))
+        }
+    }
+
+    /// Wait until the page no longer contains the given text.
+    ///
+    /// Default timeout: 3000ms, poll interval: 200ms.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Timeout`] if the text is still present after the timeout.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn expect_no_text(&mut self, text: &str) -> Result<(), TestError> {
+        let result = self
+            .wait_for("text_gone", Some(text), Some(3000), Some(200))
+            .await?;
+        if result.get("ok").and_then(Value::as_bool) == Some(true) {
+            Ok(())
+        } else {
+            Err(TestError::Timeout(format!(
+                "text \"{text}\" still present after 3000ms"
+            )))
+        }
+    }
+
+    /// Select an option in a `<select>` element identified by HTML `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn select_by_id(&mut self, id: &str, value: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.select_option(&ref_id, &[value]).await
+    }
+
+    /// Get the text content of an element identified by HTML `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn text_by_id(&mut self, id: &str) -> Result<String, TestError> {
+        let snap = self.snapshot_json().await?;
+        let tree = &snap["tree"];
+        find_text_by_attr_id(tree, id)
+            .ok_or_else(|| TestError::ElementNotFound(format!("id=\"{id}\"")))
+    }
+
+    // ── Internal helpers for high-level API ─────────────────────────────────
+
+    async fn snapshot_json(&mut self) -> Result<Value, TestError> {
+        self.call_tool("dom_snapshot", json!({"format": "json"}))
+            .await
+    }
+
+    async fn find_ref_by_text(&mut self, text: &str) -> Result<String, TestError> {
+        let snap = self.snapshot_json().await?;
+        let tree = &snap["tree"];
+        find_in_tree_by_text(tree, text)
+            .ok_or_else(|| TestError::ElementNotFound(format!("text=\"{text}\"")))
+    }
+
+    async fn find_ref_by_id(&mut self, id: &str) -> Result<String, TestError> {
+        let snap = self.snapshot_json().await?;
+        let tree = &snap["tree"];
+        find_in_tree_by_attr_id(tree, id)
+            .ok_or_else(|| TestError::ElementNotFound(format!("id=\"{id}\"")))
+    }
+}
+
+fn find_in_tree_by_text(node: &Value, text: &str) -> Option<String> {
+    let node_text = node.get("text").and_then(Value::as_str).unwrap_or("");
+    let node_name = node.get("name").and_then(Value::as_str).unwrap_or("");
+    if (node_text.contains(text) || node_name.contains(text))
+        && let Some(ref_id) = node.get("ref_id").and_then(Value::as_str)
+    {
+        return Some(ref_id.to_string());
+    }
+    if let Some(children) = node.get("children").and_then(Value::as_array) {
+        for child in children {
+            if let Some(found) = find_in_tree_by_text(child, text) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn find_in_tree_by_attr_id(node: &Value, id: &str) -> Option<String> {
+    if node
+        .get("attributes")
+        .and_then(|a| a.get("id"))
+        .and_then(Value::as_str)
+        == Some(id)
+        && let Some(ref_id) = node.get("ref_id").and_then(Value::as_str)
+    {
+        return Some(ref_id.to_string());
+    }
+    if let Some(children) = node.get("children").and_then(Value::as_array) {
+        for child in children {
+            if let Some(found) = find_in_tree_by_attr_id(child, id) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+fn find_text_by_attr_id(node: &Value, id: &str) -> Option<String> {
+    if node
+        .get("attributes")
+        .and_then(|a| a.get("id"))
+        .and_then(Value::as_str)
+        == Some(id)
+    {
+        let text = node.get("text").and_then(Value::as_str).unwrap_or("");
+        return Some(text.to_string());
+    }
+    if let Some(children) = node.get("children").and_then(Value::as_array) {
+        for child in children {
+            if let Some(found) = find_text_by_attr_id(child, id) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 // ── Assertion Helpers ────────────────────────────────────────────────────────

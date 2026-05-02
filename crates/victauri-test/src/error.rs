@@ -28,6 +28,10 @@ pub enum TestError {
     Assertion(String),
 
     /// A `wait_for` condition did not become true within the allowed time.
-    #[error("timeout waiting for condition")]
-    Timeout,
+    #[error("timeout: {0}")]
+    Timeout(String),
+
+    /// An element matching the given criteria was not found in the DOM snapshot.
+    #[error("element not found: {0}")]
+    ElementNotFound(String),
 }

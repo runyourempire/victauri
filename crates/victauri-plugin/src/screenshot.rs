@@ -7,7 +7,7 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
         DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetDIBits, HBITMAP, HDC, HGDIOBJ, ReleaseDC,
         SRCCOPY, SelectObject,
     };
-    use windows::Win32::Storage::Xps::{PW_CLIENTONLY, PRINT_WINDOW_FLAGS, PrintWindow};
+    use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PW_CLIENTONLY, PrintWindow};
     use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, PW_RENDERFULLCONTENT};
 
     /// RAII guard that releases GDI handles on drop, preventing leaks when

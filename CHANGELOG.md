@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-01
+
+### Fixed
+
+- **victauri-test**: `VictauriClient` now correctly parses SSE (`text/event-stream`) responses from rmcp MCP servers — previously `call_tool()` would fail with JSON parse errors on valid responses
+- **victauri-plugin (Windows)**: Screenshot now captures WebView2 content by using `PW_RENDERFULLCONTENT` flag with `PrintWindow` — previously returned blank images because WebView2 uses GPU/DirectComposition rendering that `PW_CLIENTONLY` alone cannot capture
+
+### Added
+
+- **victauri-test**: 75 E2E integration tests against the demo app covering all 23 tools, 3 resources, authentication, concurrent sessions, cross-boundary verification, and edge cases
+- **victauri-test**: Auto-discovery of port and auth token via temp files (`victauri.port`, `victauri.token`) with env var and default fallbacks
+- **victauri-plugin**: Port fallback — tries ports 7374-7383 if preferred port is taken, writes actual port to temp file for client discovery
+- **victauri-plugin**: Auto-event recording background loop — polls `getEventStream()` every 1s during recording, eliminating manual event capture
+- **victauri-plugin**: Rate limiter bumped to 200 req/sec default for test workloads
+- **victauri-test**: `connect_with_token()` for authenticated connections
+
 ### Changed
 
 - **BREAKING:** `SemanticAssertion.condition` is now `AssertionCondition` enum instead of `String` — invalid conditions are caught at deserialization, not deep in evaluation logic
@@ -22,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Default::default()` replaced with explicit type calls per `default_trait_access`
 - Scoped `use` imports moved before statements per `items_after_statements`
 
-### Added
+### Added (code quality)
 
 - `AssertionCondition` enum with `FromStr`, `Display`, `Serialize`/`Deserialize`, and feature-gated `JsonSchema` (`schema` feature on victauri-core)
 - 16 typed enums replacing string parameters across plugin and core crates
@@ -54,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dead `RecoveryHint` variants (`RetryLater`, `TryAlternative`) and `ref_not_found` helper
 - Per-crate `#![deny(unsafe_code)]` attributes (now in workspace lints)
 
-### Fixed
+### Fixed (code quality)
 
 - `score_command` per-word score normalization — multi-word queries no longer inflate scores ~Nx compared to single-word queries, making cross-query ranking reliable
 - 6 ghost tool names in `VictauriClient` test client (`fill`, `type_text`, `get_window_state`, `get_ipc_log`, `start_recording`, `wait_for` parameter name)
@@ -102,5 +118,6 @@ Initial public release.
 - Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
 - Screenshot error handling: `GetDIBits()` return value checked on Windows
 
-[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/runyourempire/victauri/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/runyourempire/victauri/releases/tag/v0.1.0

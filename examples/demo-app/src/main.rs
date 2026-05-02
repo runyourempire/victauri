@@ -219,6 +219,20 @@ fn main() {
         .plugin(
             victauri_plugin::VictauriBuilder::new()
                 .auth_disabled()
+                .commands(&[
+                    greet__schema(),
+                    get_counter__schema(),
+                    increment__schema(),
+                    decrement__schema(),
+                    reset_counter__schema(),
+                    add_todo__schema(),
+                    list_todos__schema(),
+                    toggle_todo__schema(),
+                    delete_todo__schema(),
+                    get_settings__schema(),
+                    update_settings__schema(),
+                    get_app_state__schema(),
+                ])
                 .build()
                 .expect("victauri config is valid"),
         )
