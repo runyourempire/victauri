@@ -65,3 +65,9 @@ jobs:
         env:
           VICTAURI_E2E: "1"
           VICTAURI_PORT: "7374"
+
+      - name: Run verify builder tests
+        run: cargo test -p victauri-test --test verify_builder -- --test-threads=1
+        env:
+          VICTAURI_E2E: "1"
+          VICTAURI_PORT: "7374"

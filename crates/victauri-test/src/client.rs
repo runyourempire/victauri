@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use crate::assertions::VerifyBuilder;
 use crate::error::TestError;
 
 /// Typed HTTP client for the Victauri MCP server.
@@ -659,6 +660,92 @@ impl VictauriClient {
     #[must_use]
     pub fn session_id(&self) -> &str {
         &self.session_id
+    }
+
+    // ── IPC Log Helpers ───────────────────────────────────────────────────────
+
+    /// Get IPC calls filtered to a specific command.
+    ///
+    /// Returns a Vec of all IPC log entries matching the given command name.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn get_ipc_calls(&mut self, command: &str) -> Result<Vec<Value>, TestError> {
+        let log = self.get_ipc_log(None).await?;
+        let entries = if let Some(arr) = log.as_array() {
+            arr.clone()
+        } else if let Some(entries) = log.get("entries").and_then(Value::as_array) {
+            entries.clone()
+        } else {
+            return Ok(Vec::new());
+        };
+        Ok(entries
+            .into_iter()
+            .filter(|e| {
+                e.get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|c| c == command)
+            })
+            .collect())
+    }
+
+    /// Snapshot the current IPC log length, for use with `ipc_calls_since`.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn ipc_checkpoint(&mut self) -> Result<usize, TestError> {
+        let log = self.get_ipc_log(None).await?;
+        let len = if let Some(arr) = log.as_array() {
+            arr.len()
+        } else if let Some(entries) = log.get("entries").and_then(Value::as_array) {
+            entries.len()
+        } else {
+            0
+        };
+        Ok(len)
+    }
+
+    /// Get IPC calls made since a previous checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn ipc_calls_since(&mut self, checkpoint: usize) -> Result<Vec<Value>, TestError> {
+        let log = self.get_ipc_log(None).await?;
+        let entries = if let Some(arr) = log.as_array() {
+            arr.clone()
+        } else if let Some(entries) = log.get("entries").and_then(Value::as_array) {
+            entries.clone()
+        } else {
+            return Ok(Vec::new());
+        };
+        Ok(entries.into_iter().skip(checkpoint).collect())
+    }
+
+    // ── Fluent Verification Builder ───────────────────────────────────────────
+
+    /// Start a fluent verification chain that checks multiple conditions at once.
+    ///
+    /// Unlike individual assertions that panic on failure, `verify()` collects
+    /// all results and reports them together — making test failures more
+    /// informative and reducing test reruns.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let report = client.verify()
+    ///     .has_text("Welcome")
+    ///     .ipc_was_called("greet")
+    ///     .no_console_errors()
+    ///     .run()
+    ///     .await
+    ///     .unwrap();
+    /// report.assert_all_passed();
+    /// ```
+    pub fn verify(&mut self) -> VerifyBuilder<'_> {
+        VerifyBuilder::new(self)
     }
 
     // ── High-Level Playwright-Style API ─────────────────────────────────────

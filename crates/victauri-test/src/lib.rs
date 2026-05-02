@@ -35,12 +35,83 @@
 //! ```
 
 mod app;
+mod assertions;
 mod client;
 mod error;
 
 pub use app::TestApp;
+pub use assertions::{
+    CheckResult, VerifyBuilder, VerifyReport, assert_ipc_called, assert_ipc_called_with,
+    assert_ipc_not_called,
+};
 pub use client::{
     VictauriClient, assert_ipc_healthy, assert_json_eq, assert_json_truthy,
     assert_no_a11y_violations, assert_performance_budget, assert_state_matches,
 };
 pub use error::TestError;
+
+/// Returns `true` if E2E tests should run (i.e., `VICTAURI_E2E` env var is set).
+///
+/// Use this to gate integration tests that require a running Tauri app:
+///
+/// ```rust,ignore
+/// #[tokio::test]
+/// async fn my_test() {
+///     if !victauri_test::is_e2e() { return; }
+///     // ...
+/// }
+/// ```
+#[must_use]
+pub fn is_e2e() -> bool {
+    std::env::var("VICTAURI_E2E").is_ok()
+}
+
+/// Connect to a Victauri server using standard env var configuration.
+///
+/// Reads `VICTAURI_PORT` (default 7373) and `VICTAURI_AUTH_TOKEN` (optional).
+/// This is a shorthand for `VictauriClient::discover()`.
+///
+/// # Errors
+///
+/// Returns [`TestError::Connection`] if the server is unreachable.
+pub async fn connect() -> Result<VictauriClient, TestError> {
+    VictauriClient::discover().await
+}
+
+/// Declare an E2E test that auto-skips when `VICTAURI_E2E` is not set
+/// and auto-connects to the running server.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use victauri_test::{e2e_test, VictauriClient};
+///
+/// e2e_test!(greet_flow, |client: &mut VictauriClient| async move {
+///     client.fill_by_id("name-input", "World").await.unwrap();
+///     client.click_by_id("greet-btn").await.unwrap();
+///     client.expect_text("Hello, World!").await.unwrap();
+/// });
+/// ```
+#[macro_export]
+macro_rules! e2e_test {
+    ($name:ident, |$client:ident : &mut VictauriClient| async move $body:block) => {
+        #[tokio::test]
+        async fn $name() {
+            if !$crate::is_e2e() {
+                return;
+            }
+            let mut $client = $crate::connect().await.unwrap();
+            $body
+        }
+    };
+    ($name:ident, |$client:ident| async move $body:block) => {
+        #[tokio::test]
+        async fn $name() {
+            if !$crate::is_e2e() {
+                return;
+            }
+            let mut $client = $crate::connect().await.unwrap();
+            $body
+        }
+    };
+}

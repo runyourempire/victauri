@@ -201,6 +201,68 @@ The `victauri-test` crate provides Playwright-style convenience methods that han
 
 Plus lower-level methods for direct ref-handle interaction, IPC inspection, recording, accessibility audits, and performance profiling.
 
+### IPC Assertions
+
+Verify your backend commands actually ran — with the right arguments:
+
+```rust
+use victauri_test::{assert_ipc_called, assert_ipc_called_with, assert_ipc_not_called};
+
+// After user interaction...
+let log = client.get_ipc_log(None).await?;
+
+assert_ipc_called(&log, "save_settings");
+assert_ipc_called_with(&log, "save_settings", &json!({"theme": "dark"}));
+assert_ipc_not_called(&log, "delete_account");
+```
+
+Or use checkpoints to assert only on calls made during a specific action:
+
+```rust
+let checkpoint = client.ipc_checkpoint().await?;
+
+client.click_by_id("save-btn").await?;
+
+let calls = client.ipc_calls_since(checkpoint).await?;
+assert_eq!(calls.len(), 1);
+assert_eq!(calls[0]["command"], "save_settings");
+```
+
+### Fluent Verification
+
+Check everything at once — DOM, IPC, network, errors — with a single report:
+
+```rust
+let report = client.verify()
+    .has_text("Settings saved")
+    .has_no_text("Error")
+    .ipc_was_called("save_settings")
+    .ipc_was_called_with("save_settings", json!({"theme": "dark"}))
+    .ipc_was_not_called("delete_account")
+    .no_console_errors()
+    .ipc_healthy()
+    .run()
+    .await?;
+
+report.assert_all_passed();
+// Or inspect individual results:
+// report.failures() → Vec<&CheckResult>
+```
+
+### Zero-Boilerplate Tests
+
+```rust
+use victauri_test::{e2e_test, VictauriClient};
+
+e2e_test!(greet_flow, |client| async move {
+    client.fill_by_id("name-input", "World").await.unwrap();
+    client.click_by_id("greet-btn").await.unwrap();
+    client.expect_text("Hello, World!").await.unwrap();
+});
+```
+
+The `e2e_test!` macro handles skip-when-no-server and auto-connect.
+
 ## Instrument Your Commands
 
 ```rust
@@ -311,7 +373,7 @@ Linux CI requires a virtual display (`xvfb-run`) since Tauri/WebView needs a dis
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 726 tests
+cargo test --workspace                                # Run all 750 tests
 cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format
