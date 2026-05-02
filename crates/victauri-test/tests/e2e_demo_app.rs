@@ -430,9 +430,8 @@ e2e_test!(screenshot_returns_base64_png, {
 e2e_test!(registry_returns_array, {
     let mut client = VictauriClient::discover().await.unwrap();
     let result = client.get_registry().await.unwrap();
-    // Registry is empty unless commands are explicitly registered at startup.
-    // The demo app uses #[inspectable] but doesn't call registry.register().
-    assert!(result.is_array());
+    let arr = result.as_array().unwrap();
+    assert_eq!(arr.len(), 12, "demo app registers 12 commands");
 });
 
 e2e_test!(registry_search_returns_array, {
@@ -441,7 +440,8 @@ e2e_test!(registry_search_returns_array, {
         .call_tool("get_registry", json!({"query": "counter"}))
         .await
         .unwrap();
-    assert!(result.is_array());
+    let arr = result.as_array().unwrap();
+    assert!(!arr.is_empty(), "should find counter-related commands");
 });
 
 // ── Resolve Command (NL → command) ──────────────────────────────────────────
@@ -452,8 +452,8 @@ e2e_test!(resolve_command_returns_results, {
         .call_tool("resolve_command", json!({"query": "increase the counter"}))
         .await
         .unwrap();
-    // With empty registry, returns empty array (correct behavior)
-    assert!(result.is_array());
+    let arr = result.as_array().unwrap();
+    assert!(!arr.is_empty(), "should resolve counter-related commands");
 });
 
 e2e_test!(resolve_command_with_different_query, {
