@@ -18,11 +18,11 @@ Every other Tauri testing tool stops at the glass. They can click buttons and re
 Victauri crosses the boundary:
 
 ```rust
-// Click a button in the frontend
-client.click("e5").await?;
+// Click a button by visible text — no selectors, no ref handles
+client.click_by_text("Save").await?;
 
 // Verify the Rust command ran with correct args
-let ipc = client.logs("ipc", Some(1)).await?;
+let ipc = client.get_ipc_log(Some(1)).await?;
 assert_eq!(ipc[0]["command"], "save_settings");
 assert_eq!(ipc[0]["args"]["theme"], "dark");
 
@@ -49,25 +49,42 @@ assert!(result["divergences"].as_array().unwrap().is_empty());
 
 ## Quick Start
 
-**1. Add the plugin:**
+**1. Add the crates:**
 
 ```toml
 # Cargo.toml
 [dev-dependencies]
 victauri-plugin = "0.1"
+victauri-test = "0.1"
 ```
 
-**2. Wire it up** (one line in your app):
+**2. Wire it up** (two lines in your app):
 
 ```rust
 // src-tauri/src/main.rs
 tauri::Builder::default()
-    .plugin(victauri_plugin::init())
+    .plugin(
+        victauri_plugin::VictauriBuilder::new()
+            .commands(&[
+                greet__schema(),
+                save_settings__schema(),
+            ])
+            .build()
+            .unwrap(),
+    )
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 ```
 
-In release builds, `init()` returns a no-op plugin — zero overhead, no feature flags needed.
+Or minimal — `init()` works if you don't need the command registry:
+
+```rust
+tauri::Builder::default()
+    .plugin(victauri_plugin::init())
+    // ...
+```
+
+In release builds, both return a no-op plugin — zero overhead, no feature flags needed.
 
 **3. Connect your agent or test runner:**
 
@@ -83,22 +100,54 @@ For AI agents (Claude Code, Cursor, Windsurf) — add `.mcp.json` to your projec
 }
 ```
 
-For `cargo test` — use the test client:
+For `cargo test` — use `TestApp` for managed lifecycle and Playwright-style assertions:
+
+```rust
+use victauri_test::TestApp;
+
+#[tokio::test]
+async fn greet_flow() {
+    let app = TestApp::spawn("cargo run -p my-app").await.unwrap();
+    let mut client = app.client().await.unwrap();
+
+    client.fill_by_id("name-input", "World").await.unwrap();
+    client.click_by_id("greet-btn").await.unwrap();
+    client.expect_text("Hello, World!").await.unwrap();
+}
+
+#[tokio::test]
+async fn todo_crud() {
+    let app = TestApp::spawn("cargo run -p my-app").await.unwrap();
+    let mut client = app.client().await.unwrap();
+
+    client.fill_by_id("todo-input", "Ship it").await.unwrap();
+    client.click_by_text("Add").await.unwrap();
+    client.expect_text("Ship it").await.unwrap();
+
+    // Verify backend state matches frontend
+    let result = client.verify_state(
+        "document.querySelector('.todo-item').textContent",
+        json!({"title": "Ship it"})
+    ).await.unwrap();
+    assert!(result["divergences"].as_array().unwrap().is_empty());
+}
+```
+
+Or connect to an already-running app for lower-level control:
 
 ```rust
 use victauri_test::VictauriClient;
 
 #[tokio::test]
-async fn settings_persist() {
-    let mut client = VictauriClient::connect(7373).await.unwrap();
-    
+async fn cross_boundary_verification() {
+    let mut client = VictauriClient::discover().await.unwrap();
+
     // Invoke backend command directly
-    let result = client.invoke_command("save_settings", Some(json!({"theme": "dark"}))).await.unwrap();
-    assert_eq!(result, json!({"ok": true}));
-    
+    client.invoke_command("save_settings", Some(json!({"theme": "dark"}))).await.unwrap();
+
     // Verify the UI updated
-    client.wait_for("text", Some("Dark mode"), None, None).await.unwrap();
-    
+    client.expect_text("Dark mode").await.unwrap();
+
     // Check no ghost commands exist
     let ghosts = client.detect_ghost_commands().await.unwrap();
     assert!(ghosts["ghost_commands"].as_array().unwrap().is_empty());
@@ -134,6 +183,23 @@ Victauri exposes 23 MCP tools — 9 compound tools and 14 standalone:
 | `get_registry` | List all commands with schemas from `#[inspectable]` |
 | `get_memory_stats` | Real-time process memory statistics from the OS |
 | `get_plugin_info` | Victauri config: port, enabled tools, privacy settings, version |
+
+## Test API
+
+The `victauri-test` crate provides Playwright-style convenience methods that handle DOM snapshots and ref resolution internally:
+
+| Method | What it does |
+|---|---|
+| `click_by_text("Submit")` | Find element by visible text → click |
+| `click_by_id("save-btn")` | Find element by HTML id → click |
+| `fill_by_id("email", "a@b.com")` | Find input by id → fill value |
+| `type_by_id("search", "query")` | Find input by id → type char-by-char |
+| `select_by_id("theme", "dark")` | Find select by id → choose option |
+| `expect_text("Success!")` | Poll until text appears (5s timeout) |
+| `expect_no_text("Error")` | Poll until text disappears (3s timeout) |
+| `text_by_id("counter")` | Get text content of element by id |
+
+Plus lower-level methods for direct ref-handle interaction, IPC inspection, recording, accessibility audits, and performance profiling.
 
 ## Instrument Your Commands
 
@@ -205,6 +271,35 @@ victauri/
     └── demo-app/            # Minimal Tauri app with 12 instrumented commands
 ```
 
+## CI Integration
+
+Victauri tests run in CI without special infrastructure. Start your app, run the tests:
+
+```yaml
+# .github/workflows/test.yml
+- name: Build app
+  run: cargo build -p my-app
+
+- name: Start app (Linux needs xvfb for headless)
+  run: xvfb-run --auto-servernum cargo run -p my-app &
+
+- name: Run Victauri tests
+  run: cargo test -p my-app --test integration -- --test-threads=1
+  env:
+    VICTAURI_E2E: "1"
+    VICTAURI_PORT: "7374"
+```
+
+With `TestApp::spawn`, the lifecycle is managed automatically — no background process needed:
+
+```yaml
+- name: Run tests
+  run: cargo test -p my-app --test integration
+```
+
+Linux CI requires a virtual display (`xvfb-run`) since Tauri/WebView needs a display server.
+`TestApp::spawn` detects missing display and gives a clear error message.
+
 ## What It Doesn't Do
 
 - **No production use** — debug builds only, by design
@@ -216,8 +311,8 @@ victauri/
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 435+ tests
-cargo bench -p victauri-core                          # Criterion benchmarks
+cargo test --workspace                                # Run all 726 tests
+cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps  # Docs (zero warnings)
