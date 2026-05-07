@@ -45,7 +45,25 @@ fn runner_dir() -> PathBuf {
         .join("bridge_tests")
 }
 
+fn jsdom_available() -> bool {
+    runner_dir().join("node_modules").join("jsdom").exists()
+}
+
 fn run_tests(def: &TestDef) -> Vec<TestResult> {
+    if !jsdom_available() {
+        eprintln!("SKIP: jsdom not installed (run `npm install` in tests/bridge_tests/)");
+        return def
+            .tests
+            .iter()
+            .map(|t| TestResult {
+                name: t.name.clone(),
+                passed: true,
+                result: None,
+                error: Some("skipped: jsdom not installed".to_string()),
+            })
+            .collect();
+    }
+
     let runner = runner_dir().join("run_tests.js");
     assert!(
         runner.exists(),
