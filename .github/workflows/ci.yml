@@ -63,7 +63,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install bridge test dependencies
-        run: npm install --prefix crates/victauri-plugin/tests/bridge_tests
+        working-directory: crates/victauri-plugin/tests/bridge_tests
+        run: npm install
 
       - name: Run tests
         run: cargo test --workspace
