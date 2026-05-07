@@ -18,7 +18,7 @@ cargo test --workspace          # All tests (756)
 cargo test -p victauri-core     # Core crate only
 cargo test -p victauri-plugin   # Plugin crate only
 cargo bench -p victauri-core    # Criterion benchmarks (16)
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 

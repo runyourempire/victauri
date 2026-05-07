@@ -74,7 +74,7 @@ victauri_plugin::VictauriBuilder::new()
 - **Localhost only** -- binds to `127.0.0.1`, never exposed to network
 - **Debug-only** -- `init()` returns a no-op plugin in release builds
 - **Optional auth** -- Bearer token via builder or `VICTAURI_AUTH_TOKEN` env var
-- **Rate limiting** -- Token-bucket at 100 req/sec (default)
+- **Rate limiting** -- Token-bucket at 1000 req/sec (default)
 - **Privacy layer** -- Command allowlists/blocklists, tool disabling, regex redaction
 
 See the full [project README](https://github.com/runyourempire/victauri) for architecture details and live test results.

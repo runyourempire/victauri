@@ -12,15 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **victauri-plugin (macOS)**: `extern "C"` block changed to `unsafe extern "C"` for Rust 2024 edition compatibility -- previously failed to compile on macOS CI runners with `error: extern blocks must be unsafe`
+- **victauri-plugin (macOS)**: Added process memory stats via `task_info(MACH_TASK_BASIC_INFO)` -- previously returned "memory stats not available on this platform"
+- **victauri-plugin**: Rate limiter integration test rewritten to use injectable `RateLimiterState` via new `build_app_full()` -- previously flaky because sequential requests couldn't outpace the 1000-token/sec default refill
 - **victauri-plugin README**: Corrected tool count from "55 tools / 17 categories" to accurate "23 tools (9 compound + 14 standalone)" with full tool table
+- Multiple clippy lint fixes for cross-platform CI: `cast_lossless`, `items_after_statements`, `doc_markdown`, `map_unwrap_or`, nul-terminated C-string literals, redundant pointer casts
 
 ### Changed
 
 - **CI**: Added `fail-fast: false` to check and test matrix jobs so one platform failure no longer cancels the others
-- Updated test counts in README (756) and CONTRIBUTING.md (756)
+- **CI**: Added `npm install` step for jsdom bridge tests with `working-directory` (Windows compatible)
+- **victauri-plugin**: Bridge tests gracefully skip when jsdom is not installed
 
 ### Added
 
+- `build_app_full()` public API for constructing axum router with custom rate limiter (useful for testing)
+- macOS process memory reporting (`virtual_bytes`, `resident_bytes`, `resident_max_bytes`)
 - CODE_OF_CONDUCT.md (Contributor Covenant v2.1)
 
 ## [0.1.1] - 2026-05-01
@@ -36,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **victauri-test**: Auto-discovery of port and auth token via temp files (`victauri.port`, `victauri.token`) with env var and default fallbacks
 - **victauri-plugin**: Port fallback — tries ports 7374-7383 if preferred port is taken, writes actual port to temp file for client discovery
 - **victauri-plugin**: Auto-event recording background loop — polls `getEventStream()` every 1s during recording, eliminating manual event capture
-- **victauri-plugin**: Rate limiter bumped to 200 req/sec default for test workloads
+- **victauri-plugin**: Rate limiter bumped to 1000 req/sec default for test workloads
 - **victauri-test**: `connect_with_token()` for authenticated connections
 
 ### Changed
@@ -106,7 +112,7 @@ Initial public release.
 - JS bridge v0.3.0 with DOM walking, ref handles, console capture, mutation observer, network interception, navigation tracking, dialog capture, waitFor polling
 - IPC interception via `fetch` monkey-patching (Tauri 2.0 `ipc.localhost` protocol)
 - Privacy layer: command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode
-- Rate limiting (100 req/sec default, token bucket with AtomicU64)
+- Rate limiting (1000 req/sec default, token bucket with AtomicU64)
 - `VictauriBuilder` for port/auth/capacity configuration
 - `VICTAURI_PORT` and `VICTAURI_AUTH_TOKEN` environment variable support
 - Release-safe: zero overhead in release builds via `#[cfg(debug_assertions)]`
@@ -116,7 +122,7 @@ Initial public release.
 - Windows screenshot via `PrintWindow` + custom PNG encoder (no external dependencies)
 - macOS screenshot via `CGWindowListCreateImage` + alpha un-premultiply
 - Linux screenshot via X11 `GetImage` (x11rb) with Wayland fallback via `grim`
-- OS-level process memory stats (Windows `GetProcessMemoryInfo`, Linux `/proc/self/statm`)
+- OS-level process memory stats (Windows `GetProcessMemoryInfo`, macOS `task_info`, Linux `/proc/self/statm`)
 - victauri-watchdog crash-recovery sidecar with configurable recovery commands
 - victauri-test crate: typed MCP HTTP client (`VictauriClient`) with session management and assertion helpers (`assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`)
 - Demo app example with 12 instrumented commands (greet, counter CRUD, todo CRUD, settings, state dump)
