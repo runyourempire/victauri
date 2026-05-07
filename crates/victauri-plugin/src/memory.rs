@@ -102,7 +102,12 @@ fn process_memory_macos() -> Option<serde_json::Value> {
     unsafe {
         let mut info: MachTaskBasicInfo = mem::zeroed();
         let mut count = (mem::size_of::<MachTaskBasicInfo>() / mem::size_of::<u32>()) as u32;
-        let kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO, &mut info, &mut count);
+        let kr = task_info(
+            mach_task_self(),
+            MACH_TASK_BASIC_INFO,
+            &mut info,
+            &mut count,
+        );
         if kr == KERN_SUCCESS {
             return Some(serde_json::json!({
                 "virtual_bytes": info.virtual_size,
