@@ -1901,7 +1901,8 @@ async fn mcp_delete_session_terminates() {
 async fn rate_limiter_returns_429_on_burst() {
     let state = test_state();
     let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
-    let app = build_app(state, bridge);
+    let limiter = Arc::new(victauri_plugin::auth::RateLimiterState::new(5));
+    let app = victauri_plugin::mcp::build_app_full(state, bridge, None, Some(limiter));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1911,15 +1912,11 @@ async fn rate_limiter_returns_429_on_burst() {
     });
 
     let client = reqwest::Client::new();
-    let mut tasks = tokio::task::JoinSet::new();
-    for _ in 0..1500 {
-        let c = client.clone();
-        let u = format!("{base}/info");
-        tasks.spawn(async move { c.get(&u).send().await.unwrap().status() });
-    }
+    let url = format!("{base}/info");
     let mut got_429 = false;
-    while let Some(result) = tasks.join_next().await {
-        if result.unwrap() == 429 {
+    for _ in 0..20 {
+        let status = client.get(&url).send().await.unwrap().status();
+        if status == 429 {
             got_429 = true;
             break;
         }

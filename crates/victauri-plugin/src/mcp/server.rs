@@ -19,11 +19,21 @@ pub fn build_app(state: Arc<VictauriState>, bridge: Arc<dyn WebviewBridge>) -> a
     build_app_with_options(state, bridge, None)
 }
 
-/// Build an Axum router for the MCP server with an optional auth token.
+/// Build an Axum router for the MCP server with an optional auth token and rate limiter.
 pub fn build_app_with_options(
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
     auth_token: Option<String>,
+) -> axum::Router {
+    build_app_full(state, bridge, auth_token, None)
+}
+
+/// Build an Axum router with full control over auth token and rate limiter.
+pub fn build_app_full(
+    state: Arc<VictauriState>,
+    bridge: Arc<dyn WebviewBridge>,
+    auth_token: Option<String>,
+    rate_limiter: Option<Arc<crate::auth::RateLimiterState>>,
 ) -> axum::Router {
     let handler = VictauriMcpHandler::new(state.clone(), bridge);
 
@@ -73,9 +83,9 @@ pub fn build_app_with_options(
         ));
     }
 
-    let rate_limiter = crate::auth::default_rate_limiter();
+    let limiter = rate_limiter.unwrap_or_else(crate::auth::default_rate_limiter);
     router = router.layer(axum::middleware::from_fn_with_state(
-        rate_limiter,
+        limiter,
         crate::auth::rate_limit,
     ));
 
