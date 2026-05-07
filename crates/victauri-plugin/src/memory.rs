@@ -57,7 +57,61 @@ fn process_memory_fallback() -> serde_json::Value {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(stats) = process_memory_macos() {
+            return stats;
+        }
+    }
+
     serde_json::json!({ "error": "memory stats not available on this platform" })
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn process_memory_macos() -> Option<serde_json::Value> {
+    use std::mem;
+
+    #[repr(C)]
+    struct MachTaskBasicInfo {
+        virtual_size: u64,
+        resident_size: u64,
+        resident_size_max: u64,
+        user_time: [u32; 2],
+        system_time: [u32; 2],
+        policy: i32,
+        suspend_count: i32,
+    }
+
+    unsafe extern "C" {
+        fn mach_task_self() -> u32;
+        fn task_info(
+            target_task: u32,
+            flavor: u32,
+            task_info_out: *mut MachTaskBasicInfo,
+            task_info_count: *mut u32,
+        ) -> i32;
+    }
+
+    const MACH_TASK_BASIC_INFO: u32 = 20;
+    const KERN_SUCCESS: i32 = 0;
+
+    // SAFETY: `mach_task_self()` returns the current task port (always valid).
+    // `task_info` writes into the provided buffer within the declared size.
+    // `MachTaskBasicInfo` is a plain data struct safe to zero-initialize.
+    unsafe {
+        let mut info: MachTaskBasicInfo = mem::zeroed();
+        let mut count = (mem::size_of::<MachTaskBasicInfo>() / mem::size_of::<u32>()) as u32;
+        let kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO, &mut info, &mut count);
+        if kr == KERN_SUCCESS {
+            return Some(serde_json::json!({
+                "virtual_bytes": info.virtual_size,
+                "resident_bytes": info.resident_size,
+                "resident_max_bytes": info.resident_size_max,
+            }));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
