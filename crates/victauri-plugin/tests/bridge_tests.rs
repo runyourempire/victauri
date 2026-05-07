@@ -49,19 +49,10 @@ fn jsdom_available() -> bool {
     runner_dir().join("node_modules").join("jsdom").exists()
 }
 
-fn run_tests(def: &TestDef) -> Vec<TestResult> {
+fn run_tests(def: &TestDef) -> Option<Vec<TestResult>> {
     if !jsdom_available() {
         eprintln!("SKIP: jsdom not installed (run `npm install` in tests/bridge_tests/)");
-        return def
-            .tests
-            .iter()
-            .map(|t| TestResult {
-                name: t.name.clone(),
-                passed: true,
-                result: None,
-                error: Some("skipped: jsdom not installed".to_string()),
-            })
-            .collect();
+        return None;
     }
 
     let runner = runner_dir().join("run_tests.js");
@@ -94,8 +85,10 @@ fn run_tests(def: &TestDef) -> Vec<TestResult> {
         });
 
     let json_str = &results_line["VICTAURI_RESULTS:".len()..];
-    serde_json::from_str(json_str)
-        .unwrap_or_else(|e| panic!("Failed to parse results JSON: {e}\nraw: {json_str}"))
+    Some(
+        serde_json::from_str(json_str)
+            .unwrap_or_else(|e| panic!("Failed to parse results JSON: {e}\nraw: {json_str}")),
+    )
 }
 
 fn assert_all_pass(results: &[TestResult]) {
@@ -195,7 +188,7 @@ fn bridge_init_version_and_idempotent() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap(), "0.3.0");
     assert_eq!(results[1].result.as_ref().unwrap(), "object");
@@ -250,7 +243,7 @@ fn snapshot_compact_format() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["format"], "compact");
     assert_eq!(results[0].result.as_ref().unwrap()["type"], "string");
@@ -320,7 +313,7 @@ fn snapshot_json_format() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["format"], "json");
     assert_eq!(results[0].result.as_ref().unwrap()["tag"], "body");
@@ -398,7 +391,7 @@ fn ref_lifecycle() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["resolved"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["tag"], "body");
@@ -469,7 +462,7 @@ fn click_interaction() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[1].result.as_ref().unwrap()["ok"], false);
@@ -532,7 +525,7 @@ fn double_click_and_hover() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["dblClicked"], true);
     let events: Vec<String> =
@@ -636,7 +629,7 @@ fn fill_interaction() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["value"], "Hello World");
     let events: Vec<String> =
@@ -701,7 +694,7 @@ fn type_text_interaction() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["value"], "abc");
     let events: Vec<String> =
@@ -742,7 +735,7 @@ fn press_key_interaction() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     let events: Vec<String> =
@@ -802,7 +795,7 @@ fn select_option_interaction() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["value"], "b");
@@ -868,7 +861,7 @@ fn focus_and_scroll() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["tag"], "input");
@@ -933,7 +926,7 @@ fn console_log_capture() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["level"], "log");
     assert_eq!(
@@ -990,7 +983,7 @@ fn network_log_interception() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["found"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["method"], "GET");
@@ -1041,7 +1034,7 @@ fn navigation_tracking() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert!(
         results[0].result.as_ref().unwrap()["count"]
@@ -1122,7 +1115,7 @@ fn dialog_capture() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["type"], "alert");
     assert_eq!(results[0].result.as_ref().unwrap()["message"], "Hello!");
@@ -1188,7 +1181,7 @@ fn storage_local() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["val"], "value1");
     assert_eq!(results[1].result.as_ref().unwrap()["a"], 1);
@@ -1231,7 +1224,7 @@ fn storage_session() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["val"], "sval");
     assert!(results[1].result.as_ref().unwrap()["val"].is_null());
@@ -1295,7 +1288,7 @@ fn css_inspection() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["has_ref"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["has_tag"], true);
@@ -1362,7 +1355,7 @@ fn css_injection() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["exists"], true);
@@ -1422,7 +1415,7 @@ fn highlight_elements() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["count"], 1);
@@ -1521,7 +1514,7 @@ fn accessibility_audit() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["found"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["severity"], "critical");
@@ -1592,7 +1585,7 @@ fn event_stream() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["has_console"], true);
     assert_eq!(results[1].result.as_ref().unwrap()["has_network"], true);
@@ -1658,7 +1651,7 @@ fn wait_for_conditions() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], true);
     assert_eq!(results[1].result.as_ref().unwrap()["ok"], true);
@@ -1724,7 +1717,7 @@ fn ipc_log() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["found"], true);
     assert_eq!(
@@ -1770,7 +1763,7 @@ fn performance_metrics() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["has_resources"], true);
     assert_eq!(results[0].result.as_ref().unwrap()["has_paint"], true);
@@ -1853,7 +1846,7 @@ fn find_elements() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert!(
         results[0].result.as_ref().unwrap()["count"]
@@ -1957,7 +1950,7 @@ fn actionability_checks() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     // disabled button: might timeout or give error
     assert_eq!(results[0].result.as_ref().unwrap()["ok"], false);
@@ -2014,7 +2007,7 @@ fn capacity_limits() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap()["count"], 5);
     // The oldest entries are shifted out, so first message should be "msg 5"
@@ -2066,7 +2059,7 @@ fn infer_role_mapping() {
             },
         ],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     let r = results[0].result.as_ref().unwrap();
     assert_eq!(r["has_button"], true);
@@ -2107,7 +2100,7 @@ fn compact_format_details() {
             setup_js: None,
         }],
     };
-    let results = run_tests(&def);
+    let Some(results) = run_tests(&def) else { return };
     assert_all_pass(&results);
     let r = results[0].result.as_ref().unwrap();
     assert_eq!(r["has_disabled"], true);
