@@ -176,15 +176,6 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         const K_CG_IMAGE_ALPHA_PREMULTIPLIED_LAST: u32 = 1;
         const K_CG_BITMAP_BYTE_ORDER_32_BIG: u32 = 4 << 12;
 
-        // Null rect means "capture the minimum bounding rect for the window"
-        let cg_rect_null = CGRect {
-            origin: CGPoint { x: 0.0, y: 0.0 },
-            size: CGSize {
-                width: 0.0,
-                height: 0.0,
-            },
-        };
-
         #[link(name = "CoreGraphics", kind = "framework")]
         unsafe extern "C" {
             fn CGWindowListCreateImage(
@@ -222,6 +213,15 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
             fn CFDataGetLength(theData: CFDataRef) -> isize;
             fn CFRelease(cf: CFTypeRef);
         }
+
+        // Null rect means "capture the minimum bounding rect for the window"
+        let cg_rect_null = CGRect {
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: CGSize {
+                width: 0.0,
+                height: 0.0,
+            },
+        };
 
         let cg_window_id: CGWindowID = window_id as CGWindowID;
 
@@ -295,11 +295,11 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         // CoreGraphics gives us premultiplied RGBA. The PNG spec requires
         // straight (non-premultiplied) alpha, so we reverse the operation.
         for chunk in rgba_pixels.chunks_exact_mut(4) {
-            let a = chunk[3] as u16;
+            let a = u16::from(chunk[3]);
             if a > 0 && a < 255 {
-                chunk[0] = ((chunk[0] as u16 * 255 + a / 2) / a).min(255) as u8;
-                chunk[1] = ((chunk[1] as u16 * 255 + a / 2) / a).min(255) as u8;
-                chunk[2] = ((chunk[2] as u16 * 255 + a / 2) / a).min(255) as u8;
+                chunk[0] = ((u16::from(chunk[0]) * 255 + a / 2) / a).min(255) as u8;
+                chunk[1] = ((u16::from(chunk[1]) * 255 + a / 2) / a).min(255) as u8;
+                chunk[2] = ((u16::from(chunk[2]) * 255 + a / 2) / a).min(255) as u8;
             }
         }
 
@@ -338,8 +338,8 @@ async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
             .reply()
             .map_err(|e| anyhow::anyhow!("get_geometry reply failed: {e}"))?;
 
-        let width = geom.width as u32;
-        let height = geom.height as u32;
+        let width = u32::from(geom.width);
+        let height = u32::from(geom.height);
         if width == 0 || height == 0 {
             anyhow::bail!("window has zero area ({width}x{height})");
         }
@@ -382,7 +382,7 @@ async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
 
 /// Wayland fallback: captures the full screen using `grim`.
 ///
-/// On pure Wayland (no XWayland), X11 window IDs cannot be mapped to Wayland
+/// On pure Wayland (no `XWayland`), `X11` window IDs cannot be mapped to Wayland
 /// surfaces, so per-window capture is not possible. This function captures the
 /// entire screen instead. The `grim` tool must be installed on the system.
 #[cfg(target_os = "linux")]

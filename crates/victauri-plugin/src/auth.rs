@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const BEARER_PREFIX_LEN: usize = "Bearer ".len();
 
-/// Generate a random UUID v4 token suitable for Bearer authentication.
+/// Generate a random `UUID` v4 token suitable for Bearer authentication.
 #[must_use]
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string()

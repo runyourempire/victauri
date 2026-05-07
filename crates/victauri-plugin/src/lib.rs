@@ -138,7 +138,7 @@ pub struct VictauriState {
 /// via environment variables.
 ///
 /// **Authentication is enabled by default.** If no explicit token is set and no
-/// `VICTAURI_AUTH_TOKEN` env var exists, a random UUID token is auto-generated
+/// `VICTAURI_AUTH_TOKEN` env var exists, a random `UUID` token is auto-generated
 /// and printed to the log. Call [`auth_disabled()`](VictauriBuilder::auth_disabled)
 /// to explicitly opt out of authentication.
 pub struct VictauriBuilder {
@@ -223,7 +223,7 @@ impl VictauriBuilder {
         self
     }
 
-    /// Generate a random UUID v4 auth token.
+    /// Generate a random `UUID` v4 auth token.
     #[must_use]
     pub fn generate_auth_token(mut self) -> Self {
         self.auth_token = Some(auth::generate_token());

@@ -1417,7 +1417,7 @@ impl ServerHandler for VictauriMcpHandler {
         tracing::debug!(
             tool = %tool_name,
             elapsed_ms = elapsed.as_millis() as u64,
-            is_error = result.as_ref().map(|r| r.is_error.unwrap_or(false)).unwrap_or(true),
+            is_error = result.as_ref().map_or(true, |r| r.is_error.unwrap_or(false)),
             "tool invocation completed"
         );
         result

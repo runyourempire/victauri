@@ -14,7 +14,7 @@ pub trait WebviewBridge: Send + Sync {
     /// Return the labels of all open webview windows.
     fn list_window_labels(&self) -> Vec<String>;
     /// Return the platform-native window handle for screenshot capture.
-    /// Windows: HWND, macOS: `CGWindowID` (window number), Linux: X11 window ID.
+    /// Windows: `HWND`, macOS: `CGWindowID` (window number), Linux: `X11` window ID.
     ///
     /// # Errors
     ///
@@ -192,13 +192,14 @@ fn macos_window_number(ns_view: *mut std::ffi::c_void) -> Result<isize, String> 
     // `with_webview` callback; null was checked above. `objc_msgSend` and
     // `sel_registerName` are stable Objective-C runtime ABI.
     unsafe {
-        let sel_window = sel_registerName(b"window\0".as_ptr().cast());
-        let ns_window = objc_msgSend(ns_view, sel_window) as *mut std::ffi::c_void;
-        if ns_window.is_null() {
+        let sel_window = sel_registerName(c"window".as_ptr());
+        let ns_window = objc_msgSend(ns_view, sel_window);
+        if ns_window == 0 {
             return Err("NSView has no parent NSWindow".to_string());
         }
-        let sel_window_number = sel_registerName(b"windowNumber\0".as_ptr().cast());
-        let window_number = objc_msgSend(ns_window as *mut std::ffi::c_void, sel_window_number);
+        let sel_window_number = sel_registerName(c"windowNumber".as_ptr());
+        let ns_window_ptr = ns_window as *mut std::ffi::c_void;
+        let window_number = objc_msgSend(ns_window_ptr, sel_window_number);
         if window_number <= 0 {
             return Err(format!("invalid CGWindowID: {window_number}"));
         }

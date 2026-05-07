@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-07
+
+### Fixed
+
+- **victauri-plugin (macOS)**: `extern "C"` block changed to `unsafe extern "C"` for Rust 2024 edition compatibility -- previously failed to compile on macOS CI runners with `error: extern blocks must be unsafe`
+- **victauri-plugin README**: Corrected tool count from "55 tools / 17 categories" to accurate "23 tools (9 compound + 14 standalone)" with full tool table
+
+### Changed
+
+- **CI**: Added `fail-fast: false` to check and test matrix jobs so one platform failure no longer cancels the others
+- Updated test counts in README (756) and CONTRIBUTING.md (756)
+
+### Added
+
+- CODE_OF_CONDUCT.md (Contributor Covenant v2.1)
+
 ## [0.1.1] - 2026-05-01
 
 ### Fixed
@@ -118,6 +134,7 @@ Initial public release.
 - Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
 - Screenshot error handling: `GetDIBits()` return value checked on Windows
 
-[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/runyourempire/victauri/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/runyourempire/victauri/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/runyourempire/victauri/releases/tag/v0.1.0
