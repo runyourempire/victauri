@@ -38,6 +38,7 @@ mod app;
 mod assertions;
 mod client;
 mod error;
+pub mod reporting;
 
 pub use app::TestApp;
 pub use assertions::{

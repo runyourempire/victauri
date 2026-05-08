@@ -82,6 +82,16 @@ impl VerifyReport {
         self.results.iter().filter(|r| !r.passed).collect()
     }
 
+    /// Converts this report to a `JUnit` XML [`JunitReport`](crate::reporting::JunitReport).
+    #[must_use]
+    pub fn to_junit(
+        &self,
+        suite_name: &str,
+        duration: std::time::Duration,
+    ) -> crate::reporting::JunitReport {
+        crate::reporting::JunitReport::from_verify_report(self, suite_name, duration)
+    }
+
     /// Panics with a formatted report if any check failed.
     ///
     /// # Panics

@@ -26,7 +26,11 @@ enum Commands {
         path: Option<PathBuf>,
     },
     /// Connect to a running Tauri app and report status
-    Check,
+    Check {
+        /// Write `JUnit` XML report to this path
+        #[arg(long)]
+        junit: Option<PathBuf>,
+    },
     /// Record user interactions and generate a test file
     Record {
         /// Output file path for generated test
@@ -47,8 +51,8 @@ async fn main() -> Result<()> {
             let root = path.unwrap_or_else(|| PathBuf::from("."));
             cmd_init(&root)?;
         }
-        Commands::Check => {
-            cmd_check().await?;
+        Commands::Check { junit } => {
+            cmd_check(junit.as_deref()).await?;
         }
         Commands::Record { output, test_name } => {
             cmd_record(&output, &test_name).await?;
@@ -101,7 +105,7 @@ fn cmd_init(root: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_check() -> Result<()> {
+async fn cmd_check(junit_path: Option<&Path>) -> Result<()> {
     eprintln!("Connecting to running Victauri server...\n");
 
     let mut client = match victauri_test::VictauriClient::discover().await {
@@ -219,6 +223,29 @@ async fn cmd_check() -> Result<()> {
     }
 
     eprintln!("\nVictauri server is live and responding.");
+
+    if let Some(path) = junit_path {
+        let start = std::time::Instant::now();
+        let report = client
+            .verify()
+            .ipc_healthy()
+            .no_console_errors()
+            .no_ghost_commands()
+            .run()
+            .await
+            .context("verify checks failed")?;
+        let duration = start.elapsed();
+
+        let junit = report.to_junit("victauri-check", duration);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+        }
+        victauri_test::reporting::write_junit_report(&junit, path)
+            .with_context(|| format!("failed to write JUnit report to {}", path.display()))?;
+        eprintln!("JUnit report written to {}", path.display());
+    }
+
     Ok(())
 }
 
