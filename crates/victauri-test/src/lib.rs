@@ -39,6 +39,7 @@ mod assertions;
 mod client;
 mod error;
 pub mod reporting;
+pub mod visual;
 
 pub use app::TestApp;
 pub use assertions::{

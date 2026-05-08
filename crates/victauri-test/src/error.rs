@@ -34,4 +34,12 @@ pub enum TestError {
     /// An element matching the given criteria was not found in the DOM snapshot.
     #[error("element not found: {0}")]
     ElementNotFound(String),
+
+    /// A visual regression was detected — screenshot differs from baseline.
+    #[error("visual regression: {0}")]
+    VisualRegression(String),
+
+    /// A catch-all for errors that don't fit other variants (IO, encoding, etc.).
+    #[error("{0}")]
+    Other(String),
 }
