@@ -1,0 +1,478 @@
+//! CLI for Victauri — scaffold tests, diagnose running apps, and record sessions.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(
+    name = "victauri",
+    about = "Full-stack testing toolkit for Tauri apps",
+    version,
+    propagate_version = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Scaffold a Victauri test directory with starter tests
+    Init {
+        /// Path to the Tauri project root (default: current directory)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Connect to a running Tauri app and report status
+    Check,
+    /// Record user interactions and generate a test file (coming soon)
+    Record {
+        /// Output file path for generated test
+        #[arg(short, long, default_value = "tests/recorded_flow.rs")]
+        output: PathBuf,
+    },
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Init { path } => {
+            let root = path.unwrap_or_else(|| PathBuf::from("."));
+            cmd_init(&root)?;
+        }
+        Commands::Check => {
+            cmd_check().await?;
+        }
+        Commands::Record { output } => {
+            cmd_record(&output)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_init(root: &Path) -> Result<()> {
+    let root = std::fs::canonicalize(root)
+        .with_context(|| format!("directory not found: {}", root.display()))?;
+
+    let (cargo_toml_path, is_tauri) = detect_project(&root)?;
+
+    if !is_tauri {
+        eprintln!(
+            "Warning: no Tauri dependency detected in {}",
+            cargo_toml_path.display()
+        );
+        eprintln!("         Victauri is designed for Tauri apps — tests may not connect.\n");
+    }
+
+    let added = add_dependencies(&cargo_toml_path)?;
+    if added {
+        eprintln!("  Added victauri-plugin and victauri-test to Cargo.toml");
+    } else {
+        eprintln!("  Dependencies already present in Cargo.toml");
+    }
+
+    let tests_dir =
+        find_src_tauri(&root).map_or_else(|| root.join("tests"), |p| p.join("tests"));
+    std::fs::create_dir_all(&tests_dir)
+        .with_context(|| format!("failed to create {}", tests_dir.display()))?;
+
+    let smoke_path = tests_dir.join("smoke.rs");
+    if smoke_path.exists() {
+        eprintln!("  tests/smoke.rs already exists — skipping");
+    } else {
+        std::fs::write(&smoke_path, generate_smoke_test())
+            .with_context(|| format!("failed to write {}", smoke_path.display()))?;
+        eprintln!("  Created {}", smoke_path.display());
+    }
+
+    eprintln!("\nVictauri initialized. Next steps:");
+    eprintln!("  1. Add .plugin(victauri_plugin::init()) to your Tauri builder");
+    eprintln!("     (or .plugin(victauri_plugin::init_auto_discover()) for auto-discovery)");
+    eprintln!("  2. Start your app:  pnpm run tauri dev");
+    eprintln!("  3. Run the tests:   VICTAURI_E2E=1 cargo test --test smoke");
+    Ok(())
+}
+
+async fn cmd_check() -> Result<()> {
+    eprintln!("Connecting to running Victauri server...\n");
+
+    let mut client = match victauri_test::VictauriClient::discover().await {
+        Ok(c) => c,
+        Err(e) => {
+            bail!(
+                "Could not connect to Victauri server: {e}\n\n\
+                 Is your Tauri app running? Try:  pnpm run tauri dev\n\
+                 The app must have victauri-plugin wired into its builder."
+            );
+        }
+    };
+
+    let info = client
+        .get_plugin_info()
+        .await
+        .context("failed to get plugin info")?;
+
+    let version = info
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let tool_count = info
+        .get("tool_count")
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| info.get("tools").and_then(serde_json::Value::as_u64))
+        .map_or("?".to_string(), |n| n.to_string());
+    let uptime = info
+        .get("uptime_secs")
+        .and_then(serde_json::Value::as_u64)
+        .map_or("?".to_string(), |s| format!("{s}s"));
+
+    eprintln!("  Victauri v{version}");
+    eprintln!("  Tools:  {tool_count}");
+    eprintln!("  Uptime: {uptime}");
+
+    let registry = client
+        .get_registry()
+        .await
+        .context("failed to get command registry")?;
+
+    let cmd_count = registry
+        .as_array()
+        .map(Vec::len)
+        .or_else(|| {
+            registry
+                .get("commands")
+                .and_then(|c| c.as_array())
+                .map(Vec::len)
+        })
+        .unwrap_or(0);
+    eprintln!("  Registered commands: {cmd_count}");
+
+    let health = client
+        .check_ipc_integrity()
+        .await
+        .context("IPC integrity check failed")?;
+    let healthy = health
+        .get("healthy")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let stale = health
+        .get("stale_calls")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let errors = health
+        .get("error_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+
+    if healthy {
+        eprintln!("  IPC health: OK");
+    } else {
+        eprintln!("  IPC health: DEGRADED ({stale} stale, {errors} errors)");
+    }
+
+    let ghosts = client
+        .detect_ghost_commands()
+        .await
+        .context("ghost command detection failed")?;
+    let ghost_list = ghosts
+        .get("ghost_commands")
+        .and_then(|g| g.as_array())
+        .or_else(|| ghosts.get("frontend_only").and_then(|f| f.as_array()));
+    if let Some(list) = ghost_list {
+        if list.is_empty() {
+            eprintln!("  Ghost commands: none");
+        } else {
+            eprintln!("  Ghost commands: {} detected", list.len());
+            for g in list.iter().take(5) {
+                if let Some(name) = g.as_str() {
+                    eprintln!("    - {name}");
+                } else if let Some(name) = g.get("command").and_then(|c| c.as_str()) {
+                    eprintln!("    - {name}");
+                }
+            }
+            if list.len() > 5 {
+                eprintln!("    ... and {} more", list.len() - 5);
+            }
+        }
+    }
+
+    let mem = client
+        .get_memory_stats()
+        .await
+        .context("memory stats failed")?;
+    let rss = mem
+        .get("working_set_bytes")
+        .or_else(|| mem.get("rss_bytes"))
+        .or_else(|| mem.get("rss"))
+        .and_then(serde_json::Value::as_u64);
+    if let Some(bytes) = rss {
+        let mb = bytes as f64 / 1_048_576.0;
+        eprintln!("  Memory: {mb:.1} MB");
+    }
+
+    eprintln!("\nVictauri server is live and responding.");
+    Ok(())
+}
+
+fn cmd_record(output: &Path) -> Result<()> {
+    eprintln!("Record mode is coming in Victauri v0.4.0.\n");
+    eprintln!("It will:");
+    eprintln!("  1. Connect to your running Tauri app");
+    eprintln!("  2. Capture clicks, fills, and IPC calls as you interact");
+    eprintln!("  3. Generate a Rust test file at: {}", output.display());
+    eprintln!("\nFor now, use the test client API directly:");
+    eprintln!("  https://docs.rs/victauri-test");
+    Ok(())
+}
+
+fn detect_project(root: &Path) -> Result<(PathBuf, bool)> {
+    let src_tauri = root.join("src-tauri");
+    let cargo_toml = if src_tauri.join("Cargo.toml").exists() {
+        src_tauri.join("Cargo.toml")
+    } else if root.join("Cargo.toml").exists() {
+        root.join("Cargo.toml")
+    } else {
+        bail!(
+            "No Cargo.toml found in {} or {}/src-tauri/",
+            root.display(),
+            root.display()
+        );
+    };
+
+    let content =
+        std::fs::read_to_string(&cargo_toml).context("failed to read Cargo.toml")?;
+    let is_tauri = content.contains("tauri");
+
+    Ok((cargo_toml, is_tauri))
+}
+
+fn find_src_tauri(root: &Path) -> Option<PathBuf> {
+    let p = root.join("src-tauri");
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+fn add_dependencies(cargo_toml_path: &Path) -> Result<bool> {
+    let content = std::fs::read_to_string(cargo_toml_path)?;
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .context("failed to parse Cargo.toml")?;
+
+    let mut changed = false;
+
+    if !has_dep(&doc, "dependencies", "victauri-plugin") {
+        ensure_table(&mut doc, "dependencies");
+        doc["dependencies"]["victauri-plugin"] =
+            toml_edit::value(env!("CARGO_PKG_VERSION"));
+        changed = true;
+    }
+
+    if !has_dep(&doc, "dev-dependencies", "victauri-test") {
+        ensure_table(&mut doc, "dev-dependencies");
+        doc["dev-dependencies"]["victauri-test"] =
+            toml_edit::value(env!("CARGO_PKG_VERSION"));
+        changed = true;
+    }
+
+    if changed {
+        std::fs::write(cargo_toml_path, doc.to_string())?;
+    }
+    Ok(changed)
+}
+
+fn has_dep(doc: &toml_edit::DocumentMut, table: &str, dep: &str) -> bool {
+    doc.get(table)
+        .and_then(|t| t.as_table())
+        .is_some_and(|t| t.contains_key(dep))
+}
+
+fn ensure_table(doc: &mut toml_edit::DocumentMut, key: &str) {
+    if !doc.contains_key(key) {
+        doc[key] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+}
+
+fn generate_smoke_test() -> &'static str {
+    r#"//! Victauri smoke tests — validates your Tauri app through the MCP bridge.
+//!
+//! Requires a running Tauri dev server.
+//! Run with: VICTAURI_E2E=1 cargo test --test smoke
+
+use victauri_test::VictauriClient;
+
+fn skip_unless_e2e() -> bool {
+    if !victauri_test::is_e2e() {
+        eprintln!("Skipping: set VICTAURI_E2E=1 with your Tauri dev server running");
+        return true;
+    }
+    false
+}
+
+#[tokio::test]
+async fn connect_and_check_plugin_info() {
+    if skip_unless_e2e() {
+        return;
+    }
+
+    let mut client = VictauriClient::discover()
+        .await
+        .expect("Failed to connect — is your Tauri dev server running?");
+
+    let info = client.get_plugin_info().await.unwrap();
+    assert!(
+        info.get("version").is_some(),
+        "plugin_info should have version"
+    );
+    eprintln!("Connected to Victauri v{}", info["version"]);
+}
+
+#[tokio::test]
+async fn screenshot_captures_window() {
+    if skip_unless_e2e() {
+        return;
+    }
+
+    let mut client = VictauriClient::discover().await.unwrap();
+    let result = client.screenshot().await.unwrap();
+
+    let has_image = result.get("image").is_some()
+        || result.get("data").is_some()
+        || result.get("base64").is_some()
+        || result.pointer("/result/content/0/data").is_some();
+    assert!(has_image, "screenshot should return image data");
+    eprintln!("Screenshot captured successfully");
+}
+
+#[tokio::test]
+async fn ipc_integrity_passes() {
+    if skip_unless_e2e() {
+        return;
+    }
+
+    let mut client = VictauriClient::discover().await.unwrap();
+    let report = client
+        .verify()
+        .ipc_healthy()
+        .no_console_errors()
+        .run()
+        .await
+        .unwrap();
+
+    for result in &report.results {
+        eprintln!(
+            "  [{}] {}",
+            if result.passed { "PASS" } else { "FAIL" },
+            result.description,
+        );
+    }
+    assert!(
+        report.all_passed(),
+        "IPC integrity checks should pass: {:?}",
+        report
+            .failures()
+            .iter()
+            .map(|f| &f.description)
+            .collect::<Vec<_>>()
+    );
+}
+"#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn smoke_test_content_compiles_as_valid_rust() {
+        let content = generate_smoke_test();
+        assert!(content.contains("VictauriClient"));
+        assert!(content.contains("skip_unless_e2e"));
+        assert!(content.contains("#[tokio::test]"));
+        assert!(content.contains("VICTAURI_E2E=1"));
+    }
+
+    #[test]
+    fn detect_project_finds_cargo_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo = dir.path().join("Cargo.toml");
+        let mut f = std::fs::File::create(&cargo).unwrap();
+        writeln!(f, "[dependencies]\ntauri = \"2\"").unwrap();
+
+        let (path, is_tauri) = detect_project(dir.path()).unwrap();
+        assert_eq!(path, cargo);
+        assert!(is_tauri);
+    }
+
+    #[test]
+    fn detect_project_finds_src_tauri() {
+        let dir = tempfile::tempdir().unwrap();
+        let src_tauri = dir.path().join("src-tauri");
+        std::fs::create_dir_all(&src_tauri).unwrap();
+        let cargo = src_tauri.join("Cargo.toml");
+        let mut f = std::fs::File::create(&cargo).unwrap();
+        writeln!(f, "[dependencies]\ntauri = \"2\"").unwrap();
+
+        let (path, is_tauri) = detect_project(dir.path()).unwrap();
+        assert_eq!(path, cargo);
+        assert!(is_tauri);
+    }
+
+    #[test]
+    fn detect_project_not_tauri() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo = dir.path().join("Cargo.toml");
+        let mut f = std::fs::File::create(&cargo).unwrap();
+        writeln!(f, "[dependencies]\nserde = \"1\"").unwrap();
+
+        let (_, is_tauri) = detect_project(dir.path()).unwrap();
+        assert!(!is_tauri);
+    }
+
+    #[test]
+    fn detect_project_missing_cargo_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(detect_project(dir.path()).is_err());
+    }
+
+    #[test]
+    fn add_deps_creates_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo,
+            "[package]\nname = \"test-app\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let added = add_dependencies(&cargo).unwrap();
+        assert!(added);
+
+        let content = std::fs::read_to_string(&cargo).unwrap();
+        assert!(content.contains("victauri-plugin"));
+        assert!(content.contains("victauri-test"));
+    }
+
+    #[test]
+    fn add_deps_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cargo = dir.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo,
+            "[package]\nname = \"test-app\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        add_dependencies(&cargo).unwrap();
+        let second = add_dependencies(&cargo).unwrap();
+        assert!(!second, "second call should report no changes");
+    }
+}
