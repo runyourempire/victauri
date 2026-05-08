@@ -394,4 +394,92 @@ mod tests {
         compare_screenshot("new_test", &to_base64(&png), &opts).unwrap();
         assert!(dir.path().join("new_test.png").exists());
     }
+
+    fn make_rgb_png(width: u32, height: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut buf, width, height);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            let mut data = Vec::with_capacity((width * height * 3) as usize);
+            for _ in 0..(width * height) {
+                data.extend_from_slice(&[r, g, b]);
+            }
+            writer.write_image_data(&data).unwrap();
+        }
+        buf
+    }
+
+    fn make_grayscale_png(width: u32, height: u32, value: u8) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut buf, width, height);
+            encoder.set_color(png::ColorType::Grayscale);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            let data = vec![value; (width * height) as usize];
+            writer.write_image_data(&data).unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn rgb_png_converts_to_rgba() {
+        let dir = tempfile::tempdir().unwrap();
+        // Save baseline as RGBA (the standard path)
+        let baseline = make_solid_png(8, 8, 200, 100, 50);
+        // Produce the "screenshot" as RGB (triggers the RGB→RGBA branch)
+        let screenshot = make_rgb_png(8, 8, 200, 100, 50);
+
+        let opts = VisualOptions {
+            snapshot_dir: dir.path().to_path_buf(),
+            channel_tolerance: 0,
+            threshold_percent: 0.1,
+            ..VisualOptions::default()
+        };
+
+        compare_screenshot("rgb_test", &to_base64(&baseline), &opts).unwrap();
+        let result = compare_screenshot("rgb_test", &to_base64(&screenshot), &opts).unwrap();
+        assert_eq!(result.match_percentage, 100.0);
+        assert_eq!(result.diff_pixel_count, 0);
+    }
+
+    #[test]
+    fn grayscale_png_converts_to_rgba() {
+        let dir = tempfile::tempdir().unwrap();
+        let gray_value: u8 = 128;
+        // Save baseline as RGBA with equivalent gray (r=g=b=128, a=255)
+        let baseline = make_solid_png(6, 6, gray_value, gray_value, gray_value);
+        // Produce the "screenshot" as Grayscale (triggers the Grayscale→RGBA branch)
+        let screenshot = make_grayscale_png(6, 6, gray_value);
+
+        let opts = VisualOptions {
+            snapshot_dir: dir.path().to_path_buf(),
+            channel_tolerance: 0,
+            threshold_percent: 0.1,
+            ..VisualOptions::default()
+        };
+
+        compare_screenshot("gray_test", &to_base64(&baseline), &opts).unwrap();
+        let result = compare_screenshot("gray_test", &to_base64(&screenshot), &opts).unwrap();
+        assert_eq!(result.match_percentage, 100.0);
+        assert_eq!(result.diff_pixel_count, 0);
+    }
+
+    #[test]
+    fn is_match_threshold_logic() {
+        let diff = VisualDiff {
+            match_percentage: 99.5,
+            diff_pixel_count: 5,
+            total_pixels: 1000,
+            diff_image_path: None,
+        };
+        // threshold 1.0 → needs >= 99.0 → 99.5 passes
+        assert!(diff.is_match(1.0));
+        // threshold 0.5 → needs >= 99.5 → 99.5 passes (exact boundary)
+        assert!(diff.is_match(0.5));
+        // threshold 0.1 → needs >= 99.9 → 99.5 fails
+        assert!(!diff.is_match(0.1));
+    }
 }

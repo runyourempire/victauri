@@ -319,4 +319,60 @@ mod tests {
         let cmds = extract_ipc_commands(&log);
         assert_eq!(cmds, vec!["greet", "save"]);
     }
+
+    #[test]
+    fn meets_threshold_exact_boundary() {
+        let report = build_report(
+            &["a".to_string(), "b".to_string()],
+            &["a".to_string()],
+        )
+        .unwrap();
+        // 1 out of 2 = 50.0%
+        assert!(report.meets_threshold(50.0));
+        assert!(!report.meets_threshold(50.1));
+    }
+
+    #[test]
+    fn summary_includes_all_sections() {
+        let report = build_report(
+            &["cmd_a".to_string(), "cmd_b".to_string(), "cmd_c".to_string()],
+            &["cmd_a".to_string(), "cmd_a".to_string()],
+        )
+        .unwrap();
+        let summary = report.to_summary();
+        assert!(summary.contains("IPC Coverage:"));
+        assert!(summary.contains("Most called:"));
+        assert!(summary.contains("Untested"));
+        assert!(summary.contains("cmd_a"));
+        assert!(summary.contains("cmd_b"));
+        assert!(summary.contains("cmd_c"));
+    }
+
+    #[test]
+    fn extract_command_names_empty_object() {
+        let registry = serde_json::json!({});
+        let names = extract_command_names(&registry);
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn extract_command_names_null_input() {
+        let registry = serde_json::json!(null);
+        let names = extract_command_names(&registry);
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn extract_ipc_commands_empty_array() {
+        let log = serde_json::json!([]);
+        let cmds = extract_ipc_commands(&log);
+        assert!(cmds.is_empty());
+    }
+
+    #[test]
+    fn extract_ipc_commands_non_array() {
+        let log = serde_json::json!("not an array");
+        let cmds = extract_ipc_commands(&log);
+        assert!(cmds.is_empty());
+    }
 }

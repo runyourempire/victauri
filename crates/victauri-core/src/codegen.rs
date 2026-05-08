@@ -144,31 +144,63 @@ fn escape_rust_str(s: &str) -> String {
     escaped
 }
 
+/// Resolved selector form for emitting idiomatic `VictauriClient` calls.
+///
+/// The JS observer produces raw CSS selectors; this classification maps them
+/// to the high-level convenience methods on `VictauriClient` (`click_by_id`,
+/// `click_by_text`, etc.) so generated tests read naturally.
+enum ResolvedSelector {
+    /// Selector started with `#` — strip the hash and use `*_by_id`.
+    ById(String),
+    /// Selector contained `:has-text("...")` — extract the text and use `*_by_text`.
+    ByText(String),
+    /// Everything else — pass the raw selector through.
+    Raw(String),
+}
+
+/// Classifies a raw CSS selector into the most idiomatic `VictauriClient` form.
+fn resolve_selector(selector: &str) -> ResolvedSelector {
+    // Pattern 2: contains `:has-text("...")` — extract the quoted text.
+    if let Some(start) = selector.find(":has-text(\"") {
+        let text_start = start + ":has-text(\"".len();
+        if let Some(end) = selector[text_start..].find("\")") {
+            let text = &selector[text_start..text_start + end];
+            return ResolvedSelector::ByText(text.to_string());
+        }
+    }
+
+    // Pattern 1: starts with `#` (simple ID selector, no combinators).
+    if selector.starts_with('#') && !selector[1..].contains(' ') {
+        let id = &selector[1..];
+        return ResolvedSelector::ById(id.to_string());
+    }
+
+    ResolvedSelector::Raw(selector.to_string())
+}
+
 /// Emits a single DOM interaction as a `VictauriClient` method call.
+///
+/// Selector-aware: emits `*_by_id` for `#id` selectors, `*_by_text` for
+/// `:has-text("...")` selectors, and the raw `client.click(selector)` form
+/// for everything else.
 fn emit_interaction(
     out: &mut String,
     action: &InteractionKind,
     selector: &str,
     value: Option<&str>,
 ) {
-    let sel = escape_rust_str(selector);
+    let resolved = resolve_selector(selector);
 
     match action {
         InteractionKind::Click => {
-            out.push_str(&format!(
-                "    client.click(\"{sel}\").await.unwrap();\n"
-            ));
+            emit_resolved_call(out, "click", &resolved, None);
         }
         InteractionKind::DoubleClick => {
-            out.push_str(&format!(
-                "    client.double_click(\"{sel}\").await.unwrap();\n"
-            ));
+            emit_resolved_call(out, "double_click", &resolved, None);
         }
         InteractionKind::Fill => {
             let val = value.map_or_else(String::new, escape_rust_str);
-            out.push_str(&format!(
-                "    client.fill(\"{sel}\", \"{val}\").await.unwrap();\n"
-            ));
+            emit_resolved_call(out, "fill", &resolved, Some(&val));
         }
         InteractionKind::KeyPress => {
             let val = value.map_or_else(String::new, escape_rust_str);
@@ -178,9 +210,7 @@ fn emit_interaction(
         }
         InteractionKind::Select => {
             let val = value.map_or_else(String::new, escape_rust_str);
-            out.push_str(&format!(
-                "    client.select_option(\"{sel}\", &[\"{val}\"]).await.unwrap();\n"
-            ));
+            emit_resolved_select(out, &resolved, &val);
         }
         InteractionKind::Navigate => {
             let val = value.map_or_else(String::new, escape_rust_str);
@@ -189,8 +219,63 @@ fn emit_interaction(
             ));
         }
         InteractionKind::Scroll => {
+            let sel = escape_rust_str(selector);
             out.push_str(&format!(
                 "    client.scroll_to(\"{sel}\", None, None).await.unwrap();\n"
+            ));
+        }
+    }
+}
+
+/// Emits a resolved call for click-like and fill-like methods.
+fn emit_resolved_call(
+    out: &mut String,
+    base_method: &str,
+    resolved: &ResolvedSelector,
+    extra_arg: Option<&str>,
+) {
+    let suffix = extra_arg.map_or_else(String::new, |v| format!(", \"{v}\""));
+    match resolved {
+        ResolvedSelector::ById(id) => {
+            let escaped = escape_rust_str(id);
+            out.push_str(&format!(
+                "    client.{base_method}_by_id(\"{escaped}\"{suffix}).await.unwrap();\n"
+            ));
+        }
+        ResolvedSelector::ByText(text) => {
+            let escaped = escape_rust_str(text);
+            out.push_str(&format!(
+                "    client.{base_method}_by_text(\"{escaped}\"{suffix}).await.unwrap();\n"
+            ));
+        }
+        ResolvedSelector::Raw(sel) => {
+            let escaped = escape_rust_str(sel);
+            out.push_str(&format!(
+                "    client.{base_method}(\"{escaped}\"{suffix}).await.unwrap();\n"
+            ));
+        }
+    }
+}
+
+/// Emits a resolved `select_option` call.
+fn emit_resolved_select(out: &mut String, resolved: &ResolvedSelector, val: &str) {
+    match resolved {
+        ResolvedSelector::ById(id) => {
+            let escaped = escape_rust_str(id);
+            out.push_str(&format!(
+                "    client.select_option_by_id(\"{escaped}\", &[\"{val}\"]).await.unwrap();\n"
+            ));
+        }
+        ResolvedSelector::ByText(text) => {
+            let escaped = escape_rust_str(text);
+            out.push_str(&format!(
+                "    client.select_option_by_text(\"{escaped}\", &[\"{val}\"]).await.unwrap();\n"
+            ));
+        }
+        ResolvedSelector::Raw(sel) => {
+            let escaped = escape_rust_str(sel);
+            out.push_str(&format!(
+                "    client.select_option(\"{escaped}\", &[\"{val}\"]).await.unwrap();\n"
             ));
         }
     }
@@ -246,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn click_generates_correct_call() {
+    fn click_by_id_generated_for_hash_selector() {
         let session = make_session(vec![interaction_event(
             0,
             InteractionKind::Click,
@@ -256,7 +341,10 @@ mod tests {
         )]);
         let code = generate_test_default(&session);
 
-        assert!(code.contains("client.click(\"#submit-btn\").await.unwrap();"));
+        assert!(
+            code.contains("client.click_by_id(\"submit-btn\").await.unwrap();"),
+            "expected click_by_id for # selector, got:\n{code}"
+        );
     }
 
     #[test]
@@ -387,11 +475,11 @@ mod tests {
     #[test]
     fn all_interaction_kinds_generate_code() {
         let session = make_session(vec![
-            interaction_event(0, InteractionKind::Click, "#a", None, 0),
-            interaction_event(1, InteractionKind::DoubleClick, "#b", None, 10),
-            interaction_event(2, InteractionKind::Fill, "#c", Some("val"), 20),
+            interaction_event(0, InteractionKind::Click, "[data-testid=\"a\"]", None, 0),
+            interaction_event(1, InteractionKind::DoubleClick, "[data-testid=\"b\"]", None, 10),
+            interaction_event(2, InteractionKind::Fill, "[data-testid=\"c\"]", Some("val"), 20),
             interaction_event(3, InteractionKind::KeyPress, "#d", Some("Enter"), 30),
-            interaction_event(4, InteractionKind::Select, "#e", Some("opt1"), 40),
+            interaction_event(4, InteractionKind::Select, "[data-testid=\"e\"]", Some("opt1"), 40),
             interaction_event(5, InteractionKind::Navigate, "#f", Some("/page"), 50),
             interaction_event(6, InteractionKind::Scroll, "#g", None, 60),
         ]);
@@ -400,11 +488,11 @@ mod tests {
             ..CodegenOptions::default()
         });
 
-        assert!(code.contains("client.click(\"#a\")"));
-        assert!(code.contains("client.double_click(\"#b\")"));
-        assert!(code.contains("client.fill(\"#c\", \"val\")"));
+        assert!(code.contains("client.click(\"[data-testid=\\\"a\\\"]\")"));
+        assert!(code.contains("client.double_click(\"[data-testid=\\\"b\\\"]\")"));
+        assert!(code.contains("client.fill(\"[data-testid=\\\"c\\\"]\", \"val\")"));
         assert!(code.contains("client.press_key(\"Enter\")"));
-        assert!(code.contains("client.select_option(\"#e\", &[\"opt1\"])"));
+        assert!(code.contains("client.select_option(\"[data-testid=\\\"e\\\"]\", &[\"opt1\"])"));
         assert!(code.contains("client.navigate(\"/page\")"));
         assert!(code.contains("client.scroll_to(\"#g\", None, None)"));
     }
@@ -447,5 +535,207 @@ mod tests {
         assert!(opts.include_ipc_assertions);
         assert!(opts.include_state_checks);
         assert!(opts.include_timing_comments);
+    }
+
+    // --- Timing comment tests ---
+
+    fn make_session_at(base: chrono::DateTime<Utc>, events: Vec<RecordedEvent>) -> RecordedSession {
+        RecordedSession {
+            id: "timing-session".to_string(),
+            started_at: base,
+            events,
+            checkpoints: vec![],
+        }
+    }
+
+    fn interaction_event_at(
+        base: chrono::DateTime<Utc>,
+        index: usize,
+        action: InteractionKind,
+        selector: &str,
+        value: Option<&str>,
+        offset_ms: i64,
+    ) -> RecordedEvent {
+        let ts = base + Duration::milliseconds(offset_ms);
+        RecordedEvent {
+            index,
+            timestamp: ts,
+            event: AppEvent::DomInteraction {
+                action,
+                selector: selector.to_string(),
+                value: value.map(String::from),
+                timestamp: ts,
+                webview_label: "main".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn timing_comment_emitted_for_large_gap() {
+        let base = Utc::now();
+        let session = make_session_at(
+            base,
+            vec![
+                interaction_event_at(base, 0, InteractionKind::Click, ".btn-a", None, 0),
+                interaction_event_at(base, 1, InteractionKind::Click, ".btn-b", None, 1000),
+            ],
+        );
+        let opts = CodegenOptions {
+            include_timing_comments: true,
+            ..CodegenOptions::default()
+        };
+        let code = generate_test(&session, &opts);
+
+        assert!(
+            code.contains("// +1000ms"),
+            "expected timing comment for 1000ms gap, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn timing_comment_omitted_for_small_gap() {
+        let base = Utc::now();
+        let session = make_session_at(
+            base,
+            vec![
+                interaction_event_at(base, 0, InteractionKind::Click, ".btn-a", None, 0),
+                interaction_event_at(base, 1, InteractionKind::Click, ".btn-b", None, 200),
+            ],
+        );
+        let opts = CodegenOptions {
+            include_timing_comments: true,
+            ..CodegenOptions::default()
+        };
+        let code = generate_test(&session, &opts);
+
+        assert!(
+            !code.contains("// +"),
+            "expected no timing comment for 200ms gap, got:\n{code}"
+        );
+    }
+
+    // --- Selector resolution tests ---
+
+    #[test]
+    fn id_selector_emits_click_by_id() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Click,
+            "#my-id",
+            None,
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains("client.click_by_id(\"my-id\").await.unwrap();"),
+            "expected click_by_id, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn has_text_selector_emits_click_by_text() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Click,
+            "button:has-text(\"Submit\")",
+            None,
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains("client.click_by_text(\"Submit\").await.unwrap();"),
+            "expected click_by_text, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn role_has_text_selector_emits_click_by_text() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Click,
+            "[role=\"button\"]:has-text(\"Save\")",
+            None,
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains("client.click_by_text(\"Save\").await.unwrap();"),
+            "expected click_by_text for role selector, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn data_testid_selector_emits_raw_click() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Click,
+            "[data-testid=\"foo\"]",
+            None,
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains("client.click(\"[data-testid=\\\"foo\\\"]\").await.unwrap();"),
+            "expected raw click for data-testid selector, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn fill_with_id_selector_emits_fill_by_id() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Fill,
+            "#email",
+            Some("user@example.com"),
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains(
+                "client.fill_by_id(\"email\", \"user@example.com\").await.unwrap();"
+            ),
+            "expected fill_by_id, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn double_click_with_has_text_emits_by_text() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::DoubleClick,
+            "span:has-text(\"Edit\")",
+            None,
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains("client.double_click_by_text(\"Edit\").await.unwrap();"),
+            "expected double_click_by_text, got:\n{code}"
+        );
+    }
+
+    #[test]
+    fn select_with_id_emits_select_option_by_id() {
+        let session = make_session(vec![interaction_event(
+            0,
+            InteractionKind::Select,
+            "#country",
+            Some("AU"),
+            0,
+        )]);
+        let code = generate_test_default(&session);
+
+        assert!(
+            code.contains(
+                "client.select_option_by_id(\"country\", &[\"AU\"]).await.unwrap();"
+            ),
+            "expected select_option_by_id, got:\n{code}"
+        );
     }
 }

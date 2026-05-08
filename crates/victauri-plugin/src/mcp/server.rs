@@ -226,14 +226,121 @@ fn remove_port_file() {
     let _ = std::fs::remove_file(token_file_path());
 }
 
+/// Parse a single bridge event JSON value into an [`AppEvent`](victauri_core::AppEvent).
+///
+/// Returns `None` for unrecognised event types, allowing callers to skip them.
+#[must_use]
+pub fn parse_bridge_event(ev: &serde_json::Value) -> Option<victauri_core::AppEvent> {
+    use chrono::Utc;
+    use victauri_core::AppEvent;
+
+    let event_type = ev.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let now = Utc::now();
+
+    let app_event = match event_type {
+        "console" => AppEvent::StateChange {
+            key: format!(
+                "console.{}",
+                ev.get("level").and_then(|l| l.as_str()).unwrap_or("log")
+            ),
+            timestamp: now,
+            caused_by: ev
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(std::string::ToString::to_string),
+        },
+        "dom_mutation" => AppEvent::DomMutation {
+            webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
+            timestamp: now,
+            mutation_count: ev
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u32,
+        },
+        "ipc" => {
+            let cmd = ev
+                .get("command")
+                .and_then(|c| c.as_str())
+                .unwrap_or("unknown");
+            AppEvent::Ipc(victauri_core::IpcCall {
+                id: uuid::Uuid::new_v4().to_string(),
+                command: cmd.to_string(),
+                timestamp: now,
+                result: match ev.get("status").and_then(|s| s.as_str()) {
+                    Some("ok") => victauri_core::IpcResult::Ok(serde_json::Value::Null),
+                    Some("error") => victauri_core::IpcResult::Err("error".to_string()),
+                    _ => victauri_core::IpcResult::Pending,
+                },
+                duration_ms: ev
+                    .get("duration_ms")
+                    .and_then(serde_json::Value::as_f64)
+                    .map(|d| d as u64),
+                arg_size_bytes: 0,
+                webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
+            })
+        }
+        "network" => AppEvent::StateChange {
+            key: format!(
+                "network.{}",
+                ev.get("method").and_then(|m| m.as_str()).unwrap_or("GET")
+            ),
+            timestamp: now,
+            caused_by: ev
+                .get("url")
+                .and_then(|u| u.as_str())
+                .map(std::string::ToString::to_string),
+        },
+        "navigation" => AppEvent::WindowEvent {
+            label: DEFAULT_WEBVIEW_LABEL.to_string(),
+            event: format!(
+                "navigation.{}",
+                ev.get("nav_type")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown")
+            ),
+            timestamp: now,
+        },
+        "dom_interaction" => {
+            let action_str = ev
+                .get("action")
+                .and_then(|a| a.as_str())
+                .unwrap_or("click");
+            let action = match action_str {
+                "click" => victauri_core::InteractionKind::Click,
+                "double_click" => victauri_core::InteractionKind::DoubleClick,
+                "fill" => victauri_core::InteractionKind::Fill,
+                "key_press" => victauri_core::InteractionKind::KeyPress,
+                "select" => victauri_core::InteractionKind::Select,
+                "navigate" => victauri_core::InteractionKind::Navigate,
+                "scroll" => victauri_core::InteractionKind::Scroll,
+                _ => victauri_core::InteractionKind::Click,
+            };
+            AppEvent::DomInteraction {
+                action,
+                selector: ev
+                    .get("selector")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("body")
+                    .to_string(),
+                value: ev
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string),
+                timestamp: now,
+                webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
+            }
+        }
+        _ => return None,
+    };
+
+    Some(app_event)
+}
+
 async fn event_drain_loop(
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    use chrono::Utc;
-    use victauri_core::AppEvent;
-
     let mut last_drain_ts: f64 = 0.0;
 
     loop {
@@ -302,106 +409,9 @@ async fn event_drain_loop(
                 last_drain_ts = ts;
             }
 
-            let event_type = ev.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            let now = Utc::now();
-
-            let app_event = match event_type {
-                "console" => AppEvent::StateChange {
-                    key: format!(
-                        "console.{}",
-                        ev.get("level").and_then(|l| l.as_str()).unwrap_or("log")
-                    ),
-                    timestamp: now,
-                    caused_by: ev
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .map(std::string::ToString::to_string),
-                },
-                "dom_mutation" => AppEvent::DomMutation {
-                    webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
-                    timestamp: now,
-                    mutation_count: ev
-                        .get("count")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0) as u32,
-                },
-                "ipc" => {
-                    let cmd = ev
-                        .get("command")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("unknown");
-                    AppEvent::Ipc(victauri_core::IpcCall {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        command: cmd.to_string(),
-                        timestamp: now,
-                        result: match ev.get("status").and_then(|s| s.as_str()) {
-                            Some("ok") => victauri_core::IpcResult::Ok(serde_json::Value::Null),
-                            Some("error") => victauri_core::IpcResult::Err("error".to_string()),
-                            _ => victauri_core::IpcResult::Pending,
-                        },
-                        duration_ms: ev
-                            .get("duration_ms")
-                            .and_then(serde_json::Value::as_f64)
-                            .map(|d| d as u64),
-                        arg_size_bytes: 0,
-                        webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
-                    })
-                }
-                "network" => AppEvent::StateChange {
-                    key: format!(
-                        "network.{}",
-                        ev.get("method").and_then(|m| m.as_str()).unwrap_or("GET")
-                    ),
-                    timestamp: now,
-                    caused_by: ev
-                        .get("url")
-                        .and_then(|u| u.as_str())
-                        .map(std::string::ToString::to_string),
-                },
-                "navigation" => AppEvent::WindowEvent {
-                    label: DEFAULT_WEBVIEW_LABEL.to_string(),
-                    event: format!(
-                        "navigation.{}",
-                        ev.get("nav_type")
-                            .and_then(|n| n.as_str())
-                            .unwrap_or("unknown")
-                    ),
-                    timestamp: now,
-                },
-                "dom_interaction" => {
-                    let action_str = ev
-                        .get("action")
-                        .and_then(|a| a.as_str())
-                        .unwrap_or("click");
-                    let action = match action_str {
-                        "click" => victauri_core::InteractionKind::Click,
-                        "double_click" => victauri_core::InteractionKind::DoubleClick,
-                        "fill" => victauri_core::InteractionKind::Fill,
-                        "key_press" => victauri_core::InteractionKind::KeyPress,
-                        "select" => victauri_core::InteractionKind::Select,
-                        "navigate" => victauri_core::InteractionKind::Navigate,
-                        "scroll" => victauri_core::InteractionKind::Scroll,
-                        _ => victauri_core::InteractionKind::Click,
-                    };
-                    AppEvent::DomInteraction {
-                        action,
-                        selector: ev
-                            .get("selector")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("body")
-                            .to_string(),
-                        value: ev
-                            .get("value")
-                            .and_then(|v| v.as_str())
-                            .map(std::string::ToString::to_string),
-                        timestamp: now,
-                        webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
-                    }
-                }
-                _ => continue,
-            };
-
-            state.recorder.record_event(app_event);
+            if let Some(app_event) = parse_bridge_event(ev) {
+                state.recorder.record_event(app_event);
+            }
         }
     }
 }
@@ -409,6 +419,7 @@ async fn event_drain_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use victauri_core::{AppEvent, InteractionKind, IpcResult};
 
     #[tokio::test]
     async fn try_bind_preferred_port_available() {
@@ -436,5 +447,341 @@ mod tests {
         assert_eq!(content, "7777");
         remove_port_file();
         assert!(!port_file_path().exists());
+    }
+
+    // ── parse_bridge_event: dom_interaction ────────────────────────────────
+
+    #[test]
+    fn parse_dom_interaction_click() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "action": "click",
+            "selector": "#submit-btn",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction {
+                action,
+                selector,
+                value,
+                webview_label,
+                ..
+            } => {
+                assert_eq!(action, InteractionKind::Click);
+                assert_eq!(selector, "#submit-btn");
+                assert!(value.is_none());
+                assert_eq!(webview_label, "main");
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_fill_with_value() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "action": "fill",
+            "selector": "input[name=email]",
+            "value": "test@example.com",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction {
+                action,
+                selector,
+                value,
+                ..
+            } => {
+                assert_eq!(action, InteractionKind::Fill);
+                assert_eq!(selector, "input[name=email]");
+                assert_eq!(value.as_deref(), Some("test@example.com"));
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_key_press() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "action": "key_press",
+            "selector": "body",
+            "value": "Enter",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction { action, value, .. } => {
+                assert_eq!(action, InteractionKind::KeyPress);
+                assert_eq!(value.as_deref(), Some("Enter"));
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_unknown_action_defaults_to_click() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "action": "swipe_left",
+            "selector": ".card",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction { action, .. } => {
+                assert_eq!(action, InteractionKind::Click);
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_missing_action_defaults_to_click() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "selector": "button",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction { action, .. } => {
+                assert_eq!(action, InteractionKind::Click);
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_missing_selector_defaults_to_body() {
+        let ev = serde_json::json!({
+            "type": "dom_interaction",
+            "action": "scroll",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomInteraction {
+                action, selector, ..
+            } => {
+                assert_eq!(action, InteractionKind::Scroll);
+                assert_eq!(selector, "body");
+            }
+            other => panic!("expected DomInteraction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_dom_interaction_all_action_kinds() {
+        let cases = [
+            ("click", InteractionKind::Click),
+            ("double_click", InteractionKind::DoubleClick),
+            ("fill", InteractionKind::Fill),
+            ("key_press", InteractionKind::KeyPress),
+            ("select", InteractionKind::Select),
+            ("navigate", InteractionKind::Navigate),
+            ("scroll", InteractionKind::Scroll),
+        ];
+        for (action_str, expected_kind) in cases {
+            let ev = serde_json::json!({
+                "type": "dom_interaction",
+                "action": action_str,
+                "selector": "body",
+            });
+            let result = parse_bridge_event(&ev)
+                .unwrap_or_else(|| panic!("should produce event for action {action_str}"));
+            match result {
+                AppEvent::DomInteraction { action, .. } => {
+                    assert_eq!(action, expected_kind, "mismatch for action {action_str}");
+                }
+                other => panic!("expected DomInteraction for {action_str}, got {other:?}"),
+            }
+        }
+    }
+
+    // ── parse_bridge_event: ipc ────────────────────────────────────────────
+
+    #[test]
+    fn parse_ipc_status_ok() {
+        let ev = serde_json::json!({
+            "type": "ipc",
+            "command": "greet",
+            "status": "ok",
+            "duration_ms": 42.0,
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::Ipc(call) => {
+                assert_eq!(call.command, "greet");
+                assert_eq!(call.result, IpcResult::Ok(serde_json::Value::Null));
+                assert_eq!(call.duration_ms, Some(42));
+                assert_eq!(call.webview_label, "main");
+            }
+            other => panic!("expected Ipc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_ipc_status_error() {
+        let ev = serde_json::json!({
+            "type": "ipc",
+            "command": "save_file",
+            "status": "error",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::Ipc(call) => {
+                assert_eq!(call.command, "save_file");
+                assert_eq!(call.result, IpcResult::Err("error".to_string()));
+            }
+            other => panic!("expected Ipc, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_ipc_status_pending() {
+        let ev = serde_json::json!({
+            "type": "ipc",
+            "command": "long_task",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::Ipc(call) => {
+                assert_eq!(call.result, IpcResult::Pending);
+                assert!(call.duration_ms.is_none());
+            }
+            other => panic!("expected Ipc, got {other:?}"),
+        }
+    }
+
+    // ── parse_bridge_event: console ────────────────────────────────────────
+
+    #[test]
+    fn parse_console_event() {
+        let ev = serde_json::json!({
+            "type": "console",
+            "level": "warn",
+            "message": "deprecated API usage",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::StateChange {
+                key, caused_by, ..
+            } => {
+                assert_eq!(key, "console.warn");
+                assert_eq!(caused_by.as_deref(), Some("deprecated API usage"));
+            }
+            other => panic!("expected StateChange, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_console_default_level() {
+        let ev = serde_json::json!({
+            "type": "console",
+            "message": "hello",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::StateChange { key, .. } => {
+                assert_eq!(key, "console.log");
+            }
+            other => panic!("expected StateChange, got {other:?}"),
+        }
+    }
+
+    // ── parse_bridge_event: navigation ─────────────────────────────────────
+
+    #[test]
+    fn parse_navigation_event() {
+        let ev = serde_json::json!({
+            "type": "navigation",
+            "nav_type": "push",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::WindowEvent { label, event, .. } => {
+                assert_eq!(label, "main");
+                assert_eq!(event, "navigation.push");
+            }
+            other => panic!("expected WindowEvent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_navigation_default_nav_type() {
+        let ev = serde_json::json!({ "type": "navigation" });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::WindowEvent { event, .. } => {
+                assert_eq!(event, "navigation.unknown");
+            }
+            other => panic!("expected WindowEvent, got {other:?}"),
+        }
+    }
+
+    // ── parse_bridge_event: dom_mutation ───────────────────────────────────
+
+    #[test]
+    fn parse_dom_mutation_event() {
+        let ev = serde_json::json!({
+            "type": "dom_mutation",
+            "count": 15,
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::DomMutation {
+                webview_label,
+                mutation_count,
+                ..
+            } => {
+                assert_eq!(webview_label, "main");
+                assert_eq!(mutation_count, 15);
+            }
+            other => panic!("expected DomMutation, got {other:?}"),
+        }
+    }
+
+    // ── parse_bridge_event: network ────────────────────────────────────────
+
+    #[test]
+    fn parse_network_event() {
+        let ev = serde_json::json!({
+            "type": "network",
+            "method": "POST",
+            "url": "https://api.example.com/data",
+        });
+        let result = parse_bridge_event(&ev).expect("should produce an event");
+        match result {
+            AppEvent::StateChange {
+                key, caused_by, ..
+            } => {
+                assert_eq!(key, "network.POST");
+                assert_eq!(
+                    caused_by.as_deref(),
+                    Some("https://api.example.com/data")
+                );
+            }
+            other => panic!("expected StateChange, got {other:?}"),
+        }
+    }
+
+    // ── parse_bridge_event: unknown type ───────────────────────────────────
+
+    #[test]
+    fn parse_unknown_type_returns_none() {
+        let ev = serde_json::json!({
+            "type": "custom_telemetry",
+            "payload": 42,
+        });
+        assert!(parse_bridge_event(&ev).is_none());
+    }
+
+    #[test]
+    fn parse_missing_type_field_returns_none() {
+        let ev = serde_json::json!({ "data": "no type here" });
+        assert!(parse_bridge_event(&ev).is_none());
+    }
+
+    #[test]
+    fn parse_empty_object_returns_none() {
+        let ev = serde_json::json!({});
+        assert!(parse_bridge_event(&ev).is_none());
     }
 }
