@@ -23,10 +23,13 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+victauri-core = { workspace = true }
 victauri-test = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+uuid = { workspace = true }
+ctrlc = "3"
 toml_edit = "0.22"
 
 [dev-dependencies]

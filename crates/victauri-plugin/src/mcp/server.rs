@@ -368,6 +368,36 @@ async fn event_drain_loop(
                     ),
                     timestamp: now,
                 },
+                "dom_interaction" => {
+                    let action_str = ev
+                        .get("action")
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("click");
+                    let action = match action_str {
+                        "click" => victauri_core::InteractionKind::Click,
+                        "double_click" => victauri_core::InteractionKind::DoubleClick,
+                        "fill" => victauri_core::InteractionKind::Fill,
+                        "key_press" => victauri_core::InteractionKind::KeyPress,
+                        "select" => victauri_core::InteractionKind::Select,
+                        "navigate" => victauri_core::InteractionKind::Navigate,
+                        "scroll" => victauri_core::InteractionKind::Scroll,
+                        _ => victauri_core::InteractionKind::Click,
+                    };
+                    AppEvent::DomInteraction {
+                        action,
+                        selector: ev
+                            .get("selector")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("body")
+                            .to_string(),
+                        value: ev
+                            .get("value")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string),
+                        timestamp: now,
+                        webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
+                    }
+                }
                 _ => continue,
             };
 

@@ -108,6 +108,8 @@ const INIT_SCRIPT_BODY: &str = r#"
     var networkCounter = 0;
     var navigationLog = [];
     var dialogLog = [];
+    var interactionLog = [];
+    var CAP_INTERACTION = 500;
 
     function checkActionable(el) {
         if (!el || !el.isConnected) return { error: 'element is detached from DOM', hint: 'RETRY_LATER' };
@@ -587,6 +589,12 @@ const INIT_SCRIPT_BODY: &str = r#"
             navigationLog.forEach(function(n) {
                 if (n.timestamp >= ts) {
                     events.push({ type: 'navigation', url: n.url, nav_type: n.type, timestamp: n.timestamp });
+                }
+            });
+
+            interactionLog.forEach(function(i) {
+                if (i.timestamp >= ts) {
+                    events.push({ type: 'dom_interaction', action: i.action, selector: i.selector, value: i.value, timestamp: i.timestamp });
                 }
             });
 
@@ -1251,6 +1259,67 @@ const INIT_SCRIPT_BODY: &str = r#"
         if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
     });
 
+    // ── Interaction Observer (for record mode) ────────────────────────────────
+
+    function bestSelector(el) {
+        if (el.dataset && el.dataset.testid) return '[data-testid="' + el.dataset.testid + '"]';
+        if (el.id) return '#' + el.id;
+        if (el.getAttribute && el.getAttribute('role')) {
+            var role = el.getAttribute('role');
+            var text = (el.textContent || '').trim().substring(0, 50);
+            if (text) return '[role="' + role + '"]:has-text("' + text + '")';
+            return '[role="' + role + '"]';
+        }
+        var tag = (el.tagName || 'div').toLowerCase();
+        var text = (el.textContent || '').trim().substring(0, 50);
+        if (text && ['button', 'a', 'label', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span'].indexOf(tag) !== -1) {
+            return tag + ':has-text("' + text + '")';
+        }
+        if (el.name) return tag + '[name="' + el.name + '"]';
+        if (el.className && typeof el.className === 'string') {
+            var cls = el.className.trim().split(/\s+/).slice(0, 2).join('.');
+            if (cls) return tag + '.' + cls;
+        }
+        return tag;
+    }
+
+    function pushInteraction(action, el, value) {
+        interactionLog.push({
+            type: 'dom_interaction',
+            action: action,
+            selector: bestSelector(el),
+            value: value || null,
+            timestamp: Date.now()
+        });
+        if (interactionLog.length > CAP_INTERACTION) interactionLog.shift();
+    }
+
+    document.addEventListener('click', function(e) {
+        if (e.isTrusted && e.target) pushInteraction('click', e.target, null);
+    }, true);
+
+    document.addEventListener('dblclick', function(e) {
+        if (e.isTrusted && e.target) pushInteraction('double_click', e.target, null);
+    }, true);
+
+    document.addEventListener('change', function(e) {
+        if (!e.isTrusted || !e.target) return;
+        var el = e.target;
+        var tag = (el.tagName || '').toLowerCase();
+        if (tag === 'select') {
+            pushInteraction('select', el, el.value);
+        } else if (tag === 'input' || tag === 'textarea') {
+            pushInteraction('fill', el, el.value);
+        }
+    }, true);
+
+    document.addEventListener('keydown', function(e) {
+        if (!e.isTrusted) return;
+        if (['Enter', 'Escape', 'Tab', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) !== -1) {
+            pushInteraction('key_press', e.target || document.body, e.key);
+        }
+    }, true);
+
     // ── Mutation Observer (deferred) ─────────────────────────────────────────
 
     var mutationBatchCount = 0;
@@ -1415,6 +1484,7 @@ const INIT_SCRIPT_BODY: &str = r#"
         networkLog.length = 0;
         navigationLog.length = 0;
         dialogLog.length = 0;
+        interactionLog.length = 0;
         refMap.clear();
         weakRefMap.clear();
         refCounter = 0;

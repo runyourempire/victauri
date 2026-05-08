@@ -60,6 +60,39 @@ impl From<IpcCall> for AppEvent {
     }
 }
 
+/// The kind of user interaction captured from the DOM.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum InteractionKind {
+    /// Mouse click on an element.
+    Click,
+    /// Double-click on an element.
+    DoubleClick,
+    /// Text typed into an input field.
+    Fill,
+    /// Individual key press event.
+    KeyPress,
+    /// Option selected from a dropdown.
+    Select,
+    /// Page navigation (URL change).
+    Navigate,
+    /// Scroll to element or position.
+    Scroll,
+}
+
+impl fmt::Display for InteractionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Click => f.write_str("click"),
+            Self::DoubleClick => f.write_str("double_click"),
+            Self::Fill => f.write_str("fill"),
+            Self::KeyPress => f.write_str("key_press"),
+            Self::Select => f.write_str("select"),
+            Self::Navigate => f.write_str("navigate"),
+            Self::Scroll => f.write_str("scroll"),
+        }
+    }
+}
+
 /// Application event captured by the introspection layer.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -85,6 +118,19 @@ pub enum AppEvent {
         /// Number of individual DOM mutations in this batch.
         mutation_count: u32,
     },
+    /// A user interaction captured from the DOM during recording.
+    DomInteraction {
+        /// What kind of interaction occurred.
+        action: InteractionKind,
+        /// Best available selector for the target element (data-testid, id, CSS path).
+        selector: String,
+        /// Value associated with the interaction (typed text, selected option, URL, key name).
+        value: Option<String>,
+        /// When the interaction occurred.
+        timestamp: DateTime<Utc>,
+        /// Label of the webview where the interaction happened.
+        webview_label: String,
+    },
     /// A native window lifecycle event (e.g. focus, resize, close).
     WindowEvent {
         /// Tauri window label that emitted the event.
@@ -104,6 +150,7 @@ impl AppEvent {
             Self::Ipc(call) => call.timestamp,
             Self::StateChange { timestamp, .. }
             | Self::DomMutation { timestamp, .. }
+            | Self::DomInteraction { timestamp, .. }
             | Self::WindowEvent { timestamp, .. } => *timestamp,
         }
     }

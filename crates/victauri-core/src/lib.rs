@@ -7,6 +7,7 @@
 #[doc(hidden)]
 pub extern crate inventory;
 
+pub mod codegen;
 pub mod error;
 pub mod event;
 pub mod recording;
@@ -15,8 +16,9 @@ pub mod snapshot;
 pub mod types;
 pub mod verification;
 
+pub use codegen::{CodegenOptions, generate_test, generate_test_default};
 pub use error::VictauriError;
-pub use event::{AppEvent, EventLog, IpcCall, IpcResult};
+pub use event::{AppEvent, EventLog, InteractionKind, IpcCall, IpcResult};
 pub use recording::{EventRecorder, RecordedEvent, RecordedSession, StateCheckpoint};
 pub use registry::{
     CommandArg, CommandInfo, CommandInfoFactory, CommandRegistry, ScoredCommand,

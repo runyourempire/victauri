@@ -27,11 +27,14 @@ enum Commands {
     },
     /// Connect to a running Tauri app and report status
     Check,
-    /// Record user interactions and generate a test file (coming soon)
+    /// Record user interactions and generate a test file
     Record {
         /// Output file path for generated test
         #[arg(short, long, default_value = "tests/recorded_flow.rs")]
         output: PathBuf,
+        /// Name of the generated test function
+        #[arg(short = 'n', long, default_value = "recorded_flow")]
+        test_name: String,
     },
 }
 
@@ -47,8 +50,8 @@ async fn main() -> Result<()> {
         Commands::Check => {
             cmd_check().await?;
         }
-        Commands::Record { output } => {
-            cmd_record(&output)?;
+        Commands::Record { output, test_name } => {
+            cmd_record(&output, &test_name).await?;
         }
     }
 
@@ -219,14 +222,79 @@ async fn cmd_check() -> Result<()> {
     Ok(())
 }
 
-fn cmd_record(output: &Path) -> Result<()> {
-    eprintln!("Record mode is coming in Victauri v0.4.0.\n");
-    eprintln!("It will:");
-    eprintln!("  1. Connect to your running Tauri app");
-    eprintln!("  2. Capture clicks, fills, and IPC calls as you interact");
-    eprintln!("  3. Generate a Rust test file at: {}", output.display());
-    eprintln!("\nFor now, use the test client API directly:");
-    eprintln!("  https://docs.rs/victauri-test");
+async fn cmd_record(output: &Path, test_name: &str) -> Result<()> {
+    eprintln!("Connecting to running Tauri app...\n");
+
+    let mut client = match victauri_test::VictauriClient::discover().await {
+        Ok(c) => c,
+        Err(e) => {
+            bail!(
+                "Could not connect to Victauri server: {e}\n\n\
+                 Is your Tauri app running? Try:  pnpm run tauri dev\n\
+                 The app must have victauri-plugin wired into its builder."
+            );
+        }
+    };
+
+    let session_id = format!("record-{}", uuid::Uuid::new_v4());
+    client
+        .start_recording(Some(&session_id))
+        .await
+        .context("failed to start recording")?;
+
+    eprintln!("Recording started (session: {session_id})");
+    eprintln!("  Interact with your app — clicks, fills, and key presses are captured.");
+    eprintln!("  Press Ctrl+C to stop recording and generate the test.\n");
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let tx = std::sync::Mutex::new(Some(tx));
+    ctrlc::set_handler(move || {
+        if let Some(tx) = tx.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+            let _ = tx.send(());
+        }
+    })
+    .context("failed to register Ctrl+C handler")?;
+
+    rx.await.ok();
+    eprintln!("\nStopping recording...");
+
+    let session_json = client
+        .stop_recording()
+        .await
+        .context("failed to stop recording")?;
+
+    let session: victauri_core::RecordedSession =
+        serde_json::from_value(session_json).context("failed to parse recorded session")?;
+
+    let event_count = session.events.len();
+    let interaction_count = session
+        .events
+        .iter()
+        .filter(|e| matches!(e.event, victauri_core::AppEvent::DomInteraction { .. }))
+        .count();
+    let ipc_count = session
+        .events
+        .iter()
+        .filter(|e| matches!(e.event, victauri_core::AppEvent::Ipc(_)))
+        .count();
+
+    let options = victauri_core::CodegenOptions {
+        test_name: test_name.to_string(),
+        ..victauri_core::CodegenOptions::default()
+    };
+    let code = victauri_core::generate_test(&session, &options);
+
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    }
+    std::fs::write(output, &code)
+        .with_context(|| format!("failed to write {}", output.display()))?;
+
+    eprintln!("  Captured {event_count} events ({interaction_count} interactions, {ipc_count} IPC calls)");
+    eprintln!("  Generated test: {}", output.display());
+    eprintln!("\nRun your test:");
+    eprintln!("  VICTAURI_E2E=1 cargo test --test {test_name}");
     Ok(())
 }
 
