@@ -352,7 +352,8 @@ impl VictauriBuilder {
     /// ```
     #[must_use]
     pub fn auto_discover(mut self) -> Self {
-        self.commands.extend(victauri_core::auto_discovered_commands());
+        self.commands
+            .extend(victauri_core::auto_discovered_commands());
         self
     }
 

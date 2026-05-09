@@ -6,13 +6,13 @@
 
 X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which sees only the browser glass), Victauri gives agents simultaneous access to the webview DOM, the Rust backend, the IPC layer, the database, and native window state — all through a single MCP interface.
 
-**Stack:** Pure Rust workspace (5 crates) | **Target:** Tauri 2.0 applications
+**Stack:** Pure Rust workspace (6 crates) | **Target:** Tauri 2.0 applications
 
 ## Commands
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 756 tests
+cargo test --workspace                                # Run all 858 tests
 cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format check
@@ -24,10 +24,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps  # Generate docs (zer
 ```
 victauri/
 ├── crates/
+│   ├── victauri-cli/        # CLI: init, check, test, record, watch, coverage
 │   ├── victauri-core/       # Shared types: events, registry, snapshots, verification
 │   ├── victauri-macros/     # Proc macros: #[inspectable] for command instrumentation
 │   ├── victauri-plugin/     # Tauri plugin: embedded MCP server + JS bridge + tools
-│   ├── victauri-test/       # Test client + assertion helpers for CI testing
+│   ├── victauri-test/       # Test client + assertion helpers + smoke suite
 │   └── victauri-watchdog/   # Crash-recovery sidecar (monitors plugin health)
 └── examples/
     └── demo-app/            # Minimal Tauri app with Victauri wired up
@@ -157,7 +158,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-05-08)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.2 published.** All 5 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 756 tests pass. Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 5 crates published to crates.io.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.2 published.** All 6 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 858 tests pass. Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 crates published to crates.io.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
@@ -230,7 +231,8 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
   - **Standalone (14)**: eval_js, dom_snapshot, find_elements, invoke_command, screenshot, verify_state, detect_ghost_commands, check_ipc_integrity, wait_for, assert_semantic, resolve_command, get_registry, get_memory_stats, get_plugin_info
   - **Compound (9)**: interact (click/hover/focus/scroll/select), input (fill/type/press_key), window (get_state/list/manage/resize/move/set_title), storage (get/set/delete/cookies), navigate (go_to/back/history/dialogs), recording (start/stop/checkpoint/events/export/import), inspect (styles/bounds/highlight/a11y/perf), css (inject/remove), logs (console/network/ipc/navigation/dialogs/events/slow_ipc)
   Resources: victauri://ipc-log, victauri://windows, victauri://state with subscribe/unsubscribe. JS bridge v0.3.0 with IPC interception, network monitoring, storage access, navigation tracking, dialog capture, extended interactions, and waitFor. `EventRecorder` with 50,000 event capacity. **Release-safe**: `init()` returns a no-op plugin in release builds via `#[cfg(debug_assertions)]` gate. `VictauriBuilder` for port/capacity/auth configuration + `VICTAURI_PORT`/`VICTAURI_AUTH_TOKEN` env vars. Bearer token auth middleware (**enabled by default** — auto-generates UUID token, case-insensitive per RFC 7235). `auth_disabled()` to opt out. Token-bucket rate limiter (AtomicU64, 1000 req/sec default). Privacy layer with command allowlists/blocklists, tool disabling, regex-based output redaction, strict mode. Tool enable/disable via builder. 123 unit tests + 118 integration tests + 38 adversarial tests + 85 tool contract tests + 30 bridge tests + 22 stress tests.
-- **victauri-test**: Typed MCP HTTP client (`VictauriClient`) with auto-session management (initialize + notifications/initialized). 23 convenience methods for tool calls (eval_js, dom_snapshot, click, fill, etc). 6 assertion helpers: `assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`. Supports Bearer token auth via `connect_with_token`. Published to crates.io as standalone crate.
+- **victauri-test**: Typed MCP HTTP client (`VictauriClient`) with auto-session management (initialize + notifications/initialized). 23 convenience methods for tool calls (eval_js, dom_snapshot, click, fill, etc). 6 standalone assertion helpers: `assert_json_eq`, `assert_json_truthy`, `assert_no_a11y_violations`, `assert_performance_budget`, `assert_ipc_healthy`, `assert_state_matches`. 11 client assertion methods: `assert_eval_works`, `assert_dom_snapshot_valid`, `assert_screenshot_ok`, `assert_windows_exist`, `assert_ipc_integrity_ok`, `assert_accessible`, `assert_dom_complete_under`, `assert_heap_under_mb`, `assert_no_uncaught_errors`, `assert_recording_lifecycle`, `assert_health_hardened`. Built-in `smoke_test()` suite (11 checks, returns `SmokeReport` with timing + JUnit XML). `SmokeConfig` for custom thresholds. Supports Bearer token auth via `connect_with_token`. Published to crates.io as standalone crate.
+- **victauri-cli**: CLI binary (`victauri`) with 6 commands: `init` (scaffold test directory), `check` (server diagnostics), `test` (built-in smoke suite — 11 checks with pass/fail + JUnit XML), `record` (capture interactions → test file), `watch` (file watcher → re-run tests), `coverage` (IPC command coverage report). `victauri test` auto-discovers the running app, runs all smoke checks, prints a summary, exits 0/1 for CI. Configurable `--max-load-ms` and `--max-heap-mb` thresholds.
 - **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
 - **demo-app**: Tauri 2 app in `examples/demo-app/` with Victauri wired up. 12 commands (greet, counter CRUD, todo CRUD, settings, app state dump) all decorated with `#[inspectable]` including intent, category, examples. Frontend exercises all 12 commands: greet form, counter with +/−/reset, todo list with add/toggle/delete, settings panel (theme/notifications/language), debug state inspector. Includes `.mcp.json` for immediate Claude Code connection.
 - **CI**: GitHub Actions workflow (`ci.yml`) — clippy + tests + docs on Linux/Windows/macOS, format check on Linux. All crate code passes `cargo fmt --check`.

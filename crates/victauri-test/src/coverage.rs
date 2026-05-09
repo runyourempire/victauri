@@ -116,20 +116,12 @@ pub async fn assert_coverage_above(
 fn extract_command_names(registry: &Value) -> Vec<String> {
     if let Some(arr) = registry.as_array() {
         arr.iter()
-            .filter_map(|v| {
-                v.get("name")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-            })
+            .filter_map(|v| v.get("name").and_then(Value::as_str).map(String::from))
             .collect()
     } else if let Some(commands) = registry.get("commands").and_then(Value::as_array) {
         commands
             .iter()
-            .filter_map(|v| {
-                v.get("name")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-            })
+            .filter_map(|v| v.get("name").and_then(Value::as_str).map(String::from))
             .collect()
     } else {
         Vec::new()
@@ -139,21 +131,14 @@ fn extract_command_names(registry: &Value) -> Vec<String> {
 fn extract_ipc_commands(ipc_log: &Value) -> Vec<String> {
     if let Some(arr) = ipc_log.as_array() {
         arr.iter()
-            .filter_map(|v| {
-                v.get("command")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-            })
+            .filter_map(|v| v.get("command").and_then(Value::as_str).map(String::from))
             .collect()
     } else {
         Vec::new()
     }
 }
 
-fn build_report(
-    registered: &[String],
-    called: &[String],
-) -> Result<CoverageReport, TestError> {
+fn build_report(registered: &[String], called: &[String]) -> Result<CoverageReport, TestError> {
     let mut call_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for cmd in called {
         let name = cmd
@@ -209,7 +194,11 @@ mod tests {
     #[test]
     fn build_report_full_coverage() {
         let registered = vec!["cmd_a".to_string(), "cmd_b".to_string()];
-        let called = vec!["cmd_a".to_string(), "cmd_b".to_string(), "cmd_a".to_string()];
+        let called = vec![
+            "cmd_a".to_string(),
+            "cmd_b".to_string(),
+            "cmd_a".to_string(),
+        ];
 
         let report = build_report(&registered, &called).unwrap();
         assert_eq!(report.total_commands, 2);
@@ -322,11 +311,7 @@ mod tests {
 
     #[test]
     fn meets_threshold_exact_boundary() {
-        let report = build_report(
-            &["a".to_string(), "b".to_string()],
-            &["a".to_string()],
-        )
-        .unwrap();
+        let report = build_report(&["a".to_string(), "b".to_string()], &["a".to_string()]).unwrap();
         // 1 out of 2 = 50.0%
         assert!(report.meets_threshold(50.0));
         assert!(!report.meets_threshold(50.1));
@@ -335,7 +320,11 @@ mod tests {
     #[test]
     fn summary_includes_all_sections() {
         let report = build_report(
-            &["cmd_a".to_string(), "cmd_b".to_string(), "cmd_c".to_string()],
+            &[
+                "cmd_a".to_string(),
+                "cmd_b".to_string(),
+                "cmd_c".to_string(),
+            ],
             &["cmd_a".to_string(), "cmd_a".to_string()],
         )
         .unwrap();

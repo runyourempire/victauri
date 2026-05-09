@@ -43,8 +43,10 @@ e2e_test!(health_endpoint_ok, {
     assert!(resp.status().is_success());
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
-    assert!(body["uptime_secs"].as_u64().is_some());
-    assert!(body["commands_registered"].as_u64().is_some());
+    assert!(
+        body.get("uptime_secs").is_none(),
+        "hardened health should not leak uptime"
+    );
 });
 
 e2e_test!(info_endpoint_ok, {

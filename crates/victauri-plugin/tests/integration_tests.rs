@@ -301,10 +301,14 @@ async fn health_endpoint_returns_ok() {
     assert_eq!(resp.status(), 200);
     let json: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(json["status"], "ok");
-    assert!(json["uptime_secs"].is_number());
-    assert!(json["events_captured"].is_number());
-    assert!(json["commands_registered"].is_number());
-    assert!(json["memory"].is_object());
+    assert!(
+        json.get("uptime_secs").is_none(),
+        "hardened health should not leak uptime"
+    );
+    assert!(
+        json.get("memory").is_none(),
+        "hardened health should not leak memory stats"
+    );
 }
 
 #[tokio::test]

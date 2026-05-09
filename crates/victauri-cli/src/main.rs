@@ -31,6 +31,18 @@ enum Commands {
         #[arg(long)]
         junit: Option<PathBuf>,
     },
+    /// Run the built-in smoke test suite against a running Tauri app
+    Test {
+        /// Maximum acceptable DOM complete time in milliseconds
+        #[arg(long, default_value_t = 10_000)]
+        max_load_ms: u64,
+        /// Maximum acceptable JS heap usage in megabytes
+        #[arg(long, default_value_t = 512.0)]
+        max_heap_mb: f64,
+        /// Write `JUnit` XML report to this path
+        #[arg(long)]
+        junit: Option<PathBuf>,
+    },
     /// Record user interactions and generate a test file
     Record {
         /// Output file path for generated test
@@ -72,6 +84,13 @@ async fn main() -> Result<()> {
         Commands::Check { junit } => {
             cmd_check(junit.as_deref()).await?;
         }
+        Commands::Test {
+            max_load_ms,
+            max_heap_mb,
+            junit,
+        } => {
+            cmd_test(max_load_ms, max_heap_mb, junit.as_deref()).await?;
+        }
         Commands::Record { output, test_name } => {
             cmd_record(&output, &test_name).await?;
         }
@@ -107,8 +126,7 @@ fn cmd_init(root: &Path) -> Result<()> {
         eprintln!("  Dependencies already present in Cargo.toml");
     }
 
-    let tests_dir =
-        find_src_tauri(&root).map_or_else(|| root.join("tests"), |p| p.join("tests"));
+    let tests_dir = find_src_tauri(&root).map_or_else(|| root.join("tests"), |p| p.join("tests"));
     std::fs::create_dir_all(&tests_dir)
         .with_context(|| format!("failed to create {}", tests_dir.display()))?;
 
@@ -273,6 +291,56 @@ async fn cmd_check(junit_path: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+async fn cmd_test(max_load_ms: u64, max_heap_mb: f64, junit_path: Option<&Path>) -> Result<()> {
+    eprintln!("Connecting to running Victauri server...\n");
+
+    let mut client = match victauri_test::VictauriClient::discover().await {
+        Ok(c) => c,
+        Err(e) => {
+            bail!(
+                "Could not connect to Victauri server: {e}\n\n\
+                 Is your Tauri app running? Try:  pnpm run tauri dev\n\
+                 The app must have victauri-plugin wired into its builder."
+            );
+        }
+    };
+
+    eprintln!("Running built-in smoke test suite (11 checks)...\n");
+
+    let config = victauri_test::SmokeConfig {
+        max_dom_complete_ms: max_load_ms,
+        max_heap_mb,
+    };
+
+    let report = client
+        .smoke_test_with_config(&config)
+        .await
+        .context("smoke test failed to complete")?;
+
+    eprint!("{}", report.to_summary());
+
+    if let Some(path) = junit_path {
+        let verify = report.to_verify_report();
+        let junit = verify.to_junit("victauri-smoke", report.duration);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+        }
+        victauri_test::reporting::write_junit_report(&junit, path)
+            .with_context(|| format!("failed to write JUnit report to {}", path.display()))?;
+        eprintln!("JUnit report written to {}", path.display());
+    }
+
+    if !report.all_passed() {
+        let fail_count = report.failures().len();
+        eprintln!("\n{fail_count} of {} checks failed.", report.total_count());
+        std::process::exit(1);
+    }
+
+    eprintln!("\nAll smoke checks passed.");
+    Ok(())
+}
+
 async fn cmd_coverage(threshold: Option<f64>, junit_path: Option<&Path>) -> Result<()> {
     eprintln!("Connecting to running Victauri server...\n");
 
@@ -327,7 +395,10 @@ async fn cmd_coverage(threshold: Option<f64>, junit_path: Option<&Path>) -> Resu
             );
             std::process::exit(1);
         }
-        eprintln!("Coverage {:.1}% meets threshold {:.1}%.", report.coverage_percentage, t);
+        eprintln!(
+            "Coverage {:.1}% meets threshold {:.1}%.",
+            report.coverage_percentage, t
+        );
     }
 
     Ok(())
@@ -360,7 +431,11 @@ async fn cmd_record(output: &Path, test_name: &str) -> Result<()> {
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let tx = std::sync::Mutex::new(Some(tx));
     ctrlc::set_handler(move || {
-        if let Some(tx) = tx.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+        if let Some(tx) = tx
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
             let _ = tx.send(());
         }
     })
@@ -402,7 +477,9 @@ async fn cmd_record(output: &Path, test_name: &str) -> Result<()> {
     std::fs::write(output, &code)
         .with_context(|| format!("failed to write {}", output.display()))?;
 
-    eprintln!("  Captured {event_count} events ({interaction_count} interactions, {ipc_count} IPC calls)");
+    eprintln!(
+        "  Captured {event_count} events ({interaction_count} interactions, {ipc_count} IPC calls)"
+    );
     eprintln!("  Generated test: {}", output.display());
     eprintln!("\nRun your test:");
     eprintln!("  VICTAURI_E2E=1 cargo test --test {test_name}");
@@ -432,10 +509,10 @@ async fn cmd_watch(dir: &Path, filter: Option<&str>) -> Result<()> {
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
-            let dominated_by_rs = event.paths.iter().any(|p| {
-                p.extension()
-                    .is_some_and(|ext| ext == "rs")
-            });
+            let dominated_by_rs = event
+                .paths
+                .iter()
+                .any(|p| p.extension().is_some_and(|ext| ext == "rs"));
             if dominated_by_rs {
                 let _ = tx.blocking_send(());
             }
@@ -491,7 +568,10 @@ fn run_tests(filter: Option<&str>) {
     }
 
     if elapsed.as_secs() > 30 {
-        eprintln!("  Warning: test suite took >{:.0}s — consider splitting slow tests", elapsed.as_secs_f64());
+        eprintln!(
+            "  Warning: test suite took >{:.0}s — consider splitting slow tests",
+            elapsed.as_secs_f64()
+        );
     }
 }
 
@@ -509,8 +589,7 @@ fn detect_project(root: &Path) -> Result<(PathBuf, bool)> {
         );
     };
 
-    let content =
-        std::fs::read_to_string(&cargo_toml).context("failed to read Cargo.toml")?;
+    let content = std::fs::read_to_string(&cargo_toml).context("failed to read Cargo.toml")?;
     let is_tauri = content.contains("tauri");
 
     Ok((cargo_toml, is_tauri))
@@ -518,11 +597,7 @@ fn detect_project(root: &Path) -> Result<(PathBuf, bool)> {
 
 fn find_src_tauri(root: &Path) -> Option<PathBuf> {
     let p = root.join("src-tauri");
-    if p.exists() {
-        Some(p)
-    } else {
-        None
-    }
+    if p.exists() { Some(p) } else { None }
 }
 
 fn add_dependencies(cargo_toml_path: &Path) -> Result<bool> {
@@ -535,15 +610,13 @@ fn add_dependencies(cargo_toml_path: &Path) -> Result<bool> {
 
     if !has_dep(&doc, "dependencies", "victauri-plugin") {
         ensure_table(&mut doc, "dependencies");
-        doc["dependencies"]["victauri-plugin"] =
-            toml_edit::value(env!("CARGO_PKG_VERSION"));
+        doc["dependencies"]["victauri-plugin"] = toml_edit::value(env!("CARGO_PKG_VERSION"));
         changed = true;
     }
 
     if !has_dep(&doc, "dev-dependencies", "victauri-test") {
         ensure_table(&mut doc, "dev-dependencies");
-        doc["dev-dependencies"]["victauri-test"] =
-            toml_edit::value(env!("CARGO_PKG_VERSION"));
+        doc["dev-dependencies"]["victauri-test"] = toml_edit::value(env!("CARGO_PKG_VERSION"));
         changed = true;
     }
 

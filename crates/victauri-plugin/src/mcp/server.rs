@@ -46,7 +46,6 @@ pub fn build_app_full(
     let auth_state = Arc::new(crate::auth::AuthState {
         token: auth_token.clone(),
     });
-    let health_state = state.clone();
     let info_state = state.clone();
     let info_auth = auth_token.is_some();
 
@@ -92,18 +91,7 @@ pub fn build_app_full(
     router
         .route(
             "/health",
-            axum::routing::get(move || {
-                let s = health_state.clone();
-                async move {
-                    axum::Json(serde_json::json!({
-                        "status": "ok",
-                        "uptime_secs": s.started_at.elapsed().as_secs(),
-                        "events_captured": s.event_log.len(),
-                        "commands_registered": s.registry.count(),
-                        "memory": crate::memory::current_stats(),
-                    }))
-                }
-            }),
+            axum::routing::get(|| async { axum::Json(serde_json::json!({"status": "ok"})) }),
         )
         .layer(axum::middleware::from_fn(crate::auth::security_headers))
         .layer(axum::middleware::from_fn(crate::auth::origin_guard))
@@ -301,10 +289,7 @@ pub fn parse_bridge_event(ev: &serde_json::Value) -> Option<victauri_core::AppEv
             timestamp: now,
         },
         "dom_interaction" => {
-            let action_str = ev
-                .get("action")
-                .and_then(|a| a.as_str())
-                .unwrap_or("click");
+            let action_str = ev.get("action").and_then(|a| a.as_str()).unwrap_or("click");
             let action = match action_str {
                 "click" => victauri_core::InteractionKind::Click,
                 "double_click" => victauri_core::InteractionKind::DoubleClick,
@@ -661,9 +646,7 @@ mod tests {
         });
         let result = parse_bridge_event(&ev).expect("should produce an event");
         match result {
-            AppEvent::StateChange {
-                key, caused_by, ..
-            } => {
+            AppEvent::StateChange { key, caused_by, .. } => {
                 assert_eq!(key, "console.warn");
                 assert_eq!(caused_by.as_deref(), Some("deprecated API usage"));
             }
@@ -749,14 +732,9 @@ mod tests {
         });
         let result = parse_bridge_event(&ev).expect("should produce an event");
         match result {
-            AppEvent::StateChange {
-                key, caused_by, ..
-            } => {
+            AppEvent::StateChange { key, caused_by, .. } => {
                 assert_eq!(key, "network.POST");
-                assert_eq!(
-                    caused_by.as_deref(),
-                    Some("https://api.example.com/data")
-                );
+                assert_eq!(caused_by.as_deref(), Some("https://api.example.com/data"));
             }
             other => panic!("expected StateChange, got {other:?}"),
         }

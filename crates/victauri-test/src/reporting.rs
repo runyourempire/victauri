@@ -67,7 +67,11 @@ impl JunitReport {
     #[must_use]
     pub fn to_xml(&self) -> String {
         let tests = self.test_cases.len();
-        let failures = self.test_cases.iter().filter(|t| t.failure.is_some()).count();
+        let failures = self
+            .test_cases
+            .iter()
+            .filter(|t| t.failure.is_some())
+            .count();
         let time = format_duration(self.duration);
         let name = xml_escape(&self.name);
 
@@ -131,10 +135,7 @@ impl JunitTestCase {
 /// # Errors
 ///
 /// Returns an IO error if the file cannot be written.
-pub fn write_junit_report(
-    report: &JunitReport,
-    path: &std::path::Path,
-) -> std::io::Result<()> {
+pub fn write_junit_report(report: &JunitReport, path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, report.to_xml())
 }
 

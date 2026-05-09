@@ -972,7 +972,7 @@ async fn adversarial_resolve_command_no_match() {
 // =============================================================================
 
 #[tokio::test]
-async fn adversarial_health_returns_uptime() {
+async fn adversarial_health_returns_minimal_response() {
     let state = test_state();
     let base = start_server(state, &["main"]).await;
 
@@ -983,15 +983,22 @@ async fn adversarial_health_returns_uptime() {
         "health endpoint should return 200"
     );
     let json: serde_json::Value = resp.json().await.unwrap();
-    assert!(
-        json["uptime_secs"].is_number(),
-        "health should contain numeric 'uptime_secs': {json}"
+    assert_eq!(
+        json["status"].as_str(),
+        Some("ok"),
+        "health should contain status=ok: {json}"
     );
-    let uptime = json["uptime_secs"].as_u64().unwrap();
-    // Uptime should be >= 0 (just started)
     assert!(
-        uptime < 60,
-        "uptime should be reasonable (< 60s for a fresh server): {uptime}"
+        json.get("uptime_secs").is_none(),
+        "hardened health endpoint should not leak uptime"
+    );
+    assert!(
+        json.get("memory").is_none(),
+        "hardened health endpoint should not leak memory stats"
+    );
+    assert!(
+        json.get("commands_registered").is_none(),
+        "hardened health endpoint should not leak command count"
     );
 }
 

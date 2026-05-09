@@ -507,4 +507,168 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
     }
+
+    // ── Auth middleware integration tests ─────────────────────────────────
+
+    fn auth_router(token: Option<&str>) -> Router {
+        let state = Arc::new(AuthState {
+            token: token.map(String::from),
+        });
+        Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn_with_state(state, require_auth))
+    }
+
+    fn auth_request(token: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().uri("/test");
+        if let Some(t) = token {
+            builder = builder.header("authorization", format!("Bearer {t}"));
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn auth_allows_correct_token() {
+        let app = auth_router(Some("secret-123"));
+        let resp = app.oneshot(auth_request(Some("secret-123"))).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn auth_rejects_wrong_token() {
+        let app = auth_router(Some("secret-123"));
+        let resp = app
+            .oneshot(auth_request(Some("wrong-token")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn auth_rejects_missing_token() {
+        let app = auth_router(Some("secret-123"));
+        let resp = app.oneshot(auth_request(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn auth_allows_any_when_disabled() {
+        let app = auth_router(None);
+        let resp = app.oneshot(auth_request(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn auth_case_insensitive_bearer_prefix() {
+        let state = Arc::new(AuthState {
+            token: Some("my-token".into()),
+        });
+        let app = Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn_with_state(state, require_auth));
+
+        let req = Request::builder()
+            .uri("/test")
+            .header("authorization", "BEARER my-token")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn auth_rejects_non_bearer_scheme() {
+        let app = auth_router(Some("secret"));
+        let req = Request::builder()
+            .uri("/test")
+            .header("authorization", "Basic c2VjcmV0")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── Rate limiter middleware integration test ──────────────────────────
+
+    #[tokio::test]
+    async fn rate_limiter_returns_429_when_exhausted() {
+        let limiter = Arc::new(RateLimiterState::new(2));
+        let app = Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn_with_state(limiter, rate_limit));
+
+        let app2 = app.clone();
+        let app3 = app2.clone();
+
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        assert_eq!(app.oneshot(req).await.unwrap().status(), StatusCode::OK);
+
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        assert_eq!(app2.oneshot(req).await.unwrap().status(), StatusCode::OK);
+
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        assert_eq!(
+            app3.oneshot(req).await.unwrap().status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    // ── Combined security layer test ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn combined_layers_enforce_all_guards() {
+        let auth_state = Arc::new(AuthState {
+            token: Some("tok-123".into()),
+        });
+        let limiter = Arc::new(RateLimiterState::new(100));
+
+        let app = Router::new()
+            .route("/test", get(ok_handler))
+            .layer(middleware::from_fn_with_state(auth_state, require_auth))
+            .layer(middleware::from_fn_with_state(limiter, rate_limit))
+            .layer(middleware::from_fn(security_headers))
+            .layer(middleware::from_fn(origin_guard))
+            .layer(middleware::from_fn(dns_rebinding_guard));
+
+        // Good request: all guards pass
+        let req = Request::builder()
+            .uri("/test")
+            .header("authorization", "Bearer tok-123")
+            .header("host", "127.0.0.1:7373")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
+
+        // Bad host: DNS rebinding guard blocks
+        let req = Request::builder()
+            .uri("/test")
+            .header("authorization", "Bearer tok-123")
+            .header("host", "evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+        // Bad origin: origin guard blocks
+        let req = Request::builder()
+            .uri("/test")
+            .header("authorization", "Bearer tok-123")
+            .header("host", "localhost")
+            .header("origin", "https://evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+        // Missing auth: auth middleware blocks
+        let req = Request::builder()
+            .uri("/test")
+            .header("host", "localhost")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
 }

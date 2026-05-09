@@ -60,7 +60,9 @@ pub fn generate_test(session: &RecordedSession, options: &CodegenOptions) -> Str
     // Test function
     out.push_str("#[tokio::test]\n");
     out.push_str(&format!("async fn {}() {{\n", options.test_name));
-    out.push_str("    let mut client = VictauriClient::discover().await.expect(\"connect to Tauri app\");\n");
+    out.push_str(
+        "    let mut client = VictauriClient::discover().await.expect(\"connect to Tauri app\");\n",
+    );
 
     let session_start = session.started_at;
 
@@ -105,15 +107,11 @@ pub fn generate_test(session: &RecordedSession, options: &CodegenOptions) -> Str
                 }
                 if matches!(call.result, IpcResult::Ok(_)) {
                     let cmd = &call.command;
-                    out.push_str(&format!(
-                        "    // IPC: {cmd} completed successfully\n"
-                    ));
+                    out.push_str(&format!("    // IPC: {cmd} completed successfully\n"));
                 }
             }
 
-            AppEvent::StateChange {
-                key, caused_by, ..
-            } if options.include_state_checks => {
+            AppEvent::StateChange { key, caused_by, .. } if options.include_state_checks => {
                 if caused_by.is_some() {
                     out.push_str(&format!("    // State changed: {key}\n"));
                 }
@@ -214,9 +212,7 @@ fn emit_interaction(
         }
         InteractionKind::Navigate => {
             let val = value.map_or_else(String::new, escape_rust_str);
-            out.push_str(&format!(
-                "    client.navigate(\"{val}\").await.unwrap();\n"
-            ));
+            out.push_str(&format!("    client.navigate(\"{val}\").await.unwrap();\n"));
         }
         InteractionKind::Scroll => {
             let sel = escape_rust_str(selector);
@@ -476,17 +472,38 @@ mod tests {
     fn all_interaction_kinds_generate_code() {
         let session = make_session(vec![
             interaction_event(0, InteractionKind::Click, "[data-testid=\"a\"]", None, 0),
-            interaction_event(1, InteractionKind::DoubleClick, "[data-testid=\"b\"]", None, 10),
-            interaction_event(2, InteractionKind::Fill, "[data-testid=\"c\"]", Some("val"), 20),
+            interaction_event(
+                1,
+                InteractionKind::DoubleClick,
+                "[data-testid=\"b\"]",
+                None,
+                10,
+            ),
+            interaction_event(
+                2,
+                InteractionKind::Fill,
+                "[data-testid=\"c\"]",
+                Some("val"),
+                20,
+            ),
             interaction_event(3, InteractionKind::KeyPress, "#d", Some("Enter"), 30),
-            interaction_event(4, InteractionKind::Select, "[data-testid=\"e\"]", Some("opt1"), 40),
+            interaction_event(
+                4,
+                InteractionKind::Select,
+                "[data-testid=\"e\"]",
+                Some("opt1"),
+                40,
+            ),
             interaction_event(5, InteractionKind::Navigate, "#f", Some("/page"), 50),
             interaction_event(6, InteractionKind::Scroll, "#g", None, 60),
         ]);
-        let code = generate_test(&session, &CodegenOptions {
-            include_timing_comments: false,
-            ..CodegenOptions::default()
-        });
+        let code = generate_test(
+            &session,
+            &CodegenOptions {
+                include_timing_comments: false,
+                ..CodegenOptions::default()
+            },
+        );
 
         assert!(code.contains("client.click(\"[data-testid=\\\"a\\\"]\")"));
         assert!(code.contains("client.double_click(\"[data-testid=\\\"b\\\"]\")"));
@@ -696,9 +713,7 @@ mod tests {
         let code = generate_test_default(&session);
 
         assert!(
-            code.contains(
-                "client.fill_by_id(\"email\", \"user@example.com\").await.unwrap();"
-            ),
+            code.contains("client.fill_by_id(\"email\", \"user@example.com\").await.unwrap();"),
             "expected fill_by_id, got:\n{code}"
         );
     }
@@ -732,9 +747,7 @@ mod tests {
         let code = generate_test_default(&session);
 
         assert!(
-            code.contains(
-                "client.select_option_by_id(\"country\", &[\"AU\"]).await.unwrap();"
-            ),
+            code.contains("client.select_option_by_id(\"country\", &[\"AU\"]).await.unwrap();"),
             "expected select_option_by_id, got:\n{code}"
         );
     }
@@ -828,7 +841,9 @@ mod tests {
 
         // Fill on input[name=email] — raw selector, no # prefix
         assert!(
-            code.contains("client.fill(\"input[name=email]\", \"test@example.com\").await.unwrap();"),
+            code.contains(
+                "client.fill(\"input[name=email]\", \"test@example.com\").await.unwrap();"
+            ),
             "expected raw client.fill for input[name=email]:\n{code}"
         );
         assert!(

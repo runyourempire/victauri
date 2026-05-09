@@ -41,6 +41,7 @@ pub mod coverage;
 mod error;
 pub mod prelude;
 pub mod reporting;
+pub mod smoke;
 pub mod visual;
 
 pub use app::TestApp;
@@ -53,6 +54,7 @@ pub use client::{
     assert_no_a11y_violations, assert_performance_budget, assert_state_matches,
 };
 pub use error::TestError;
+pub use smoke::{SmokeCheckResult, SmokeConfig, SmokeReport};
 
 /// Returns `true` if E2E tests should run (i.e., `VICTAURI_E2E` env var is set).
 ///

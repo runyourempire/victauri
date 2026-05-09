@@ -684,6 +684,10 @@ impl VictauriClient {
         &self.session_id
     }
 
+    pub(crate) fn http_client(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     // ── IPC Log Helpers ───────────────────────────────────────────────────────
 
     /// Get IPC calls filtered to a specific command.
@@ -931,7 +935,10 @@ fn extract_screenshot_base64(result: &Value) -> Result<String, TestError> {
     if let Some(data) = result.get("image").and_then(Value::as_str) {
         return Ok(data.to_string());
     }
-    if let Some(data) = result.pointer("/result/content/0/data").and_then(Value::as_str) {
+    if let Some(data) = result
+        .pointer("/result/content/0/data")
+        .and_then(Value::as_str)
+    {
         return Ok(data.to_string());
     }
     Err(TestError::Other(
