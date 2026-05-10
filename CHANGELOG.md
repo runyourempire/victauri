@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **victauri-test**: `ThresholdPreset` enum — `Strict` (pixel-perfect), `Standard` (default), `AntiAlias` (subpixel-tolerant), `Relaxed` (cross-platform lenient)
 - **victauri-test**: `VisualOptions::with_preset()` and `with_mask()` fluent builders
 - **victauri-test**: `VisualDiff.masked_pixels` field reports excluded pixel count
+- **victauri-test**: `VictauriClient::dom_snapshot_for(label)` — DOM snapshot targeting a specific webview
+- **victauri-test**: `VictauriClient::screenshot_for(label)` — screenshot of a specific window by label
+- **victauri-test**: `VictauriClient::is_alive()` — quick health check without session overhead
+- **victauri-test**: `VictauriClient::reconnect(max_wait)` — re-establish MCP session after app restart, polls health with 250ms backoff
 
 ## [0.2.0] - 2026-05-10
 

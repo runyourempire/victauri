@@ -294,6 +294,45 @@ impl VictauriClient {
         if token.is_empty() { None } else { Some(token) }
     }
 
+    /// Check whether the server is still reachable.
+    ///
+    /// Sends a GET to `/health` and returns `true` if the response is 200 OK.
+    #[must_use]
+    pub async fn is_alive(&self) -> bool {
+        self.http
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .await
+            .is_ok_and(|r| r.status().is_success())
+    }
+
+    /// Re-establish an MCP session after the app restarts.
+    ///
+    /// Polls `/health` up to `max_wait` and then re-runs the
+    /// initialize/initialized handshake. The returned client has a fresh
+    /// session ID; the old client should be dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::Connection`] if the server doesn't come back
+    /// within `max_wait`.
+    pub async fn reconnect(&self, max_wait: std::time::Duration) -> Result<Self, TestError> {
+        let start = std::time::Instant::now();
+        loop {
+            if self.is_alive().await {
+                return Self::connect_with_token(self.port, self.auth_token.as_deref()).await;
+            }
+            if start.elapsed() > max_wait {
+                return Err(TestError::Connection {
+                    host: self.host.clone(),
+                    port: self.port,
+                    reason: format!("server did not recover within {}s", max_wait.as_secs()),
+                });
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+
     /// Call an MCP tool by name and return the result content as JSON.
     ///
     /// Retries up to 3 times with exponential backoff on 429 (rate limited).
@@ -441,6 +480,26 @@ impl VictauriClient {
     /// Returns errors from [`VictauriClient::call_tool`].
     pub async fn dom_snapshot(&mut self) -> Result<Value, TestError> {
         self.call_tool("dom_snapshot", json!({})).await
+    }
+
+    /// Get a DOM snapshot of a specific webview by label.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn dom_snapshot_for(&mut self, label: &str) -> Result<Value, TestError> {
+        self.call_tool("dom_snapshot", json!({"webview_label": label}))
+            .await
+    }
+
+    /// Capture a screenshot of a specific webview by label.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn screenshot_for(&mut self, label: &str) -> Result<Value, TestError> {
+        self.call_tool("screenshot", json!({"window_label": label}))
+            .await
     }
 
     /// Click an element by ref handle ID.
