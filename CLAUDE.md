@@ -156,9 +156,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
-## Current State (2026-05-08)
+## Current State (2026-05-10)
 
-**All 8 phases complete + production hardening + adversarial audit. v0.1.2 published.** All 6 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 858 tests pass. Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 crates published to crates.io.
+**All 8 phases complete + production hardening + adversarial audit. v0.1.3 published.** All 6 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 858 tests pass. Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
