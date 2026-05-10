@@ -232,11 +232,11 @@ assert_ipc_not_called(&log, "delete_account");
 Or use checkpoints to assert only on calls made during a specific action:
 
 ```rust
-let checkpoint = client.ipc_checkpoint().await?;
+let checkpoint = client.create_ipc_checkpoint().await?;
 
 client.click_by_id("save-btn").await?;
 
-let calls = client.ipc_calls_since(checkpoint).await?;
+let calls = client.get_ipc_calls_since(checkpoint).await?;
 assert_eq!(calls.len(), 1);
 assert_eq!(calls[0]["command"], "save_settings");
 ```
@@ -375,12 +375,12 @@ Victauri is designed for development, not production:
 - **Debug-only**: entire plugin compiles away in release builds (`#[cfg(debug_assertions)]`)
 - **Localhost-only**: no remote access, DNS rebinding protection
 - **Auth tokens**: auto-generated or configurable via `VICTAURI_AUTH_TOKEN`
-- **Privacy controls**: command allowlists/blocklists, tool disabling, output redaction (API keys, JWTs, emails)
-- **Strict mode**: one call to disable all mutating tools
+- **Privacy profiles**: `Observe` (read-only), `Test` (interactions + storage writes), `FullControl` (default) — action-level permissions, not tool-level
+- **Command filtering**: allowlists/blocklists for `invoke_command`, output redaction (API keys, JWTs, emails)
 
 ```rust
 VictauriBuilder::new()
-    .strict_privacy_mode()   // disable eval_js, fill, type_text, navigate, etc.
+    .privacy_profile(PrivacyProfile::Observe)  // read-only: snapshots, logs — no clicks, no eval
     .auth_token("my-token")
     .build()
 ```
