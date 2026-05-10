@@ -928,6 +928,7 @@ impl VictauriClient {
     /// # Errors
     ///
     /// Returns errors from [`VictauriClient::call_tool`].
+    #[deprecated(since = "0.2.0", note = "renamed to get_ipc_calls_for")]
     pub async fn get_ipc_calls(&mut self, command: &str) -> Result<Vec<Value>, TestError> {
         let log = self.get_ipc_log(None).await?;
         let entries = if let Some(arr) = log.as_array() {
@@ -952,6 +953,7 @@ impl VictauriClient {
     /// # Errors
     ///
     /// Returns errors from [`VictauriClient::call_tool`].
+    #[deprecated(since = "0.2.0", note = "renamed to get_ipc_calls_since")]
     pub async fn ipc_calls_since(&mut self, checkpoint: usize) -> Result<Vec<Value>, TestError> {
         let log = self.get_ipc_log(None).await?;
         let entries = if let Some(arr) = log.as_array() {
@@ -962,6 +964,29 @@ impl VictauriClient {
             return Ok(Vec::new());
         };
         Ok(entries.into_iter().skip(checkpoint).collect())
+    }
+
+    /// Filter the IPC log for calls to a specific command.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn get_ipc_calls_for(&mut self, command: &str) -> Result<Vec<Value>, TestError> {
+        #[allow(deprecated)]
+        self.get_ipc_calls(command).await
+    }
+
+    /// Get IPC calls made since a previous checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn get_ipc_calls_since(
+        &mut self,
+        checkpoint: usize,
+    ) -> Result<Vec<Value>, TestError> {
+        #[allow(deprecated)]
+        self.ipc_calls_since(checkpoint).await
     }
 
     // ── Builder-Style Wait (Phase 4B) ──────────────────────────────────────────

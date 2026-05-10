@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **victauri-test**: `VictauriClient::screenshot_for(label)` — screenshot of a specific window by label
 - **victauri-test**: `VictauriClient::is_alive()` — quick health check without session overhead
 - **victauri-test**: `VictauriClient::reconnect(max_wait)` — re-establish MCP session after app restart, polls health with 250ms backoff
+- **victauri-test**: `VictauriClient::get_ipc_calls_for(command)` — replaces `get_ipc_calls` with clearer preposition
+- **victauri-test**: `VictauriClient::get_ipc_calls_since(checkpoint)` — replaces `ipc_calls_since` with verb-first naming
+
+### Deprecated
+
+- **victauri-test**: `VictauriClient::get_ipc_calls()` — use `get_ipc_calls_for()` instead
+- **victauri-test**: `VictauriClient::ipc_calls_since()` — use `get_ipc_calls_since()` instead
+- **victauri-test**: `VictauriClient::ipc_checkpoint()` — use `create_ipc_checkpoint()` instead
 
 ## [0.2.0] - 2026-05-10
 

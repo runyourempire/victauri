@@ -26,13 +26,13 @@ async fn ipc_checkpoint_tracks_new_calls() {
     }
     let mut client = VictauriClient::connect(port()).await.unwrap();
 
-    let checkpoint = client.ipc_checkpoint().await.unwrap();
+    let checkpoint = client.create_ipc_checkpoint().await.unwrap();
     client.click_by_id("greet-btn").await.unwrap();
 
     // Give IPC a moment to be logged
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let calls = client.ipc_calls_since(checkpoint).await.unwrap();
+    let calls = client.get_ipc_calls_since(checkpoint).await.unwrap();
     assert!(
         !calls.is_empty(),
         "expected at least one IPC call after click"
@@ -89,7 +89,7 @@ async fn get_ipc_calls_filters_by_command() {
     client.click_by_id("greet-btn").await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let greet_calls = client.get_ipc_calls("greet").await.unwrap();
+    let greet_calls = client.get_ipc_calls_for("greet").await.unwrap();
     // Should have at least one greet call
     assert!(!greet_calls.is_empty());
 }
