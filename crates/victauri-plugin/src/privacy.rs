@@ -2,14 +2,55 @@ use std::collections::HashSet;
 
 use crate::redaction::Redactor;
 
-/// Privacy controls for the MCP server. Blocklist takes precedence over allowlist.
+/// Privacy profile controlling which MCP tools and actions are permitted.
+///
+/// The three tiers form a strict hierarchy: `Observe ⊂ Test ⊂ FullControl`.
+/// Each higher tier inherits all permissions from the tier below and adds more.
+///
+/// | Profile | Can read | Can interact | Can mutate | Can eval/screenshot |
+/// |---|---|---|---|---|
+/// | `Observe` | Yes | No | No | No |
+/// | `Test` | Yes | Yes | Storage writes | No |
+/// | `FullControl` | Yes | Yes | Yes | Yes |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrivacyProfile {
+    /// Read-only observation. Snapshots, logs, registry, accessibility, performance,
+    /// window state — but no clicks, no input, no eval, no screenshots, no mutations.
+    Observe,
+    /// Observation + UI interactions + storage writes + recording. Suitable for
+    /// automated testing. Eval, screenshot, CSS injection, navigation, and
+    /// `invoke_command` (unless allowlisted) remain blocked.
+    Test,
+    /// Everything permitted. No restrictions. This is the default.
+    #[default]
+    FullControl,
+}
+
+impl std::fmt::Display for PrivacyProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Observe => write!(f, "observe"),
+            Self::Test => write!(f, "test"),
+            Self::FullControl => write!(f, "full_control"),
+        }
+    }
+}
+
+/// Privacy controls for the MCP server.
+///
+/// Combines a [`PrivacyProfile`] (tiered permission matrix) with fine-grained
+/// overrides: command allowlists/blocklists, per-tool disabling, and output redaction.
+///
+/// **Precedence:** explicit `disabled_tools` overrides → profile matrix → allowlist/blocklist.
 #[derive(Default)]
 pub struct PrivacyConfig {
-    /// If set, only these commands can be invoked (positive allowlist).
+    /// The active privacy profile tier.
+    pub profile: PrivacyProfile,
+    /// If set, only these Tauri commands can be invoked (positive allowlist).
     pub command_allowlist: Option<HashSet<String>>,
-    /// Commands that are always blocked, even if on the allowlist.
+    /// Tauri commands that are always blocked, even if on the allowlist.
     pub command_blocklist: HashSet<String>,
-    /// MCP tool names that are disabled (e.g., `"eval_js"`, `"screenshot"`).
+    /// MCP tool/action names explicitly disabled (override layer on top of profile).
     pub disabled_tools: HashSet<String>,
     /// Output redactor with regex and JSON-key matching.
     pub redactor: Redactor,
@@ -18,7 +59,7 @@ pub struct PrivacyConfig {
 }
 
 impl PrivacyConfig {
-    /// Returns `true` if the command passes both the allowlist and blocklist checks.
+    /// Returns `true` if the Tauri command passes both the allowlist and blocklist.
     #[must_use]
     pub fn is_command_allowed(&self, command: &str) -> bool {
         if self.command_blocklist.contains(command) {
@@ -30,13 +71,36 @@ impl PrivacyConfig {
         }
     }
 
-    /// Returns `true` unless the tool is in [`disabled_tools`](Self::disabled_tools).
+    /// Returns `true` if the given tool or qualified action (e.g. `"window.manage"`)
+    /// is permitted by the current profile AND not in the explicit disabled set.
     #[must_use]
-    pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
-        !self.disabled_tools.contains(tool_name)
+    pub fn is_tool_enabled(&self, tool_or_action: &str) -> bool {
+        if self.disabled_tools.contains(tool_or_action) {
+            return false;
+        }
+        is_allowed_by_profile(self.profile, tool_or_action)
     }
 
-    /// Apply redaction rules to the output string if redaction is enabled, otherwise pass through.
+    /// Check whether `invoke_command` is allowed for a specific command name.
+    ///
+    /// In `Test` profile, `invoke_command` is only allowed if the command is on the
+    /// allowlist. In `FullControl`, it's always allowed. In `Observe`, always blocked.
+    #[must_use]
+    pub fn is_invoke_allowed(&self, command: &str) -> bool {
+        if self.disabled_tools.contains("invoke_command") {
+            return false;
+        }
+        match self.profile {
+            PrivacyProfile::FullControl => true,
+            PrivacyProfile::Test => self
+                .command_allowlist
+                .as_ref()
+                .is_some_and(|al| al.contains(command)),
+            PrivacyProfile::Observe => false,
+        }
+    }
+
+    /// Apply redaction rules to the output string if redaction is enabled.
     #[must_use]
     pub fn redact_output(&self, output: &str) -> String {
         if self.redaction_enabled {
@@ -47,40 +111,119 @@ impl PrivacyConfig {
     }
 }
 
-const STRICT_DISABLED_TOOLS: &[&str] = &[
-    "eval_js",
-    "screenshot",
-    "inject_css",
-    "set_storage",
-    "delete_storage",
-    "navigate",
-    "set_dialog_response",
-    "fill",
-    "type_text",
-    "invoke_command",
-    "window.manage",
-    "window.resize",
-    "window.move_to",
-    "window.set_title",
-];
+/// The permission matrix. Maps `(profile, tool_or_action)` → allowed.
+///
+/// Naming convention: standalone tools use bare names (`"eval_js"`), compound tool
+/// actions use dot-qualified names (`"window.manage"`, `"input.fill"`).
+///
+/// Everything not explicitly listed defaults to allowed (open-world for new tools).
+#[must_use]
+fn is_allowed_by_profile(profile: PrivacyProfile, tool_or_action: &str) -> bool {
+    match profile {
+        PrivacyProfile::FullControl => true,
+        PrivacyProfile::Test => !matches!(
+            tool_or_action,
+            "eval_js"
+                | "screenshot"
+                | "invoke_command"
+                | "navigate"
+                | "navigate.go_to"
+                | "set_dialog_response"
+                | "navigate.set_dialog_response"
+                | "inject_css"
+                | "css.inject"
+                | "css.remove"
+                | "window.manage"
+                | "window.resize"
+                | "window.move_to"
+                | "window.set_title"
+        ),
+        PrivacyProfile::Observe => !matches!(
+            tool_or_action,
+            // Everything Test blocks, plus interactions and mutations
+            "eval_js"
+                | "screenshot"
+                | "invoke_command"
+                | "navigate"
+                | "navigate.go_to"
+                | "set_dialog_response"
+                | "navigate.set_dialog_response"
+                | "inject_css"
+                | "css.inject"
+                | "css.remove"
+                | "window.manage"
+                | "window.resize"
+                | "window.move_to"
+                | "window.set_title"
+                // Interactions (blocked in Observe, allowed in Test)
+                | "interact"
+                | "interact.click"
+                | "interact.double_click"
+                | "interact.hover"
+                | "interact.focus"
+                | "interact.scroll_into_view"
+                | "interact.select_option"
+                // Input (blocked in Observe, allowed in Test)
+                | "fill"
+                | "input.fill"
+                | "type_text"
+                | "input.type_text"
+                | "input.press_key"
+                // Storage writes (blocked in Observe, allowed in Test)
+                | "set_storage"
+                | "storage.set"
+                | "delete_storage"
+                | "storage.delete"
+                | "storage.clear"
+                // Recording (blocked in Observe, allowed in Test)
+                | "recording"
+                | "recording.start"
+                | "recording.stop"
+                | "recording.checkpoint"
+        ),
+    }
+}
 
-/// Create a [`PrivacyConfig`] that disables dangerous tools (eval, screenshot, mutations) and enables redaction.
-pub fn strict_privacy_config() -> PrivacyConfig {
+/// Create a [`PrivacyConfig`] for the `Observe` profile with redaction enabled.
+#[must_use]
+pub fn observe_privacy_config() -> PrivacyConfig {
     PrivacyConfig {
+        profile: PrivacyProfile::Observe,
         command_allowlist: None,
         command_blocklist: HashSet::new(),
-        disabled_tools: STRICT_DISABLED_TOOLS
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect(),
+        disabled_tools: HashSet::new(),
         redactor: Redactor::default(),
         redaction_enabled: true,
     }
 }
 
+/// Create a [`PrivacyConfig`] for the `Test` profile with redaction enabled.
+#[must_use]
+pub fn test_privacy_config() -> PrivacyConfig {
+    PrivacyConfig {
+        profile: PrivacyProfile::Test,
+        command_allowlist: None,
+        command_blocklist: HashSet::new(),
+        disabled_tools: HashSet::new(),
+        redactor: Redactor::default(),
+        redaction_enabled: true,
+    }
+}
+
+/// Create a [`PrivacyConfig`] that disables dangerous tools and enables redaction.
+///
+/// This is an alias for [`observe_privacy_config()`] — strict mode maps to the
+/// `Observe` profile.
+#[must_use]
+pub fn strict_privacy_config() -> PrivacyConfig {
+    observe_privacy_config()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Command filtering ──────────────────────────────────────────────────
 
     #[test]
     fn default_allows_all_commands() {
@@ -124,17 +267,297 @@ mod tests {
         assert!(!config.is_command_allowed("save_api_key"));
     }
 
+    // ── Profile: FullControl ───────────────────────────────────────────────
+
     #[test]
-    fn tool_disabling() {
+    fn full_control_allows_everything() {
+        let config = PrivacyConfig::default();
+        assert_eq!(config.profile, PrivacyProfile::FullControl);
+        assert!(config.is_tool_enabled("eval_js"));
+        assert!(config.is_tool_enabled("screenshot"));
+        assert!(config.is_tool_enabled("invoke_command"));
+        assert!(config.is_tool_enabled("interact"));
+        assert!(config.is_tool_enabled("interact.click"));
+        assert!(config.is_tool_enabled("input.fill"));
+        assert!(config.is_tool_enabled("window.manage"));
+        assert!(config.is_tool_enabled("navigate"));
+        assert!(config.is_tool_enabled("navigate.go_to"));
+        assert!(config.is_tool_enabled("css.inject"));
+        assert!(config.is_tool_enabled("recording"));
+        assert!(config.is_tool_enabled("storage.set"));
+        assert!(config.is_tool_enabled("set_dialog_response"));
+    }
+
+    // ── Profile: Test ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_profile_allows_interactions() {
+        let config = test_privacy_config();
+        assert!(config.is_tool_enabled("interact"));
+        assert!(config.is_tool_enabled("interact.click"));
+        assert!(config.is_tool_enabled("interact.double_click"));
+        assert!(config.is_tool_enabled("interact.hover"));
+        assert!(config.is_tool_enabled("interact.focus"));
+        assert!(config.is_tool_enabled("interact.scroll_into_view"));
+        assert!(config.is_tool_enabled("interact.select_option"));
+    }
+
+    #[test]
+    fn test_profile_allows_input() {
+        let config = test_privacy_config();
+        assert!(config.is_tool_enabled("fill"));
+        assert!(config.is_tool_enabled("input.fill"));
+        assert!(config.is_tool_enabled("type_text"));
+        assert!(config.is_tool_enabled("input.type_text"));
+        assert!(config.is_tool_enabled("input.press_key"));
+    }
+
+    #[test]
+    fn test_profile_allows_storage_writes() {
+        let config = test_privacy_config();
+        assert!(config.is_tool_enabled("set_storage"));
+        assert!(config.is_tool_enabled("storage.set"));
+        assert!(config.is_tool_enabled("delete_storage"));
+        assert!(config.is_tool_enabled("storage.delete"));
+    }
+
+    #[test]
+    fn test_profile_allows_recording() {
+        let config = test_privacy_config();
+        assert!(config.is_tool_enabled("recording"));
+        assert!(config.is_tool_enabled("recording.start"));
+        assert!(config.is_tool_enabled("recording.stop"));
+    }
+
+    #[test]
+    fn test_profile_blocks_eval_and_screenshot() {
+        let config = test_privacy_config();
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(!config.is_tool_enabled("screenshot"));
+    }
+
+    #[test]
+    fn test_profile_blocks_navigation() {
+        let config = test_privacy_config();
+        assert!(!config.is_tool_enabled("navigate"));
+        assert!(!config.is_tool_enabled("navigate.go_to"));
+        assert!(!config.is_tool_enabled("set_dialog_response"));
+        assert!(!config.is_tool_enabled("navigate.set_dialog_response"));
+    }
+
+    #[test]
+    fn test_profile_blocks_window_mutations() {
+        let config = test_privacy_config();
+        assert!(!config.is_tool_enabled("window.manage"));
+        assert!(!config.is_tool_enabled("window.resize"));
+        assert!(!config.is_tool_enabled("window.move_to"));
+        assert!(!config.is_tool_enabled("window.set_title"));
+    }
+
+    #[test]
+    fn test_profile_blocks_css_injection() {
+        let config = test_privacy_config();
+        assert!(!config.is_tool_enabled("inject_css"));
+        assert!(!config.is_tool_enabled("css.inject"));
+        assert!(!config.is_tool_enabled("css.remove"));
+    }
+
+    #[test]
+    fn test_profile_blocks_invoke_command() {
+        let config = test_privacy_config();
+        assert!(!config.is_tool_enabled("invoke_command"));
+    }
+
+    #[test]
+    fn test_profile_allows_read_only_tools() {
+        let config = test_privacy_config();
+        assert!(config.is_tool_enabled("dom_snapshot"));
+        assert!(config.is_tool_enabled("find_elements"));
+        assert!(config.is_tool_enabled("verify_state"));
+        assert!(config.is_tool_enabled("detect_ghost_commands"));
+        assert!(config.is_tool_enabled("check_ipc_integrity"));
+        assert!(config.is_tool_enabled("get_registry"));
+        assert!(config.is_tool_enabled("get_memory_stats"));
+        assert!(config.is_tool_enabled("get_plugin_info"));
+        assert!(config.is_tool_enabled("resolve_command"));
+        assert!(config.is_tool_enabled("wait_for"));
+        assert!(config.is_tool_enabled("assert_semantic"));
+    }
+
+    // ── Profile: Observe ───────────────────────────────────────────────────
+
+    #[test]
+    fn observe_blocks_all_interactions() {
+        let config = observe_privacy_config();
+        assert!(!config.is_tool_enabled("interact"));
+        assert!(!config.is_tool_enabled("interact.click"));
+        assert!(!config.is_tool_enabled("interact.double_click"));
+        assert!(!config.is_tool_enabled("interact.hover"));
+        assert!(!config.is_tool_enabled("interact.focus"));
+        assert!(!config.is_tool_enabled("interact.scroll_into_view"));
+        assert!(!config.is_tool_enabled("interact.select_option"));
+    }
+
+    #[test]
+    fn observe_blocks_all_input() {
+        let config = observe_privacy_config();
+        assert!(!config.is_tool_enabled("fill"));
+        assert!(!config.is_tool_enabled("input.fill"));
+        assert!(!config.is_tool_enabled("type_text"));
+        assert!(!config.is_tool_enabled("input.type_text"));
+        assert!(!config.is_tool_enabled("input.press_key"));
+    }
+
+    #[test]
+    fn observe_blocks_storage_writes() {
+        let config = observe_privacy_config();
+        assert!(!config.is_tool_enabled("set_storage"));
+        assert!(!config.is_tool_enabled("storage.set"));
+        assert!(!config.is_tool_enabled("delete_storage"));
+        assert!(!config.is_tool_enabled("storage.delete"));
+    }
+
+    #[test]
+    fn observe_blocks_recording() {
+        let config = observe_privacy_config();
+        assert!(!config.is_tool_enabled("recording"));
+        assert!(!config.is_tool_enabled("recording.start"));
+        assert!(!config.is_tool_enabled("recording.stop"));
+    }
+
+    #[test]
+    fn observe_blocks_dangerous_tools() {
+        let config = observe_privacy_config();
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(!config.is_tool_enabled("screenshot"));
+        assert!(!config.is_tool_enabled("invoke_command"));
+        assert!(!config.is_tool_enabled("navigate"));
+        assert!(!config.is_tool_enabled("navigate.go_to"));
+        assert!(!config.is_tool_enabled("inject_css"));
+        assert!(!config.is_tool_enabled("css.inject"));
+        assert!(!config.is_tool_enabled("css.remove"));
+        assert!(!config.is_tool_enabled("window.manage"));
+        assert!(!config.is_tool_enabled("window.resize"));
+        assert!(!config.is_tool_enabled("window.move_to"));
+        assert!(!config.is_tool_enabled("window.set_title"));
+    }
+
+    #[test]
+    fn observe_allows_read_only_tools() {
+        let config = observe_privacy_config();
+        assert!(config.is_tool_enabled("dom_snapshot"));
+        assert!(config.is_tool_enabled("find_elements"));
+        assert!(config.is_tool_enabled("verify_state"));
+        assert!(config.is_tool_enabled("detect_ghost_commands"));
+        assert!(config.is_tool_enabled("check_ipc_integrity"));
+        assert!(config.is_tool_enabled("get_registry"));
+        assert!(config.is_tool_enabled("get_memory_stats"));
+        assert!(config.is_tool_enabled("get_plugin_info"));
+        assert!(config.is_tool_enabled("resolve_command"));
+        assert!(config.is_tool_enabled("wait_for"));
+        assert!(config.is_tool_enabled("assert_semantic"));
+        assert!(config.is_tool_enabled("window")); // the compound tool itself (get_state, list)
+    }
+
+    #[test]
+    fn observe_allows_read_actions_on_compound_tools() {
+        let config = observe_privacy_config();
+        // Window read actions
+        assert!(config.is_tool_enabled("window.get_state"));
+        assert!(config.is_tool_enabled("window.list"));
+        // Storage read actions
+        assert!(config.is_tool_enabled("storage.get"));
+        assert!(config.is_tool_enabled("storage.get_cookies"));
+        // Navigate read actions
+        assert!(config.is_tool_enabled("navigate.go_back"));
+        assert!(config.is_tool_enabled("navigate.get_history"));
+        assert!(config.is_tool_enabled("navigate.get_dialog_log"));
+        // Logs (all read-only)
+        assert!(config.is_tool_enabled("logs"));
+        assert!(config.is_tool_enabled("logs.console"));
+        assert!(config.is_tool_enabled("logs.network"));
+        assert!(config.is_tool_enabled("logs.ipc"));
+        // CSS read actions
+        assert!(config.is_tool_enabled("css.get_styles"));
+        assert!(config.is_tool_enabled("css.get_computed"));
+        // Inspect (all read-only)
+        assert!(config.is_tool_enabled("inspect.dom_snapshot"));
+        assert!(config.is_tool_enabled("inspect.performance"));
+    }
+
+    #[test]
+    fn observe_enables_redaction() {
+        let config = observe_privacy_config();
+        assert!(config.redaction_enabled);
+    }
+
+    // ── Explicit disable overrides profile ─────────────────────────────────
+
+    #[test]
+    fn disabled_tools_override_full_control() {
         let mut disabled = HashSet::new();
         disabled.insert("eval_js".to_string());
         let config = PrivacyConfig {
+            profile: PrivacyProfile::FullControl,
             disabled_tools: disabled,
             ..Default::default()
         };
         assert!(!config.is_tool_enabled("eval_js"));
-        assert!(config.is_tool_enabled("dom_snapshot"));
+        assert!(config.is_tool_enabled("screenshot"));
     }
+
+    #[test]
+    fn disabled_tools_stack_with_profile() {
+        let mut disabled = HashSet::new();
+        disabled.insert("dom_snapshot".to_string());
+        let mut config = test_privacy_config();
+        config.disabled_tools = disabled;
+        // Profile allows dom_snapshot, but explicit disable overrides
+        assert!(!config.is_tool_enabled("dom_snapshot"));
+        // Profile blocks eval_js
+        assert!(!config.is_tool_enabled("eval_js"));
+    }
+
+    // ── invoke_command special handling ─────────────────────────────────────
+
+    #[test]
+    fn invoke_allowed_in_full_control() {
+        let config = PrivacyConfig::default();
+        assert!(config.is_invoke_allowed("any_command"));
+    }
+
+    #[test]
+    fn invoke_blocked_in_observe() {
+        let config = observe_privacy_config();
+        assert!(!config.is_invoke_allowed("any_command"));
+    }
+
+    #[test]
+    fn invoke_allowed_in_test_with_allowlist() {
+        let mut allow = HashSet::new();
+        allow.insert("greet".to_string());
+        let mut config = test_privacy_config();
+        config.command_allowlist = Some(allow);
+        assert!(config.is_invoke_allowed("greet"));
+        assert!(!config.is_invoke_allowed("delete_user"));
+    }
+
+    #[test]
+    fn invoke_blocked_in_test_without_allowlist() {
+        let config = test_privacy_config();
+        assert!(!config.is_invoke_allowed("greet"));
+    }
+
+    // ── strict_privacy_config is Observe ────────────────────────────────────
+
+    #[test]
+    fn strict_privacy_is_observe_profile() {
+        let config = strict_privacy_config();
+        assert_eq!(config.profile, PrivacyProfile::Observe);
+        assert!(config.redaction_enabled);
+    }
+
+    // ── Backward compatibility ──────────────────────────────────────────────
 
     #[test]
     fn strict_mode_disables_dangerous_tools() {
@@ -145,7 +568,7 @@ mod tests {
         assert!(!config.is_tool_enabled("navigate"));
         assert!(!config.is_tool_enabled("invoke_command"));
         assert!(config.is_tool_enabled("dom_snapshot"));
-        assert!(config.is_tool_enabled("get_window_state"));
+        assert!(config.is_tool_enabled("get_memory_stats"));
         assert!(config.redaction_enabled);
     }
 
@@ -169,6 +592,8 @@ mod tests {
         assert!(config.is_tool_enabled("window.set_title"));
     }
 
+    // ── Redaction ───────────────────────────────────────────────────────────
+
     #[test]
     fn redaction_when_enabled() {
         let config = PrivacyConfig {
@@ -184,5 +609,14 @@ mod tests {
         let config = PrivacyConfig::default();
         let input = "key is sk-abc123def456ghi789jkl012mno";
         assert_eq!(config.redact_output(input), input);
+    }
+
+    // ── Display ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn profile_display() {
+        assert_eq!(PrivacyProfile::Observe.to_string(), "observe");
+        assert_eq!(PrivacyProfile::Test.to_string(), "test");
+        assert_eq!(PrivacyProfile::FullControl.to_string(), "full_control");
     }
 }

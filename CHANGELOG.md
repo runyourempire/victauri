@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **victauri-plugin**: `RegexSet::new().expect()` replaced with match + tracing fallback
 - **victauri-plugin**: `deflate_compress` returns `Result` instead of panicking
 
+### Changed
+
+- **BREAKING:** **victauri-plugin**: `PrivacyProfile` enum replaces boolean `strict_privacy_mode()` — three tiers: `Observe` (read-only), `Test` (observe + interactions + input + recording), `FullControl` (everything, default). `strict_privacy_mode()` now maps to `Observe` profile. New `privacy_profile(PrivacyProfile)` builder method.
+- **victauri-plugin**: `interact` tool now gated by privacy profile — blocked in `Observe`, allowed in `Test` and `FullControl`
+- **victauri-plugin**: `recording` tool now gated by privacy profile — blocked in `Observe`, allowed in `Test` and `FullControl`
+- **victauri-plugin**: `get_plugin_info` now reports `privacy.profile` field (`"observe"`, `"test"`, `"full_control"`)
+- **victauri-plugin**: `invoke_command` in `Test` profile requires command to be on the allowlist
+
 ### Added
 
 - **victauri-core**: `acquire_lock`, `acquire_read`, `acquire_write` helpers for mutex/rwlock poisoning recovery with tracing diagnostics (replaces 28 raw `PoisonError::into_inner` calls)

@@ -500,6 +500,7 @@ impl VictauriMcpHandler {
                 "blocklist": blocklist,
             },
             "privacy": {
+                "profile": self.state.privacy.profile.to_string(),
                 "redaction_enabled": self.state.privacy.redaction_enabled,
             },
             "capacities": {
@@ -525,6 +526,9 @@ impl VictauriMcpHandler {
         )
     )]
     async fn interact(&self, Parameters(params): Parameters<InteractParams>) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("interact") {
+            return tool_disabled("interact");
+        }
         match params.action {
             InteractAction::Click => {
                 let Some(ref_id) = &params.ref_id else {
@@ -901,6 +905,9 @@ impl VictauriMcpHandler {
     )]
     async fn recording(&self, Parameters(params): Parameters<RecordingParams>) -> CallToolResult {
         self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("recording") {
+            return tool_disabled("recording");
+        }
         match params.action {
             RecordingAction::Start => {
                 let session_id = params

@@ -61,6 +61,7 @@ use tokio::sync::{Mutex, oneshot, watch};
 use victauri_core::{CommandRegistry, EventLog, EventRecorder};
 
 pub use error::BuilderError;
+pub use privacy::PrivacyProfile;
 
 pub use victauri_core::CommandInfo;
 pub use victauri_macros::inspectable;
@@ -158,6 +159,7 @@ pub struct VictauriBuilder {
     redaction_patterns: Vec<String>,
     redaction_enabled: bool,
     strict_privacy: bool,
+    privacy_profile: Option<privacy::PrivacyProfile>,
     bridge_capacities: js_bridge::BridgeCapacities,
     on_ready: Option<Box<dyn FnOnce(u16) + Send + 'static>>,
     commands: Vec<victauri_core::CommandInfo>,
@@ -179,6 +181,7 @@ impl Default for VictauriBuilder {
             redaction_patterns: Vec::new(),
             redaction_enabled: false,
             strict_privacy: false,
+            privacy_profile: None,
             bridge_capacities: js_bridge::BridgeCapacities::default(),
             on_ready: None,
             commands: Vec::new(),
@@ -291,12 +294,36 @@ impl VictauriBuilder {
         self
     }
 
-    /// Enable strict privacy mode: disables dangerous tools (`eval_js`, screenshot,
-    /// `inject_css`, `set_storage`, `delete_storage`, navigate, `set_dialog_response`,
-    /// fill, `type_text`), enables output redaction with built-in PII patterns.
+    /// Enable strict privacy mode (equivalent to [`PrivacyProfile::Observe`]).
+    ///
+    /// Disables all mutation tools (`eval_js`, screenshot, interactions, input,
+    /// storage writes, navigation, CSS injection) and enables output redaction.
+    ///
+    /// Prefer [`privacy_profile()`](Self::privacy_profile) for finer control.
     #[must_use]
     pub fn strict_privacy_mode(mut self) -> Self {
         self.strict_privacy = true;
+        self.privacy_profile = Some(privacy::PrivacyProfile::Observe);
+        self
+    }
+
+    /// Set the privacy profile tier.
+    ///
+    /// - [`Observe`](privacy::PrivacyProfile::Observe) — read-only (snapshots, logs, registry)
+    /// - [`Test`](privacy::PrivacyProfile::Test) — observe + interactions + input + storage writes + recording
+    /// - [`FullControl`](privacy::PrivacyProfile::FullControl) — everything (default)
+    ///
+    /// Profiles automatically enable redaction for `Observe` and `Test`.
+    /// Use [`disable_tools()`](Self::disable_tools) to apply overrides on top of a profile.
+    #[must_use]
+    pub fn privacy_profile(mut self, profile: privacy::PrivacyProfile) -> Self {
+        self.privacy_profile = Some(profile);
+        if matches!(
+            profile,
+            privacy::PrivacyProfile::Observe | privacy::PrivacyProfile::Test
+        ) {
+            self.redaction_enabled = true;
+        }
         self
     }
 
@@ -409,32 +436,27 @@ impl VictauriBuilder {
     }
 
     fn build_privacy_config(&self) -> privacy::PrivacyConfig {
-        if self.strict_privacy {
-            let mut config = privacy::strict_privacy_config();
-            for cmd in &self.command_blocklist {
-                config.command_blocklist.insert(cmd.clone());
-            }
-            if let Some(ref allow) = self.command_allowlist {
-                config.command_allowlist = Some(allow.iter().cloned().collect());
-            }
-            for tool in &self.disabled_tools {
-                config.disabled_tools.insert(tool.clone());
-            }
-            if !self.redaction_patterns.is_empty() {
-                config.redactor = redaction::Redactor::new(&self.redaction_patterns);
-            }
-            config
-        } else {
-            privacy::PrivacyConfig {
-                command_allowlist: self
-                    .command_allowlist
-                    .as_ref()
-                    .map(|v| v.iter().cloned().collect::<HashSet<String>>()),
-                command_blocklist: self.command_blocklist.iter().cloned().collect(),
-                disabled_tools: self.disabled_tools.iter().cloned().collect(),
-                redactor: redaction::Redactor::new(&self.redaction_patterns),
-                redaction_enabled: self.redaction_enabled,
-            }
+        let profile = self
+            .privacy_profile
+            .unwrap_or(privacy::PrivacyProfile::FullControl);
+
+        let redaction_enabled = self.redaction_enabled
+            || self.strict_privacy
+            || matches!(
+                profile,
+                privacy::PrivacyProfile::Observe | privacy::PrivacyProfile::Test
+            );
+
+        privacy::PrivacyConfig {
+            profile,
+            command_allowlist: self
+                .command_allowlist
+                .as_ref()
+                .map(|v| v.iter().cloned().collect::<HashSet<String>>()),
+            command_blocklist: self.command_blocklist.iter().cloned().collect(),
+            disabled_tools: self.disabled_tools.iter().cloned().collect(),
+            redactor: redaction::Redactor::new(&self.redaction_patterns),
+            redaction_enabled,
         }
     }
 
@@ -760,9 +782,11 @@ mod tests {
         let builder = VictauriBuilder::new().strict_privacy_mode();
         let config = builder.build_privacy_config();
         assert!(config.redaction_enabled);
-        assert!(!config.disabled_tools.is_empty());
-        assert!(config.disabled_tools.contains("eval_js"));
-        assert!(config.disabled_tools.contains("screenshot"));
+        assert_eq!(config.profile, crate::privacy::PrivacyProfile::Observe);
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(!config.is_tool_enabled("screenshot"));
+        assert!(!config.is_tool_enabled("interact"));
+        assert!(config.is_tool_enabled("dom_snapshot"));
     }
 
     #[test]
@@ -772,7 +796,7 @@ mod tests {
             .disable_tools(&["eval_js"]);
         let config = builder.build_privacy_config();
         assert!(config.command_blocklist.contains("secret_cmd"));
-        assert!(config.disabled_tools.contains("eval_js"));
+        assert!(!config.is_tool_enabled("eval_js"));
         assert!(!config.redaction_enabled);
     }
 
@@ -783,7 +807,31 @@ mod tests {
             .command_blocklist(&["extra_dangerous"]);
         let config = builder.build_privacy_config();
         assert!(config.command_blocklist.contains("extra_dangerous"));
-        assert!(config.disabled_tools.contains("eval_js"));
+        assert!(!config.is_tool_enabled("eval_js"));
+    }
+
+    #[test]
+    fn builder_test_profile() {
+        let builder = VictauriBuilder::new().privacy_profile(crate::privacy::PrivacyProfile::Test);
+        let config = builder.build_privacy_config();
+        assert_eq!(config.profile, crate::privacy::PrivacyProfile::Test);
+        assert!(config.redaction_enabled);
+        assert!(config.is_tool_enabled("interact"));
+        assert!(config.is_tool_enabled("fill"));
+        assert!(config.is_tool_enabled("recording"));
+        assert!(!config.is_tool_enabled("eval_js"));
+        assert!(!config.is_tool_enabled("screenshot"));
+        assert!(!config.is_tool_enabled("navigate"));
+    }
+
+    #[test]
+    fn builder_profile_with_extra_disables() {
+        let builder = VictauriBuilder::new()
+            .privacy_profile(crate::privacy::PrivacyProfile::Test)
+            .disable_tools(&["interact"]);
+        let config = builder.build_privacy_config();
+        assert!(!config.is_tool_enabled("interact"));
+        assert!(config.is_tool_enabled("fill"));
     }
 
     #[test]

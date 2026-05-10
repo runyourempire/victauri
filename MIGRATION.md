@@ -27,13 +27,32 @@ use std::collections::BTreeMap;
 
 The API is identical — `BTreeMap` implements the same traits. If you were constructing `DomElement` or `DomSnapshot` in test code, change `HashMap::new()` to `BTreeMap::new()`.
 
-#### Strict privacy mode blocks more tools
+#### Privacy profiles replace boolean strict mode
 
-`strict_privacy_mode()` now also blocks:
-- `invoke_command` — was completely ungated in v0.1.x
-- `window.manage`, `window.resize`, `window.move_to`, `window.set_title` — window mutation actions
+`strict_privacy_mode()` still works but now maps to `PrivacyProfile::Observe`. The new `privacy_profile()` builder method gives finer control:
 
-If your strict-mode tests used these tools, either switch to default mode or selectively re-enable them via `disable_tools()`.
+```rust
+// Before (v0.1.x) — boolean, all-or-nothing
+VictauriBuilder::new().strict_privacy_mode()
+
+// After (v0.2.0) — three tiers
+use victauri_plugin::PrivacyProfile;
+
+// Read-only: snapshots, logs, registry — no clicks, no input, no eval
+VictauriBuilder::new().privacy_profile(PrivacyProfile::Observe)
+
+// Testing: observe + interactions + input + storage writes + recording
+VictauriBuilder::new().privacy_profile(PrivacyProfile::Test)
+
+// Everything (default, same as v0.1.x)
+VictauriBuilder::new().privacy_profile(PrivacyProfile::FullControl)
+```
+
+`strict_privacy_mode()` is equivalent to `privacy_profile(PrivacyProfile::Observe)`.
+
+**New tool gates:** `interact` and `recording` are now privacy-gated (blocked in `Observe`, allowed in `Test`). `invoke_command` in `Test` profile requires the command to be on the allowlist.
+
+`disable_tools()` still works as an override layer on top of any profile.
 
 #### `TestError::Connection` is now a struct variant
 
