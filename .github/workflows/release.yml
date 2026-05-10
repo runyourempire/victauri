@@ -28,20 +28,11 @@ jobs:
       - name: Dry-run victauri-core
         run: cargo publish -p victauri-core --dry-run
 
-      - name: Dry-run victauri-macros
-        run: cargo publish -p victauri-macros --dry-run --no-verify
-
-      - name: Dry-run victauri-plugin
-        run: cargo publish -p victauri-plugin --dry-run --no-verify
-
-      - name: Dry-run victauri-test
-        run: cargo publish -p victauri-test --dry-run --no-verify
-
-      - name: Dry-run victauri-cli
-        run: cargo publish -p victauri-cli --dry-run --no-verify
-
-      - name: Dry-run victauri-watchdog
-        run: cargo publish -p victauri-watchdog --dry-run --no-verify
+      # Dependent crates skip dry-run: they depend on victauri-core which
+      # isn't on crates.io yet at this point.  cargo publish --dry-run
+      # resolves deps from the registry even with --no-verify, so these
+      # would always fail on a new minor/major version bump.  The real
+      # publish step handles ordering with inter-crate sleep delays.
 
   test:
     name: Test gate
