@@ -179,8 +179,8 @@ fn resolve_selector(selector: &str) -> ResolvedSelector {
 /// Emits a single DOM interaction as a `VictauriClient` method call.
 ///
 /// Selector-aware: emits `*_by_id` for `#id` selectors, `*_by_text` for
-/// `:has-text("...")` selectors, and the raw `client.click(selector)` form
-/// for everything else.
+/// `:has-text("...")` selectors, and `*_by_selector` for raw CSS selectors
+/// so the client resolves them to ref handles before interacting.
 fn emit_interaction(
     out: &mut String,
     action: &InteractionKind,
@@ -215,15 +215,16 @@ fn emit_interaction(
             out.push_str(&format!("    client.navigate(\"{val}\").await.unwrap();\n"));
         }
         InteractionKind::Scroll => {
-            let sel = escape_rust_str(selector);
-            out.push_str(&format!(
-                "    client.scroll_to(\"{sel}\", None, None).await.unwrap();\n"
-            ));
+            emit_resolved_scroll(out, &resolved);
         }
     }
 }
 
 /// Emits a resolved call for click-like and fill-like methods.
+///
+/// For `ById` selectors, emits `*_by_id`. For `ByText`, emits `*_by_text`.
+/// For `Raw` CSS selectors, emits `*_by_selector` which resolves the selector
+/// to a ref handle before interacting.
 fn emit_resolved_call(
     out: &mut String,
     base_method: &str,
@@ -247,13 +248,16 @@ fn emit_resolved_call(
         ResolvedSelector::Raw(sel) => {
             let escaped = escape_rust_str(sel);
             out.push_str(&format!(
-                "    client.{base_method}(\"{escaped}\"{suffix}).await.unwrap();\n"
+                "    client.{base_method}_by_selector(\"{escaped}\"{suffix}).await.unwrap();\n"
             ));
         }
     }
 }
 
 /// Emits a resolved `select_option` call.
+///
+/// For `Raw` selectors, emits `select_option_by_selector` which resolves the
+/// CSS selector to a ref handle before selecting.
 fn emit_resolved_select(out: &mut String, resolved: &ResolvedSelector, val: &str) {
     match resolved {
         ResolvedSelector::ById(id) => {
@@ -271,7 +275,33 @@ fn emit_resolved_select(out: &mut String, resolved: &ResolvedSelector, val: &str
         ResolvedSelector::Raw(sel) => {
             let escaped = escape_rust_str(sel);
             out.push_str(&format!(
-                "    client.select_option(\"{escaped}\", &[\"{val}\"]).await.unwrap();\n"
+                "    client.select_option_by_selector(\"{escaped}\", &[\"{val}\"]).await.unwrap();\n"
+            ));
+        }
+    }
+}
+
+/// Emits a resolved `scroll_to` call.
+///
+/// For `Raw` selectors, emits `scroll_to_by_selector`. For `ById`, emits
+/// `scroll_to_by_id`. For `ByText`, falls back to `scroll_to_by_selector`
+/// with the original selector text (scroll has no text variant).
+fn emit_resolved_scroll(out: &mut String, resolved: &ResolvedSelector) {
+    match resolved {
+        ResolvedSelector::ById(id) => {
+            let escaped = escape_rust_str(id);
+            out.push_str(&format!(
+                "    client.scroll_to_by_id(\"{escaped}\").await.unwrap();\n"
+            ));
+        }
+        ResolvedSelector::ByText(_) | ResolvedSelector::Raw(_) => {
+            let sel = match resolved {
+                ResolvedSelector::ByText(t) => escape_rust_str(t),
+                ResolvedSelector::Raw(s) => escape_rust_str(s),
+                _ => unreachable!(),
+            };
+            out.push_str(&format!(
+                "    client.scroll_to_by_selector(\"{sel}\").await.unwrap();\n"
             ));
         }
     }
@@ -355,7 +385,7 @@ mod tests {
         let code = generate_test_default(&session);
 
         assert!(code.contains(
-            "client.fill(\"input[name=\\\"email\\\"]\", \"user@example.com\").await.unwrap();"
+            "client.fill_by_selector(\"input[name=\\\"email\\\"]\", \"user@example.com\").await.unwrap();"
         ));
     }
 
@@ -505,13 +535,13 @@ mod tests {
             },
         );
 
-        assert!(code.contains("client.click(\"[data-testid=\\\"a\\\"]\")"));
-        assert!(code.contains("client.double_click(\"[data-testid=\\\"b\\\"]\")"));
-        assert!(code.contains("client.fill(\"[data-testid=\\\"c\\\"]\", \"val\")"));
+        assert!(code.contains("client.click_by_selector(\"[data-testid=\\\"a\\\"]\")"));
+        assert!(code.contains("client.double_click_by_selector(\"[data-testid=\\\"b\\\"]\")"));
+        assert!(code.contains("client.fill_by_selector(\"[data-testid=\\\"c\\\"]\", \"val\")"));
         assert!(code.contains("client.press_key(\"Enter\")"));
-        assert!(code.contains("client.select_option(\"[data-testid=\\\"e\\\"]\", &[\"opt1\"])"));
+        assert!(code.contains("client.select_option_by_selector(\"[data-testid=\\\"e\\\"]\", &[\"opt1\"])"));
         assert!(code.contains("client.navigate(\"/page\")"));
-        assert!(code.contains("client.scroll_to(\"#g\", None, None)"));
+        assert!(code.contains("client.scroll_to_by_id(\"g\")"));
     }
 
     #[test]
@@ -685,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn data_testid_selector_emits_raw_click() {
+    fn data_testid_selector_emits_click_by_selector() {
         let session = make_session(vec![interaction_event(
             0,
             InteractionKind::Click,
@@ -696,8 +726,8 @@ mod tests {
         let code = generate_test_default(&session);
 
         assert!(
-            code.contains("client.click(\"[data-testid=\\\"foo\\\"]\").await.unwrap();"),
-            "expected raw click for data-testid selector, got:\n{code}"
+            code.contains("client.click_by_selector(\"[data-testid=\\\"foo\\\"]\").await.unwrap();"),
+            "expected click_by_selector for data-testid selector, got:\n{code}"
         );
     }
 
@@ -762,7 +792,7 @@ mod tests {
         let events = vec![
             // 0: Click on #submit-btn  (should resolve to click_by_id)
             interaction_event_at(base, 0, InteractionKind::Click, "#submit-btn", None, 0),
-            // 1: Fill on input[name=email]  (raw selector — should use client.fill)
+            // 1: Fill on input[name=email]  (raw selector — should use client.fill_by_selector)
             interaction_event_at(
                 base,
                 1,
@@ -839,12 +869,12 @@ mod tests {
             "#submit-btn should NOT appear as raw client.click:\n{code}"
         );
 
-        // Fill on input[name=email] — raw selector, no # prefix
+        // Fill on input[name=email] — raw selector, should use fill_by_selector
         assert!(
             code.contains(
-                "client.fill(\"input[name=email]\", \"test@example.com\").await.unwrap();"
+                "client.fill_by_selector(\"input[name=email]\", \"test@example.com\").await.unwrap();"
             ),
-            "expected raw client.fill for input[name=email]:\n{code}"
+            "expected fill_by_selector for input[name=email]:\n{code}"
         );
         assert!(
             !code.contains("client.fill_by_id(\"input[name=email]\""),

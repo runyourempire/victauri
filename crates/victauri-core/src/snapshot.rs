@@ -35,7 +35,7 @@ pub struct DomSnapshot {
     /// Top-level accessible elements in the DOM tree.
     pub elements: Vec<DomElement>,
     /// Maps ref IDs to CSS selectors for element lookup.
-    pub ref_map: std::collections::HashMap<String, String>,
+    pub ref_map: std::collections::BTreeMap<String, String>,
 }
 
 /// A single element in the accessible DOM tree with semantic metadata and ref handle.
@@ -64,7 +64,7 @@ pub struct DomElement {
     /// Nested child elements forming the accessible subtree.
     pub children: Vec<Self>,
     /// Raw HTML attributes on the element.
-    pub attributes: std::collections::HashMap<String, String>,
+    pub attributes: std::collections::BTreeMap<String, String>,
 }
 
 /// Pixel-level bounding rectangle of a DOM element relative to the viewport.
@@ -87,7 +87,7 @@ impl DomSnapshot {
     ///
     /// ```
     /// use victauri_core::{DomSnapshot, DomElement};
-    /// use std::collections::HashMap;
+    /// use std::collections::BTreeMap;
     ///
     /// let snapshot = DomSnapshot {
     ///     webview_label: "main".to_string(),
@@ -103,9 +103,9 @@ impl DomSnapshot {
     ///         focusable: true,
     ///         bounds: None,
     ///         children: vec![],
-    ///         attributes: HashMap::new(),
+    ///         attributes: BTreeMap::new(),
     ///     }],
-    ///     ref_map: HashMap::new(),
+    ///     ref_map: BTreeMap::new(),
     /// };
     /// let text = snapshot.to_accessible_text(0);
     /// assert!(text.contains("button"));

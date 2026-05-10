@@ -1,15 +1,26 @@
-use std::path::PathBuf;
+use std::io::BufRead;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::VictauriClient;
 use crate::error::TestError;
+
+/// Maximum number of stderr lines retained in the ring buffer.
+const STDERR_MAX_LINES: usize = 50;
+
+/// Number of stderr lines included in error messages.
+const STDERR_DISPLAY_LINES: usize = 10;
 
 /// Managed Tauri application lifecycle for integration testing.
 ///
 /// Spawns a Tauri app as a child process, waits for the Victauri MCP server
 /// to become healthy, and provides connected [`VictauriClient`] instances.
 /// The app is killed when the `TestApp` is dropped.
+///
+/// Stderr output from the spawned process is captured in a background thread
+/// and the last few lines are included in error messages when the app fails
+/// to start or times out, making startup failures much easier to diagnose.
 ///
 /// # Example
 ///
@@ -28,6 +39,8 @@ pub struct TestApp {
     child: Option<Child>,
     port: u16,
     token: Option<String>,
+    stderr_lines: Arc<Mutex<Vec<String>>>,
+    _stderr_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl TestApp {
@@ -60,17 +73,21 @@ impl TestApp {
             return Err(TestError::Connection("empty command".into()));
         }
 
-        let child = Command::new(parts[0])
+        let mut child = Command::new(parts[0])
             .args(&parts[1..])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| TestError::Connection(format!("failed to spawn `{cmd}`: {e}")))?;
+
+        let (stderr_lines, stderr_thread) = spawn_stderr_reader(child.stderr.take());
 
         let mut app = Self {
             child: Some(child),
             port: port.unwrap_or(0),
             token: None,
+            stderr_lines,
+            _stderr_thread: stderr_thread,
         };
 
         app.wait_for_ready(timeout).await?;
@@ -89,17 +106,21 @@ impl TestApp {
         let port = discover_port();
         let parts = ["cargo", "run", "-p", "demo-app"];
 
-        let child = Command::new(parts[0])
+        let mut child = Command::new(parts[0])
             .args(&parts[1..])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| TestError::Connection(format!("failed to spawn demo-app: {e}")))?;
+
+        let (stderr_lines, stderr_thread) = spawn_stderr_reader(child.stderr.take());
 
         let mut app = Self {
             child: Some(child),
             port,
             token: None,
+            stderr_lines,
+            _stderr_thread: stderr_thread,
         };
 
         app.wait_for_ready(Duration::from_secs(60)).await?;
@@ -118,6 +139,8 @@ impl TestApp {
             child: None,
             port,
             token,
+            stderr_lines: Arc::new(Mutex::new(Vec::new())),
+            _stderr_thread: None,
         };
 
         let http = reqwest::Client::new();
@@ -167,10 +190,10 @@ impl TestApp {
 
         loop {
             if start.elapsed() > timeout {
+                let stderr_tail = self.recent_stderr();
                 return Err(TestError::Connection(format!(
                     "app did not become ready within {}s — check that the Victauri plugin is \
-                     initialized and the MCP server is listening. Try setting VICTAURI_PORT or \
-                     checking the app's stderr for errors.",
+                     initialized and the MCP server is listening.{stderr_tail}",
                     timeout.as_secs()
                 )));
             }
@@ -178,8 +201,9 @@ impl TestApp {
             if let Some(ref mut child) = self.child
                 && let Some(status) = child.try_wait().ok().flatten()
             {
+                let stderr_tail = self.recent_stderr();
                 return Err(TestError::Connection(format!(
-                    "app process exited with {status} before becoming ready"
+                    "app process exited with {status} before becoming ready{stderr_tail}"
                 )));
             }
 
@@ -196,6 +220,21 @@ impl TestApp {
 
             tokio::time::sleep(poll_interval).await;
         }
+    }
+
+    /// Format the last N captured stderr lines for inclusion in error messages.
+    fn recent_stderr(&self) -> String {
+        let lines = self.stderr_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if lines.is_empty() {
+            return String::new();
+        }
+        let start = lines.len().saturating_sub(STDERR_DISPLAY_LINES);
+        let tail: Vec<&str> = lines[start..].iter().map(String::as_str).collect();
+        format!(
+            "\n\nApp stderr (last {} lines):\n  {}",
+            tail.len(),
+            tail.join("\n  ")
+        )
     }
 
     fn discover_actual_port(&self) -> u16 {
@@ -215,13 +254,51 @@ impl Drop for TestApp {
     }
 }
 
+/// Spawn a background thread that drains the child's stderr into a bounded ring buffer.
+///
+/// Returns the shared line buffer and an optional join handle. The thread exits
+/// naturally when the child's stderr pipe is closed (i.e., the process exits).
+fn spawn_stderr_reader(
+    stderr: Option<std::process::ChildStderr>,
+) -> (Arc<Mutex<Vec<String>>>, Option<std::thread::JoinHandle<()>>) {
+    let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let handle = stderr.map(|pipe| {
+        let lines = Arc::clone(&lines);
+        std::thread::Builder::new()
+            .name("victauri-stderr-reader".into())
+            .spawn(move || {
+                let reader = std::io::BufReader::new(pipe);
+                for line in reader.lines() {
+                    match line {
+                        Ok(text) => {
+                            let mut buf = lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if buf.len() >= STDERR_MAX_LINES {
+                                buf.remove(0);
+                            }
+                            buf.push(text);
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })
+            .expect("failed to spawn stderr reader thread")
+    });
+
+    (lines, handle)
+}
+
 fn discover_port() -> u16 {
     if let Ok(p) = std::env::var("VICTAURI_PORT")
         && let Ok(port) = p.parse::<u16>()
     {
         return port;
     }
-    let path = port_file_path();
+    if let Some(port) = crate::discovery::scan_discovery_dirs_for_port() {
+        return port;
+    }
+    // Legacy fallback
+    let path = std::env::temp_dir().join("victauri.port");
     if let Ok(contents) = std::fs::read_to_string(&path)
         && let Ok(port) = contents.trim().parse::<u16>()
     {
@@ -234,16 +311,12 @@ fn discover_token() -> Option<String> {
     if let Ok(token) = std::env::var("VICTAURI_AUTH_TOKEN") {
         return Some(token);
     }
-    let path = token_file_path();
+    if let Some(token) = crate::discovery::scan_discovery_dirs_for_token() {
+        return Some(token);
+    }
+    // Legacy fallback
+    let path = std::env::temp_dir().join("victauri.token");
     let token = std::fs::read_to_string(&path).ok()?;
     let token = token.trim().to_string();
     if token.is_empty() { None } else { Some(token) }
-}
-
-fn port_file_path() -> PathBuf {
-    std::env::temp_dir().join("victauri.port")
-}
-
-fn token_file_path() -> PathBuf {
-    std::env::temp_dir().join("victauri.token")
 }

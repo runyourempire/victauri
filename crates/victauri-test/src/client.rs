@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 
 use crate::assertions::VerifyBuilder;
+use crate::discovery::{scan_discovery_dirs_for_port, scan_discovery_dirs_for_token};
 use crate::error::TestError;
 use crate::visual::{VisualDiff, VisualOptions};
 
@@ -126,9 +127,11 @@ impl VictauriClient {
 
     /// Auto-discover a running Victauri server via temp files.
     ///
-    /// Reads `<temp>/victauri.port` and `<temp>/victauri.token` written by the
-    /// plugin on startup. Falls back to `VICTAURI_PORT` / `VICTAURI_AUTH_TOKEN`
-    /// env vars, then defaults (port 7373, no auth).
+    /// Discovery priority:
+    /// 1. `VICTAURI_PORT` / `VICTAURI_AUTH_TOKEN` env vars (explicit override)
+    /// 2. Per-process discovery directory: `<temp>/victauri/<pid>/port`
+    /// 3. Legacy single-file: `<temp>/victauri.port` (v0.1.x compat)
+    /// 4. Default: port 7373, no auth
     ///
     /// # Errors
     ///
@@ -147,6 +150,11 @@ impl VictauriClient {
         {
             return port;
         }
+        // Scan per-process discovery directories for live servers
+        if let Some(port) = scan_discovery_dirs_for_port() {
+            return port;
+        }
+        // Fall back to legacy single-file discovery
         let path = std::env::temp_dir().join("victauri.port");
         if let Ok(contents) = std::fs::read_to_string(&path)
             && let Ok(port) = contents.trim().parse::<u16>()
@@ -160,6 +168,11 @@ impl VictauriClient {
         if let Ok(token) = std::env::var("VICTAURI_AUTH_TOKEN") {
             return Some(token);
         }
+        // Scan per-process discovery directories
+        if let Some(token) = scan_discovery_dirs_for_token() {
+            return Some(token);
+        }
+        // Legacy fallback
         let path = std::env::temp_dir().join("victauri.token");
         let token = std::fs::read_to_string(&path).ok()?;
         let token = token.trim().to_string();
@@ -601,6 +614,19 @@ impl VictauriClient {
         self.call_tool("find_elements", query).await
     }
 
+    /// Double-click an element by ref handle ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn double_click(&mut self, ref_id: &str) -> Result<Value, TestError> {
+        self.call_tool(
+            "interact",
+            json!({"action": "double_click", "ref_id": ref_id}),
+        )
+        .await
+    }
+
     /// Hover over an element by ref handle.
     ///
     /// # Errors
@@ -809,6 +835,57 @@ impl VictauriClient {
         self.click(&ref_id).await
     }
 
+    /// Double-click the first element whose accessible text contains the given string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no matching element is found.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn double_click_by_text(&mut self, text: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_text(text).await?;
+        self.double_click(&ref_id).await
+    }
+
+    /// Double-click the element with the given HTML `id` attribute.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn double_click_by_id(&mut self, id: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.double_click(&ref_id).await
+    }
+
+    /// Double-click the first element matching a CSS selector.
+    ///
+    /// Resolves the selector via `find_elements`, then double-clicks the first match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element matches the selector.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn double_click_by_selector(
+        &mut self,
+        selector: &str,
+    ) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_selector(selector).await?;
+        self.double_click(&ref_id).await
+    }
+
+    /// Click the first element matching a CSS selector.
+    ///
+    /// Resolves the selector via `find_elements`, then clicks the first match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element matches the selector.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn click_by_selector(&mut self, selector: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_selector(selector).await?;
+        self.click(&ref_id).await
+    }
+
     /// Fill an input identified by HTML `id` with the given value.
     ///
     /// # Errors
@@ -817,6 +894,34 @@ impl VictauriClient {
     /// Returns other errors from [`VictauriClient::call_tool`].
     pub async fn fill_by_id(&mut self, id: &str, value: &str) -> Result<Value, TestError> {
         let ref_id = self.find_ref_by_id(id).await?;
+        self.fill(&ref_id, value).await
+    }
+
+    /// Fill an input whose accessible text contains the given string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no matching element is found.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn fill_by_text(&mut self, text: &str, value: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_text(text).await?;
+        self.fill(&ref_id, value).await
+    }
+
+    /// Fill an input matching a CSS selector with the given value.
+    ///
+    /// Resolves the selector via `find_elements`, then fills the first match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element matches the selector.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn fill_by_selector(
+        &mut self,
+        selector: &str,
+        value: &str,
+    ) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_selector(selector).await?;
         self.fill(&ref_id, value).await
     }
 
@@ -898,6 +1003,80 @@ impl VictauriClient {
         self.select_option(&ref_id, &[value]).await
     }
 
+    /// Select option(s) in a `<select>` element identified by HTML `id`.
+    ///
+    /// Accepts multiple values for multi-select elements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn select_option_by_id(
+        &mut self,
+        id: &str,
+        values: &[&str],
+    ) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.select_option(&ref_id, values).await
+    }
+
+    /// Select option(s) in a `<select>` element whose accessible text contains
+    /// the given string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no matching element is found.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn select_option_by_text(
+        &mut self,
+        text: &str,
+        values: &[&str],
+    ) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_text(text).await?;
+        self.select_option(&ref_id, values).await
+    }
+
+    /// Select option(s) in a `<select>` element matching a CSS selector.
+    ///
+    /// Resolves the selector via `find_elements`, then selects in the first match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element matches the selector.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn select_option_by_selector(
+        &mut self,
+        selector: &str,
+        values: &[&str],
+    ) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_selector(selector).await?;
+        self.select_option(&ref_id, values).await
+    }
+
+    /// Scroll an element matching a CSS selector into view.
+    ///
+    /// Resolves the selector via `find_elements`, then scrolls the first match.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element matches the selector.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn scroll_to_by_selector(&mut self, selector: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_selector(selector).await?;
+        self.scroll_to(&ref_id).await
+    }
+
+    /// Scroll an element with the given HTML `id` into view.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TestError::ElementNotFound`] if no element has the given id.
+    /// Returns other errors from [`VictauriClient::call_tool`].
+    pub async fn scroll_to_by_id(&mut self, id: &str) -> Result<Value, TestError> {
+        let ref_id = self.find_ref_by_id(id).await?;
+        self.scroll_to(&ref_id).await
+    }
+
     /// Get the text content of an element identified by HTML `id`.
     ///
     /// # Errors
@@ -930,6 +1109,25 @@ impl VictauriClient {
         let tree = &snap["tree"];
         find_in_tree_by_attr_id(tree, id)
             .ok_or_else(|| TestError::ElementNotFound(format!("id=\"{id}\"")))
+    }
+
+    async fn find_ref_by_selector(&mut self, selector: &str) -> Result<String, TestError> {
+        let result = self
+            .find_elements(json!({"selector": selector}))
+            .await?;
+        // find_elements returns an array of matched elements with ref_id fields
+        let elements = result
+            .as_array()
+            .or_else(|| result.get("elements").and_then(Value::as_array));
+        if let Some(elems) = elements
+            && let Some(first) = elems.first()
+            && let Some(ref_id) = first.get("ref_id").and_then(Value::as_str)
+        {
+            return Ok(ref_id.to_string());
+        }
+        Err(TestError::ElementNotFound(format!(
+            "selector=\"{selector}\""
+        )))
     }
 }
 

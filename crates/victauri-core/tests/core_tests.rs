@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use victauri_core::*;
 
@@ -177,7 +177,7 @@ fn dom_snapshot_accessible_text() {
                     focusable: true,
                     bounds: None,
                     children: vec![],
-                    attributes: HashMap::new(),
+                    attributes: BTreeMap::new(),
                 },
                 DomElement {
                     ref_id: "e2".to_string(),
@@ -191,12 +191,12 @@ fn dom_snapshot_accessible_text() {
                     focusable: true,
                     bounds: None,
                     children: vec![],
-                    attributes: HashMap::new(),
+                    attributes: BTreeMap::new(),
                 },
             ],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -221,9 +221,9 @@ fn dom_snapshot_hides_invisible() {
             focusable: false,
             bounds: None,
             children: vec![],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -2421,13 +2421,13 @@ fn dom_snapshot_accessible_text_nested_indentation() {
                     focusable: true,
                     bounds: None,
                     children: vec![],
-                    attributes: HashMap::new(),
+                    attributes: BTreeMap::new(),
                 }],
-                attributes: HashMap::new(),
+                attributes: BTreeMap::new(),
             }],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -2468,7 +2468,7 @@ fn dom_snapshot_accessible_text_skips_invisible_children() {
                     focusable: true,
                     bounds: None,
                     children: vec![],
-                    attributes: HashMap::new(),
+                    attributes: BTreeMap::new(),
                 },
                 DomElement {
                     ref_id: "e2".to_string(),
@@ -2482,12 +2482,12 @@ fn dom_snapshot_accessible_text_skips_invisible_children() {
                     focusable: true,
                     bounds: None,
                     children: vec![],
-                    attributes: HashMap::new(),
+                    attributes: BTreeMap::new(),
                 },
             ],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -2512,7 +2512,7 @@ fn dom_snapshot_accessible_text_ref_on_focusable_and_input() {
                 focusable: false, // not focusable, not button/input => no ref
                 bounds: None,
                 children: vec![],
-                attributes: HashMap::new(),
+                attributes: BTreeMap::new(),
             },
             DomElement {
                 ref_id: "e1".to_string(),
@@ -2526,7 +2526,7 @@ fn dom_snapshot_accessible_text_ref_on_focusable_and_input() {
                 focusable: false, // input tag => ref regardless of focusable
                 bounds: None,
                 children: vec![],
-                attributes: HashMap::new(),
+                attributes: BTreeMap::new(),
             },
             DomElement {
                 ref_id: "e2".to_string(),
@@ -2540,10 +2540,10 @@ fn dom_snapshot_accessible_text_ref_on_focusable_and_input() {
                 focusable: true, // focusable => ref
                 bounds: None,
                 children: vec![],
-                attributes: HashMap::new(),
+                attributes: BTreeMap::new(),
             },
         ],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -2575,9 +2575,9 @@ fn dom_snapshot_accessible_text_custom_starting_indent() {
             focusable: false,
             bounds: None,
             children: vec![],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     // Start at indent 3 => 6 spaces prefix
@@ -2590,7 +2590,7 @@ fn dom_snapshot_accessible_text_empty_elements() {
     let snapshot = DomSnapshot {
         webview_label: "main".to_string(),
         elements: vec![],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);
@@ -2613,9 +2613,9 @@ fn dom_snapshot_accessible_text_uses_tag_when_no_role() {
             focusable: false,
             bounds: None,
             children: vec![],
-            attributes: HashMap::new(),
+            attributes: BTreeMap::new(),
         }],
-        ref_map: HashMap::new(),
+        ref_map: BTreeMap::new(),
     };
 
     let text = snapshot.to_accessible_text(0);

@@ -38,6 +38,7 @@ mod app;
 mod assertions;
 mod client;
 pub mod coverage;
+mod discovery;
 mod error;
 pub mod prelude;
 pub mod reporting;

@@ -6,6 +6,7 @@
 [![crates.io](https://img.shields.io/crates/v/victauri-plugin.svg)](https://crates.io/crates/victauri-plugin)
 [![docs.rs](https://docs.rs/victauri-plugin/badge.svg)](https://docs.rs/victauri-plugin)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![MSRV: 1.88+](https://img.shields.io/badge/MSRV-1.88+-informational)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
 
 ---
 
@@ -54,24 +55,31 @@ assert!(result["divergences"].as_array().unwrap().is_empty());
 
 **1. Add the crates:**
 
-```toml
-# Cargo.toml
-[dev-dependencies]
-victauri-plugin = "0.1"
-victauri-test = "0.1"
+```bash
+cargo add victauri-plugin --dev
+cargo add victauri-test --dev
 ```
 
-**2. Wire it up** (two lines in your app):
+**2. Mark your commands** (optional — enables coverage tracking and ghost detection):
+
+```rust
+use victauri_macros::inspectable;
+
+#[tauri::command]
+#[inspectable(description = "Greet the user")]
+fn greet(name: String) -> String {
+    format!("Hello, {name}!")
+}
+```
+
+**3. Wire the plugin:**
 
 ```rust
 // src-tauri/src/main.rs
 tauri::Builder::default()
     .plugin(
         victauri_plugin::VictauriBuilder::new()
-            .commands(&[
-                greet__schema(),
-                save_settings__schema(),
-            ])
+            .auto_discover()  // finds all #[inspectable] commands
             .build()
             .unwrap(),
     )
@@ -420,6 +428,17 @@ With `TestApp::spawn`, the lifecycle is managed automatically — no background 
 Linux CI requires a virtual display (`xvfb-run`) since Tauri/WebView needs a display server.
 `TestApp::spawn` detects missing display and gives a clear error message.
 
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Server won't start | Check port 7373 isn't already in use. Verify the plugin is wired in your `main.rs`. |
+| Auth token mismatch | Set `VICTAURI_AUTH_TOKEN` env var, or use `VictauriClient::discover()` which reads the token from temp files automatically. |
+| Connection timeout | Ensure your app's dev server is running. Check stderr for startup panics. |
+| Tests interfere with each other | Run with `--test-threads=1` — Victauri shares one server per app process. |
+| Linux CI: "no display" | Wrap with `xvfb-run --auto-servernum` — Tauri/WebView requires a display server. |
+| 0% coverage (no commands registered) | Add `#[inspectable]` to your Tauri commands and call `.auto_discover()` on `VictauriBuilder`. |
+
 ## What It Doesn't Do
 
 - **No production use** — debug builds only, by design
@@ -431,7 +450,7 @@ Linux CI requires a virtual display (`xvfb-run`) since Tauri/WebView needs a dis
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 838 tests
+cargo test --workspace                                # Run all tests
 cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format

@@ -15,7 +15,7 @@ use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     AnnotateAble, CallToolRequestParams, CallToolResult, Content, ListResourcesResult,
-    ListToolsResult, PaginatedRequestParams, RawResource, ReadResourceRequestParams,
+    ListToolsResult, PaginatedRequestParams, RawContent, RawResource, ReadResourceRequestParams,
     ReadResourceResult, ResourceContents, ServerCapabilities, ServerInfo, SubscribeRequestParams,
     Tool, UnsubscribeRequestParams,
 };
@@ -83,7 +83,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&params.code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => self.redact_result(result),
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => tool_error(e),
         }
     }
@@ -183,7 +183,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => self.redact_result(result),
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => tool_error(format!("invoke_command failed: {e}")),
         }
     }
@@ -766,7 +766,7 @@ impl VictauriMcpHandler {
                     .map(|k| js_string(k))
                     .unwrap_or_default();
                 let code = format!("return window.__VICTAURI__?.{method}({key_arg})");
-                self.eval_bridge_redacted(&code, params.webview_label.as_deref())
+                self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             StorageAction::Set => {
@@ -810,7 +810,7 @@ impl VictauriMcpHandler {
                     .await
             }
             StorageAction::GetCookies => {
-                self.eval_bridge_redacted(
+                self.eval_bridge(
                     "return window.__VICTAURI__?.getCookies()",
                     params.webview_label.as_deref(),
                 )
@@ -1140,7 +1140,7 @@ impl VictauriMcpHandler {
                 } else {
                     format!("return window.__VICTAURI__?.getConsoleLogs({since_arg})")
                 };
-                self.eval_bridge_redacted(&code, params.webview_label.as_deref())
+                self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             LogsAction::Network => {
@@ -1153,7 +1153,7 @@ impl VictauriMcpHandler {
                     .map_or_else(|| "null".to_string(), |l| l.to_string());
                 let code =
                     format!("return window.__VICTAURI__?.getNetworkLog({filter_arg}, {limit_arg})");
-                self.eval_bridge_redacted(&code, params.webview_label.as_deref())
+                self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             LogsAction::Ipc => {
@@ -1163,7 +1163,7 @@ impl VictauriMcpHandler {
                 } else {
                     format!("return window.__VICTAURI__?.getIpcLog({limit_arg})")
                 };
-                self.eval_bridge_redacted(&code, params.webview_label.as_deref())
+                self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
             }
             LogsAction::Navigation => {
@@ -1203,7 +1203,7 @@ impl VictauriMcpHandler {
                         return {{ threshold_ms: {threshold}, count: Math.min(slow.length, {limit}), calls: slow.slice(0, {limit}) }};
                     }})()",
                 );
-                self.eval_bridge_redacted(&code, None).await
+                self.eval_bridge(&code, None).await
             }
         }
     }
@@ -1229,22 +1229,6 @@ impl VictauriMcpHandler {
             Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => tool_error(e),
         }
-    }
-
-    async fn eval_bridge_redacted(
-        &self,
-        code: &str,
-        webview_label: Option<&str>,
-    ) -> CallToolResult {
-        match self.eval_with_return(code, webview_label).await {
-            Ok(result) => self.redact_result(result),
-            Err(e) => tool_error(e),
-        }
-    }
-
-    fn redact_result(&self, output: String) -> CallToolResult {
-        let redacted = self.state.privacy.redact_output(&output);
-        CallToolResult::success(vec![Content::text(redacted)])
     }
 
     async fn eval_with_return(
@@ -1435,7 +1419,21 @@ impl ServerHandler for VictauriMcpHandler {
             is_error = result.as_ref().map_or(true, |r| r.is_error.unwrap_or(false)),
             "tool invocation completed"
         );
-        result
+
+        // Centralized output redaction: apply to all text content so no
+        // individual tool can accidentally leak secrets.
+        if self.state.privacy.redaction_enabled {
+            result.map(|mut r| {
+                for item in &mut r.content {
+                    if let RawContent::Text(ref mut tc) = item.raw {
+                        tc.text = self.state.privacy.redact_output(&tc.text);
+                    }
+                }
+                r
+            })
+        } else {
+            result
+        }
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {

@@ -189,29 +189,52 @@ async fn try_bind(preferred: u16) -> anyhow::Result<(tokio::net::TcpListener, u1
     )
 }
 
-fn port_file_path() -> std::path::PathBuf {
+fn discovery_dir() -> std::path::PathBuf {
+    std::env::temp_dir()
+        .join("victauri")
+        .join(std::process::id().to_string())
+}
+
+fn legacy_port_file_path() -> std::path::PathBuf {
     std::env::temp_dir().join("victauri.port")
 }
 
-fn token_file_path() -> std::path::PathBuf {
+fn legacy_token_file_path() -> std::path::PathBuf {
     std::env::temp_dir().join("victauri.token")
 }
 
 fn write_port_file(port: u16) {
-    if let Err(e) = std::fs::write(port_file_path(), port.to_string()) {
+    let dir = discovery_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(dir.join("port"), port.to_string()) {
         tracing::debug!("could not write port file: {e}");
     }
+    // Write legacy file for backward compatibility with v0.1.x clients
+    let _ = std::fs::write(legacy_port_file_path(), port.to_string());
+    // Write metadata for multi-server discovery
+    let metadata = serde_json::json!({
+        "pid": std::process::id(),
+        "port": port,
+        "started_at": chrono::Utc::now().to_rfc3339(),
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    let _ = std::fs::write(dir.join("metadata.json"), metadata.to_string());
 }
 
 fn write_token_file(token: &str) {
-    if let Err(e) = std::fs::write(token_file_path(), token) {
+    let dir = discovery_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(dir.join("token"), token) {
         tracing::debug!("could not write token file: {e}");
     }
+    // Write legacy file for backward compatibility
+    let _ = std::fs::write(legacy_token_file_path(), token);
 }
 
 fn remove_port_file() {
-    let _ = std::fs::remove_file(port_file_path());
-    let _ = std::fs::remove_file(token_file_path());
+    let _ = std::fs::remove_dir_all(discovery_dir());
+    let _ = std::fs::remove_file(legacy_port_file_path());
+    let _ = std::fs::remove_file(legacy_token_file_path());
 }
 
 /// Parse a single bridge event JSON value into an [`AppEvent`](victauri_core::AppEvent).
@@ -428,10 +451,21 @@ mod tests {
     #[test]
     fn port_file_roundtrip() {
         write_port_file(7777);
-        let content = std::fs::read_to_string(port_file_path()).unwrap();
+        let dir = discovery_dir();
+        let content = std::fs::read_to_string(dir.join("port")).unwrap();
         assert_eq!(content, "7777");
+        // Legacy file also written
+        let legacy = std::fs::read_to_string(legacy_port_file_path()).unwrap();
+        assert_eq!(legacy, "7777");
+        // Metadata file written
+        let meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("metadata.json")).unwrap())
+                .unwrap();
+        assert_eq!(meta["port"], 7777);
+        assert_eq!(meta["pid"], std::process::id());
         remove_port_file();
-        assert!(!port_file_path().exists());
+        assert!(!dir.exists());
+        assert!(!legacy_port_file_path().exists());
     }
 
     // ── parse_bridge_event: dom_interaction ────────────────────────────────
