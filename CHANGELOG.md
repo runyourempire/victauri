@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-10
+
 ### Security
 
 - **victauri-plugin**: Origin guard rewritten with URL parsing — `starts_with("http://localhost")` replaced with `url::Url::parse()` + host comparison, blocking `localhost.evil.com` and `localhost@evil.com` prefix smuggling attacks
@@ -191,7 +193,8 @@ Initial public release.
 - Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
 - Screenshot error handling: `GetDIBits()` return value checked on Windows
 
-[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/runyourempire/victauri/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/runyourempire/victauri/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/runyourempire/victauri/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/runyourempire/victauri/releases/tag/v0.1.0
