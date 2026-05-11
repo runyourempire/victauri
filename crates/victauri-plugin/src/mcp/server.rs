@@ -1,9 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use axum::extract::DefaultBodyLimit;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use tauri::Runtime;
+use tower::limit::ConcurrencyLimitLayer;
 
 use crate::VictauriState;
 use crate::bridge::WebviewBridge;
@@ -93,6 +95,8 @@ pub fn build_app_full(
             "/health",
             axum::routing::get(|| async { axum::Json(serde_json::json!({"status": "ok"})) }),
         )
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .layer(ConcurrencyLimitLayer::new(64))
         .layer(axum::middleware::from_fn(crate::auth::security_headers))
         .layer(axum::middleware::from_fn(crate::auth::origin_guard))
         .layer(axum::middleware::from_fn(crate::auth::dns_rebinding_guard))
@@ -161,13 +165,26 @@ pub async fn start_server_with_options<R: Runtime>(
     let drain_shutdown = state.shutdown_tx.subscribe();
     tokio::spawn(event_drain_loop(drain_state, drain_bridge, drain_shutdown));
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.wait_for(|&v| v).await;
-            remove_port_file();
-            tracing::info!("Victauri MCP server shutting down gracefully");
-        })
-        .await?;
+    let mut shutdown_rx2 = shutdown_rx.clone();
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        let _ = shutdown_rx.wait_for(|&v| v).await;
+        remove_port_file();
+        tracing::info!("Victauri MCP server shutting down gracefully");
+    });
+
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                tracing::error!("Victauri MCP server error: {e}");
+            }
+        }
+        _ = async {
+            let _ = shutdown_rx2.wait_for(|&v| v).await;
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        } => {
+            tracing::warn!("Victauri MCP server shutdown timeout — forcing exit");
+        }
+    }
     Ok(())
 }
 
@@ -195,22 +212,23 @@ fn discovery_dir() -> std::path::PathBuf {
         .join(std::process::id().to_string())
 }
 
-fn legacy_port_file_path() -> std::path::PathBuf {
-    std::env::temp_dir().join("victauri.port")
-}
-
-fn legacy_token_file_path() -> std::path::PathBuf {
-    std::env::temp_dir().join("victauri.token")
-}
-
 fn write_port_file(port: u16) {
     let dir = discovery_dir();
     let _ = std::fs::create_dir_all(&dir);
-    if let Err(e) = std::fs::write(dir.join("port"), port.to_string()) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    let port_path = dir.join("port");
+    if let Err(e) = std::fs::write(&port_path, port.to_string()) {
         tracing::debug!("could not write port file: {e}");
     }
-    // Write legacy file for backward compatibility with v0.1.x clients
-    let _ = std::fs::write(legacy_port_file_path(), port.to_string());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&port_path, std::fs::Permissions::from_mode(0o600));
+    }
     // Write metadata for multi-server discovery
     let metadata = serde_json::json!({
         "pid": std::process::id(),
@@ -218,23 +236,36 @@ fn write_port_file(port: u16) {
         "started_at": chrono::Utc::now().to_rfc3339(),
         "version": env!("CARGO_PKG_VERSION"),
     });
-    let _ = std::fs::write(dir.join("metadata.json"), metadata.to_string());
+    let meta_path = dir.join("metadata.json");
+    let _ = std::fs::write(&meta_path, metadata.to_string());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&meta_path, std::fs::Permissions::from_mode(0o600));
+    }
 }
 
 fn write_token_file(token: &str) {
     let dir = discovery_dir();
     let _ = std::fs::create_dir_all(&dir);
-    if let Err(e) = std::fs::write(dir.join("token"), token) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    let token_path = dir.join("token");
+    if let Err(e) = std::fs::write(&token_path, token) {
         tracing::debug!("could not write token file: {e}");
     }
-    // Write legacy file for backward compatibility
-    let _ = std::fs::write(legacy_token_file_path(), token);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600));
+    }
 }
 
 fn remove_port_file() {
     let _ = std::fs::remove_dir_all(discovery_dir());
-    let _ = std::fs::remove_file(legacy_port_file_path());
-    let _ = std::fs::remove_file(legacy_token_file_path());
 }
 
 /// Parse a single bridge event JSON value into an [`AppEvent`](victauri_core::AppEvent).
@@ -454,9 +485,6 @@ mod tests {
         let dir = discovery_dir();
         let content = std::fs::read_to_string(dir.join("port")).unwrap();
         assert_eq!(content, "7777");
-        // Legacy file also written
-        let legacy = std::fs::read_to_string(legacy_port_file_path()).unwrap();
-        assert_eq!(legacy, "7777");
         // Metadata file written
         let meta: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("metadata.json")).unwrap())
@@ -465,7 +493,6 @@ mod tests {
         assert_eq!(meta["pid"], std::process::id());
         remove_port_file();
         assert!(!dir.exists());
-        assert!(!legacy_port_file_path().exists());
     }
 
     // ── parse_bridge_event: dom_interaction ────────────────────────────────

@@ -52,7 +52,7 @@ impl CallbackMockBridge {
 }
 
 fn extract_eval_id(script: &str) -> Option<String> {
-    let marker = "id: '";
+    let marker = r#"id: ""#;
     let start = script.find(marker)? + marker.len();
     let end = start + 36;
     if end <= script.len() {

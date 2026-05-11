@@ -39,6 +39,7 @@ base64 = "0.22"
 regex = "1"
 url = { workspace = true }
 flate2 = "1"
+tower = { version = "0.5", features = ["limit"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }

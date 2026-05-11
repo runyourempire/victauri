@@ -138,48 +138,37 @@ fn is_allowed_by_profile(profile: PrivacyProfile, tool_or_action: &str) -> bool 
                 | "window.move_to"
                 | "window.set_title"
         ),
-        PrivacyProfile::Observe => !matches!(
+        PrivacyProfile::Observe => matches!(
             tool_or_action,
-            // Everything Test blocks, plus interactions and mutations
-            "eval_js"
-                | "screenshot"
-                | "invoke_command"
-                | "navigate"
-                | "navigate.go_to"
-                | "set_dialog_response"
-                | "navigate.set_dialog_response"
-                | "inject_css"
-                | "css.inject"
-                | "css.remove"
-                | "window.manage"
-                | "window.resize"
-                | "window.move_to"
-                | "window.set_title"
-                // Interactions (blocked in Observe, allowed in Test)
-                | "interact"
-                | "interact.click"
-                | "interact.double_click"
-                | "interact.hover"
-                | "interact.focus"
-                | "interact.scroll_into_view"
-                | "interact.select_option"
-                // Input (blocked in Observe, allowed in Test)
-                | "fill"
-                | "input.fill"
-                | "type_text"
-                | "input.type_text"
-                | "input.press_key"
-                // Storage writes (blocked in Observe, allowed in Test)
-                | "set_storage"
-                | "storage.set"
-                | "delete_storage"
-                | "storage.delete"
-                | "storage.clear"
-                // Recording (blocked in Observe, allowed in Test)
-                | "recording"
-                | "recording.start"
-                | "recording.stop"
-                | "recording.checkpoint"
+            "dom_snapshot"
+                | "find_elements"
+                | "get_registry"
+                | "get_memory_stats"
+                | "get_plugin_info"
+                | "detect_ghost_commands"
+                | "check_ipc_integrity"
+                | "resolve_command"
+                | "logs"
+                | "logs.console"
+                | "logs.network"
+                | "logs.ipc"
+                | "logs.navigation"
+                | "logs.dialogs"
+                | "logs.events"
+                | "logs.slow_ipc"
+                | "inspect"
+                | "inspect.styles"
+                | "inspect.bounds"
+                | "inspect.highlight"
+                | "inspect.clear_highlights"
+                | "inspect.audit_a11y"
+                | "inspect.performance"
+                | "list_windows"
+                | "window"
+                | "window.get_state"
+                | "window.list"
+                | "get_window_state"
+                | "wait_for"
         ),
     }
 }
@@ -447,7 +436,6 @@ mod tests {
         let config = observe_privacy_config();
         assert!(config.is_tool_enabled("dom_snapshot"));
         assert!(config.is_tool_enabled("find_elements"));
-        assert!(config.is_tool_enabled("verify_state"));
         assert!(config.is_tool_enabled("detect_ghost_commands"));
         assert!(config.is_tool_enabled("check_ipc_integrity"));
         assert!(config.is_tool_enabled("get_registry"));
@@ -455,8 +443,16 @@ mod tests {
         assert!(config.is_tool_enabled("get_plugin_info"));
         assert!(config.is_tool_enabled("resolve_command"));
         assert!(config.is_tool_enabled("wait_for"));
-        assert!(config.is_tool_enabled("assert_semantic"));
         assert!(config.is_tool_enabled("window")); // the compound tool itself (get_state, list)
+    }
+
+    #[test]
+    fn observe_blocks_eval_dependent_tools() {
+        let config = observe_privacy_config();
+        // verify_state and assert_semantic depend on eval_js internally,
+        // so they are excluded from the Observe allowlist.
+        assert!(!config.is_tool_enabled("verify_state"));
+        assert!(!config.is_tool_enabled("assert_semantic"));
     }
 
     #[test]
@@ -465,24 +461,36 @@ mod tests {
         // Window read actions
         assert!(config.is_tool_enabled("window.get_state"));
         assert!(config.is_tool_enabled("window.list"));
-        // Storage read actions
-        assert!(config.is_tool_enabled("storage.get"));
-        assert!(config.is_tool_enabled("storage.get_cookies"));
-        // Navigate read actions
-        assert!(config.is_tool_enabled("navigate.go_back"));
-        assert!(config.is_tool_enabled("navigate.get_history"));
-        assert!(config.is_tool_enabled("navigate.get_dialog_log"));
         // Logs (all read-only)
         assert!(config.is_tool_enabled("logs"));
         assert!(config.is_tool_enabled("logs.console"));
         assert!(config.is_tool_enabled("logs.network"));
         assert!(config.is_tool_enabled("logs.ipc"));
-        // CSS read actions
-        assert!(config.is_tool_enabled("css.get_styles"));
-        assert!(config.is_tool_enabled("css.get_computed"));
-        // Inspect (all read-only)
-        assert!(config.is_tool_enabled("inspect.dom_snapshot"));
+        assert!(config.is_tool_enabled("logs.navigation"));
+        assert!(config.is_tool_enabled("logs.dialogs"));
+        assert!(config.is_tool_enabled("logs.events"));
+        assert!(config.is_tool_enabled("logs.slow_ipc"));
+        // Inspect (read-only)
+        assert!(config.is_tool_enabled("inspect"));
+        assert!(config.is_tool_enabled("inspect.styles"));
+        assert!(config.is_tool_enabled("inspect.bounds"));
+        assert!(config.is_tool_enabled("inspect.highlight"));
+        assert!(config.is_tool_enabled("inspect.clear_highlights"));
+        assert!(config.is_tool_enabled("inspect.audit_a11y"));
         assert!(config.is_tool_enabled("inspect.performance"));
+    }
+
+    #[test]
+    fn observe_blocks_unlisted_tools() {
+        let config = observe_privacy_config();
+        // Tools not in the closed-world allowlist are blocked
+        assert!(!config.is_tool_enabled("navigate.get_history"));
+        assert!(!config.is_tool_enabled("navigate.get_dialog_log"));
+        assert!(!config.is_tool_enabled("css.get_styles"));
+        assert!(!config.is_tool_enabled("css.get_computed"));
+        assert!(!config.is_tool_enabled("storage.get"));
+        assert!(!config.is_tool_enabled("storage.get_cookies"));
+        assert!(!config.is_tool_enabled("navigate.go_back"));
     }
 
     #[test]

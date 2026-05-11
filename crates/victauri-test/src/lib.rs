@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![forbid(unsafe_code)]
 //! Integration testing for Tauri apps via the Victauri MCP server.
 //!
 //! Provides [`TestApp`] for managed app lifecycle and [`VictauriClient`] with

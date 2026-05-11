@@ -94,8 +94,13 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
                 ..std::mem::zeroed()
             };
 
-            let row_bytes = (width as usize) * 4;
-            let mut pixels = vec![0u8; row_bytes * height as usize];
+            let row_bytes = (width as usize)
+                .checked_mul(4)
+                .ok_or_else(|| anyhow::anyhow!("screenshot buffer overflow: width={width}"))?;
+            let total = row_bytes
+                .checked_mul(height as usize)
+                .ok_or_else(|| anyhow::anyhow!("screenshot buffer overflow: {width}x{height}"))?;
+            let mut pixels = vec![0u8; total];
             let rows = GetDIBits(
                 hdc_mem,
                 hbmp,
@@ -251,8 +256,13 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
         // Draw the CGImage into a known-format RGBA bitmap context.
         // This normalizes any source pixel format (BGRA, premultiplied, etc.)
         // into straight RGBA that our PNG encoder expects.
-        let bytes_per_row = width * 4;
-        let mut rgba_pixels = vec![0u8; bytes_per_row * height];
+        let bytes_per_row = width
+            .checked_mul(4)
+            .ok_or_else(|| anyhow::anyhow!("screenshot buffer overflow: width={width}"))?;
+        let total = bytes_per_row
+            .checked_mul(height)
+            .ok_or_else(|| anyhow::anyhow!("screenshot buffer overflow: {width}x{height}"))?;
+        let mut rgba_pixels = vec![0u8; total];
 
         let color_space = CGColorSpaceCreateDeviceRGB();
         if color_space.is_null() {
@@ -469,7 +479,11 @@ fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
 fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> anyhow::Result<()> {
     use std::io::Write;
 
-    out.write_all(&(data.len() as u32).to_be_bytes())?;
+    let len: u32 = data
+        .len()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("PNG chunk too large: {} bytes", data.len()))?;
+    out.write_all(&len.to_be_bytes())?;
     out.write_all(chunk_type)?;
     out.write_all(data)?;
 

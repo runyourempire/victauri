@@ -331,13 +331,6 @@ fn discover_port() -> u16 {
     if let Some(port) = crate::discovery::scan_discovery_dirs_for_port() {
         return port;
     }
-    // Legacy fallback
-    let path = std::env::temp_dir().join("victauri.port");
-    if let Ok(contents) = std::fs::read_to_string(&path)
-        && let Ok(port) = contents.trim().parse::<u16>()
-    {
-        return port;
-    }
     7373
 }
 
@@ -348,9 +341,5 @@ fn discover_token() -> Option<String> {
     if let Some(token) = crate::discovery::scan_discovery_dirs_for_token() {
         return Some(token);
     }
-    // Legacy fallback
-    let path = std::env::temp_dir().join("victauri.token");
-    let token = std::fs::read_to_string(&path).ok()?;
-    let token = token.trim().to_string();
-    if token.is_empty() { None } else { Some(token) }
+    None
 }

@@ -8,6 +8,17 @@ use url::Url;
 
 const BEARER_PREFIX_LEN: usize = "Bearer ".len();
 
+/// Constant-time byte comparison to prevent timing side-channel attacks on token validation.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
 /// Generate a random `UUID` v4 token suitable for Bearer authentication.
 #[must_use]
 pub fn generate_token() -> String {
@@ -18,7 +29,7 @@ pub fn generate_token() -> String {
 #[derive(Clone)]
 pub struct AuthState {
     /// The expected Bearer token, or `None` if authentication is disabled.
-    pub token: Option<String>,
+    pub(crate) token: Option<String>,
 }
 
 /// Axum middleware that validates the `Authorization: Bearer <token>` header against [`AuthState`].
@@ -49,8 +60,13 @@ pub async fn require_auth(
         });
 
     match provided {
-        Some(ref token) if token == expected => Ok(next.run(request).await),
-        _ => Err(StatusCode::UNAUTHORIZED),
+        Some(ref token) if constant_time_eq(token.as_bytes(), expected.as_bytes()) => {
+            Ok(next.run(request).await)
+        }
+        _ => {
+            tracing::warn!("Victauri: rejected request — invalid or missing auth token");
+            Err(StatusCode::UNAUTHORIZED)
+        }
     }
 }
 
@@ -173,11 +189,16 @@ pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Respons
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let host_name = if host.starts_with('[') {
+        // Bracketed IPv6: [::1] or [::1]:7373
         host.split(']').next().map_or(host, |s| &s[1..])
+    } else if host.contains("::") {
+        // Bare IPv6 (no brackets): ::1
+        host
     } else {
+        // IPv4 or hostname, strip port: 127.0.0.1:7373 → 127.0.0.1
         host.split(':').next().unwrap_or(host)
     };
-    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1" | "");
+    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1");
     if !is_allowed {
         tracing::warn!("DNS rebinding attempt blocked: Host={host}");
         return Err(StatusCode::FORBIDDEN);
@@ -233,6 +254,14 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
     headers.insert(
         axum::http::header::HeaderName::from_static("x-frame-options"),
         axum::http::HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("null"),
+    );
+    headers.insert(
+        axum::http::header::HeaderName::from_static("content-security-policy"),
+        axum::http::HeaderValue::from_static("default-src 'none'"),
     );
     response
 }
@@ -374,10 +403,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dns_rebinding_allows_empty_host() {
+    async fn dns_rebinding_blocks_empty_host() {
         let app = dns_rebinding_router();
         let resp = app.oneshot(dns_request(None)).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
@@ -715,5 +744,63 @@ mod tests {
         assert!(!is_allowed_origin("not-a-url"));
         assert!(!is_allowed_origin(""));
         assert!(!is_allowed_origin("ftp://localhost"));
+    }
+
+    // ── Constant-time comparison tests ───────────────────────────────────
+
+    #[test]
+    fn constant_time_eq_equal_strings() {
+        assert!(constant_time_eq(b"secret-token-123", b"secret-token-123"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_strings() {
+        assert!(!constant_time_eq(b"secret-token-123", b"wrong-token-9999"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_lengths() {
+        assert!(!constant_time_eq(b"short", b"longer-string"));
+    }
+
+    #[test]
+    fn constant_time_eq_empty_strings() {
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn constant_time_eq_one_empty() {
+        assert!(!constant_time_eq(b"", b"notempty"));
+        assert!(!constant_time_eq(b"notempty", b""));
+    }
+
+    #[test]
+    fn constant_time_eq_single_bit_difference() {
+        // 'A' = 0x41, 'B' = 0x42 — differ by one bit
+        assert!(!constant_time_eq(b"A", b"B"));
+    }
+
+    // ── Security headers: CORS + CSP tests ───────────────────────────────
+
+    #[tokio::test]
+    async fn security_headers_cors_deny() {
+        let app = security_headers_router();
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.headers().get("access-control-allow-origin").unwrap(),
+            "null"
+        );
+    }
+
+    #[tokio::test]
+    async fn security_headers_csp() {
+        let app = security_headers_router();
+        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "default-src 'none'"
+        );
     }
 }

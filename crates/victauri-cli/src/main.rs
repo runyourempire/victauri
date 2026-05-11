@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! CLI for Victauri — scaffold tests, diagnose running apps, and record sessions.
 
 use std::path::{Path, PathBuf};

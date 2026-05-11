@@ -245,8 +245,7 @@ impl VictauriClient {
     /// Discovery priority:
     /// 1. `VICTAURI_PORT` / `VICTAURI_AUTH_TOKEN` env vars (explicit override)
     /// 2. Per-process discovery directory: `<temp>/victauri/<pid>/port`
-    /// 3. Legacy single-file: `<temp>/victauri.port` (v0.1.x compat)
-    /// 4. Default: port 7373, no auth
+    /// 3. Default: port 7373, no auth
     ///
     /// # Errors
     ///
@@ -269,13 +268,6 @@ impl VictauriClient {
         if let Some(port) = scan_discovery_dirs_for_port() {
             return port;
         }
-        // Fall back to legacy single-file discovery
-        let path = std::env::temp_dir().join("victauri.port");
-        if let Ok(contents) = std::fs::read_to_string(&path)
-            && let Ok(port) = contents.trim().parse::<u16>()
-        {
-            return port;
-        }
         7373
     }
 
@@ -287,11 +279,7 @@ impl VictauriClient {
         if let Some(token) = scan_discovery_dirs_for_token() {
             return Some(token);
         }
-        // Legacy fallback
-        let path = std::env::temp_dir().join("victauri.token");
-        let token = std::fs::read_to_string(&path).ok()?;
-        let token = token.trim().to_string();
-        if token.is_empty() { None } else { Some(token) }
+        None
     }
 
     /// Check whether the server is still reachable.

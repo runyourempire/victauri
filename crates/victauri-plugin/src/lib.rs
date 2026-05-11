@@ -552,7 +552,9 @@ impl VictauriBuilder {
 
                     if let Some(ref token) = auth_token {
                         tracing::info!(
-                            "Victauri MCP server auth enabled — token: {token}"
+                            "Victauri MCP server auth enabled — token: {}…{}",
+                            &token[..8],
+                            &token[token.len().saturating_sub(4)..]
                         );
                     } else {
                         tracing::warn!(

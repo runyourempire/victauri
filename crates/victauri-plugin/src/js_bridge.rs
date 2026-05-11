@@ -111,6 +111,8 @@ const INIT_SCRIPT_BODY: &str = r#"
     var interactionLog = [];
     var CAP_INTERACTION = 500;
     var ipcWaiters = [];
+    var longTasks = [];
+    var listenerCount = 0;
 
     function checkActionable(el) {
         if (!el || !el.isConnected) return { error: 'element is detached from DOM', hint: 'RETRY_LATER' };
@@ -176,6 +178,7 @@ const INIT_SCRIPT_BODY: &str = r#"
 
     window.__VICTAURI__ = {
         version: '0.3.0',
+        _captureIpcBodies: true,
 
         // ── DOM ──────────────────────────────────────────────────────────────
 
@@ -814,7 +817,11 @@ const INIT_SCRIPT_BODY: &str = r#"
             for (var i = 0; i < inputs.length; i++) {
                 var inp = inputs[i];
                 if (inp.type === 'hidden') continue;
-                var hasLabel = inp.id && document.querySelector('label[for="' + inp.id + '"]');
+                var hasLabel = false;
+                if (inp.id) {
+                    try { hasLabel = !!document.querySelector('label[for=\"' + CSS.escape(inp.id) + '\"]'); }
+                    catch(e) { /* malformed id — skip */ }
+                }
                 var hasAria = inp.getAttribute('aria-label') || inp.getAttribute('aria-labelledby');
                 var hasTitle = inp.title;
                 var hasPlaceholder = inp.placeholder;
@@ -1005,11 +1012,11 @@ const INIT_SCRIPT_BODY: &str = r#"
             }
 
             // Long tasks (if PerformanceObserver captured any)
-            if (window.__VICTAURI__._longTasks) {
+            if (longTasks.length > 0) {
                 result.long_tasks = {
-                    count: window.__VICTAURI__._longTasks.length,
-                    total_ms: Math.round(window.__VICTAURI__._longTasks.reduce(function(s, t) { return s + t.duration; }, 0)),
-                    worst_ms: window.__VICTAURI__._longTasks.length > 0 ? Math.round(Math.max.apply(null, window.__VICTAURI__._longTasks.map(function(t) { return t.duration; }))) : 0,
+                    count: longTasks.length,
+                    total_ms: Math.round(longTasks.reduce(function(s, t) { return s + t.duration; }, 0)),
+                    worst_ms: Math.round(Math.max.apply(null, longTasks.map(function(t) { return t.duration; }))),
                 };
             }
 
@@ -1017,12 +1024,21 @@ const INIT_SCRIPT_BODY: &str = r#"
             result.dom = {
                 elements: document.querySelectorAll('*').length,
                 max_depth: (function() { var d = 0; var walk = function(el, depth) { if (depth > d) d = depth; for (var i = 0; i < el.children.length && i < 5; i++) walk(el.children[i], depth + 1); }; walk(document.body, 0); return d; })(),
-                event_listeners: window.__VICTAURI__._listenerCount || 0,
+                event_listeners: listenerCount,
             };
 
             return result;
         },
     };
+
+    try {
+        Object.freeze(window.__VICTAURI__);
+        Object.defineProperty(window, '__VICTAURI__', {
+            value: window.__VICTAURI__,
+            configurable: false,
+            writable: false,
+        });
+    } catch(e) {}
 
     // ── Accessibility Helpers ────────────────────────────────────────────────
 
@@ -1061,12 +1077,11 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Long Task Observer ──────────────────────────────────────────────────
 
     try {
-        window.__VICTAURI__._longTasks = [];
         var ltObserver = new PerformanceObserver(function(list) {
             var entries = list.getEntries();
             for (var i = 0; i < entries.length; i++) {
-                window.__VICTAURI__._longTasks.push({ duration: entries[i].duration, startTime: entries[i].startTime });
-                if (window.__VICTAURI__._longTasks.length > CAP_LONG_TASKS) window.__VICTAURI__._longTasks.shift();
+                longTasks.push({ duration: entries[i].duration, startTime: entries[i].startTime });
+                if (longTasks.length > CAP_LONG_TASKS) longTasks.shift();
             }
         });
         ltObserver.observe({ type: 'longtask', buffered: true });
@@ -1075,17 +1090,14 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Event Listener Counter ──────────────────────────────────────────────
 
     (function() {
-        var count = 0;
         var origAdd = EventTarget.prototype.addEventListener;
         var origRemove = EventTarget.prototype.removeEventListener;
         EventTarget.prototype.addEventListener = function() {
-            count++;
-            window.__VICTAURI__._listenerCount = count;
+            listenerCount++;
             return origAdd.apply(this, arguments);
         };
         EventTarget.prototype.removeEventListener = function() {
-            if (count > 0) count--;
-            window.__VICTAURI__._listenerCount = count;
+            if (listenerCount > 0) listenerCount--;
             return origRemove.apply(this, arguments);
         };
     })();
@@ -1118,7 +1130,7 @@ const INIT_SCRIPT_BODY: &str = r#"
             role: role,
             name: name,
             text: getDirectText(node),
-            value: node.value || null,
+            value: (node.tagName === 'INPUT' && (node.getAttribute('type') || '').toLowerCase() === 'password') ? '[REDACTED]' : (node.value || null),
             enabled: !node.disabled,
             visible: true,
             focusable: node.tabIndex >= 0 || ['INPUT','BUTTON','SELECT','TEXTAREA','A'].indexOf(node.tagName) !== -1,
@@ -1188,7 +1200,10 @@ const INIT_SCRIPT_BODY: &str = r#"
         }
 
         if (node.disabled) line += ' [disabled]';
-        if (node.value) line += ' value=' + JSON.stringify(node.value.substring(0, 40));
+        if (node.value) {
+            var isPassword = node.tagName === 'INPUT' && (node.getAttribute('type') || '').toLowerCase() === 'password';
+            line += ' value=' + JSON.stringify(isPassword ? '[REDACTED]' : node.value.substring(0, 40));
+        }
 
         var testId = node.getAttribute('data-testid');
         if (testId) line += ' @' + testId;
@@ -1252,10 +1267,13 @@ const INIT_SCRIPT_BODY: &str = r#"
         error: console.error, info: console.info, debug: console.debug
     };
 
+    var CTRL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x1B]/g;
+
     function hookConsole(level) {
         console[level] = function() {
             var args = Array.prototype.slice.call(arguments);
-            consoleLogs.push({ level: level, message: args.map(String).join(' '), timestamp: Date.now() });
+            var msg = args.map(String).join(' ').replace(CTRL_RE, '');
+            consoleLogs.push({ level: level, message: msg, timestamp: Date.now() });
             if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
             originalConsole[level].apply(console, args);
         };
@@ -1272,13 +1290,13 @@ const INIT_SCRIPT_BODY: &str = r#"
     window.addEventListener('error', function(e) {
         var msg = e.message || 'Unknown error';
         if (e.filename) msg += ' at ' + e.filename + ':' + e.lineno + ':' + e.colno;
-        consoleLogs.push({ level: 'error', message: '[uncaught] ' + msg, timestamp: Date.now() });
+        consoleLogs.push({ level: 'error', message: ('[uncaught] ' + msg).replace(CTRL_RE, ''), timestamp: Date.now() });
         if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
     });
 
     window.addEventListener('unhandledrejection', function(e) {
         var msg = e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled promise rejection';
-        consoleLogs.push({ level: 'error', message: '[unhandled rejection] ' + msg, timestamp: Date.now() });
+        consoleLogs.push({ level: 'error', message: ('[unhandled rejection] ' + msg).replace(CTRL_RE, ''), timestamp: Date.now() });
         if (consoleLogs.length > CAP_CONSOLE) consoleLogs.shift();
     });
 
@@ -1332,7 +1350,8 @@ const INIT_SCRIPT_BODY: &str = r#"
         if (tag === 'select') {
             pushInteraction('select', el, el.value);
         } else if (tag === 'input' || tag === 'textarea') {
-            pushInteraction('fill', el, el.value);
+            var isPassword = tag === 'input' && el.type === 'password';
+            pushInteraction('fill', el, isPassword ? '[REDACTED]' : el.value);
         }
     }, true);
 
@@ -1391,7 +1410,7 @@ const INIT_SCRIPT_BODY: &str = r#"
                 var isIpc = url.indexOf('http://ipc.localhost/') === 0;
                 var entry = { id: id, method: method.toUpperCase(), url: url, timestamp: Date.now(), status: 'pending', duration_ms: null };
 
-                if (isIpc && init && init.body) {
+                if (isIpc && init && init.body && window.__VICTAURI__._captureIpcBodies !== false) {
                     try {
                         var bodyStr = typeof init.body === 'string' ? init.body : null;
                         if (bodyStr) {
@@ -1410,15 +1429,22 @@ const INIT_SCRIPT_BODY: &str = r#"
                     entry.duration_ms = Date.now() - entry.timestamp;
 
                     if (isIpc) {
-                        var cloned = response.clone();
-                        cloned.text().then(function(text) {
-                            try { entry.response_body = JSON.parse(text); } catch(e) { entry.response_body = text; }
-                        }).catch(function() {}).then(function() {
+                        if (window.__VICTAURI__._captureIpcBodies !== false) {
+                            var cloned = response.clone();
+                            cloned.text().then(function(text) {
+                                try { entry.response_body = JSON.parse(text); } catch(e) { entry.response_body = text; }
+                            }).catch(function() {}).then(function() {
+                                for (var w = ipcWaiters.length - 1; w >= 0; w--) {
+                                    ipcWaiters[w]();
+                                }
+                                ipcWaiters.length = 0;
+                            });
+                        } else {
                             for (var w = ipcWaiters.length - 1; w >= 0; w--) {
                                 ipcWaiters[w]();
                             }
                             ipcWaiters.length = 0;
-                        });
+                        }
                     }
 
                     return response;

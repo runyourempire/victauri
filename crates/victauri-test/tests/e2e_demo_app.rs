@@ -6,7 +6,7 @@
 //! Then run with:
 //!   `VICTAURI_E2E=1` cargo test -p victauri-test --test `e2e_demo_app`
 //!
-//! The tests connect via auto-discovery (victauri.port file) or default port 7373.
+//! The tests connect via auto-discovery (per-process discovery directory) or default port 7373.
 
 use serde_json::{Value, json};
 use victauri_test::VictauriClient;

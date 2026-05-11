@@ -47,6 +47,9 @@ pub use window_params::*;
 /// growth of the `pending_evals` map if callbacks are never resolved.
 pub(crate) const MAX_PENDING_EVALS: usize = 100;
 
+/// Maximum length of JavaScript code accepted by the `eval_js` tool (1 MB).
+const MAX_EVAL_CODE_LEN: usize = 1_000_000;
+
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
@@ -78,6 +81,9 @@ impl VictauriMcpHandler {
     async fn eval_js(&self, Parameters(params): Parameters<EvalJsParams>) -> CallToolResult {
         if !self.state.privacy.is_tool_enabled("eval_js") {
             return tool_disabled("eval_js");
+        }
+        if params.code.len() > MAX_EVAL_CODE_LEN {
+            return tool_error("code exceeds maximum length (1 MB)");
         }
         match self
             .eval_with_return(&params.code, params.webview_label.as_deref())
@@ -231,6 +237,9 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<VerifyStateParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("eval_js") {
+            return tool_disabled("verify_state requires eval_js capability");
+        }
         let code = format!("return ({})", params.frontend_expr);
         let frontend_json = match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -341,7 +350,7 @@ impl VictauriMcpHandler {
             .value
             .as_ref()
             .map_or_else(|| "null".to_string(), |v| js_string(v));
-        let timeout_ms = params.timeout_ms.unwrap_or(10000);
+        let timeout_ms = params.timeout_ms.unwrap_or(10_000).min(60_000);
         let poll = params.poll_ms.unwrap_or(200);
         let code = format!(
             "return window.__VICTAURI__?.waitFor({{ condition: {}, value: {value}, timeout_ms: {timeout_ms}, poll_ms: {poll} }})",
@@ -370,6 +379,9 @@ impl VictauriMcpHandler {
         &self,
         Parameters(params): Parameters<SemanticAssertParams>,
     ) -> CallToolResult {
+        if !self.state.privacy.is_tool_enabled("eval_js") {
+            return tool_disabled("assert_semantic requires eval_js capability");
+        }
         let code = format!("return ({})", params.expression);
         let actual_json = match self
             .eval_with_return(&code, params.webview_label.as_deref())
@@ -531,6 +543,9 @@ impl VictauriMcpHandler {
         }
         match params.action {
             InteractAction::Click => {
+                if !self.state.privacy.is_tool_enabled("interact.click") {
+                    return tool_disabled("interact.click");
+                }
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "click");
                 };
@@ -539,6 +554,9 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::DoubleClick => {
+                if !self.state.privacy.is_tool_enabled("interact.double_click") {
+                    return tool_disabled("interact.double_click");
+                }
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "double_click");
                 };
@@ -550,6 +568,9 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::Hover => {
+                if !self.state.privacy.is_tool_enabled("interact.hover") {
+                    return tool_disabled("interact.hover");
+                }
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "hover");
                 };
@@ -558,6 +579,9 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::Focus => {
+                if !self.state.privacy.is_tool_enabled("interact.focus") {
+                    return tool_disabled("interact.focus");
+                }
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "focus");
                 };
@@ -569,6 +593,13 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::ScrollIntoView => {
+                if !self
+                    .state
+                    .privacy
+                    .is_tool_enabled("interact.scroll_into_view")
+                {
+                    return tool_disabled("interact.scroll_into_view");
+                }
                 let ref_arg = params
                     .ref_id
                     .as_ref()
@@ -580,6 +611,9 @@ impl VictauriMcpHandler {
                     .await
             }
             InteractAction::SelectOption => {
+                if !self.state.privacy.is_tool_enabled("interact.select_option") {
+                    return tool_disabled("interact.select_option");
+                }
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "select_option");
                 };
@@ -645,6 +679,9 @@ impl VictauriMcpHandler {
                     .await
             }
             InputAction::PressKey => {
+                if !self.state.privacy.is_tool_enabled("input.press_key") {
+                    return tool_disabled("input.press_key");
+                }
                 let Some(key) = &params.key else {
                     return missing_param("key", "press_key");
                 };
@@ -904,6 +941,7 @@ impl VictauriMcpHandler {
         )
     )]
     async fn recording(&self, Parameters(params): Parameters<RecordingParams>) -> CallToolResult {
+        const MAX_SESSION_JSON: usize = 10 * 1024 * 1024;
         self.track_tool_call();
         if !self.state.privacy.is_tool_enabled("recording") {
             return tool_disabled("recording");
@@ -988,6 +1026,9 @@ impl VictauriMcpHandler {
                 let Some(session_json) = &params.session_json else {
                     return missing_param("session_json", "import");
                 };
+                if session_json.len() > MAX_SESSION_JSON {
+                    return tool_error("session JSON exceeds maximum size (10 MB)");
+                }
                 let session: victauri_core::RecordedSession =
                     match serde_json::from_str(session_json) {
                         Ok(s) => s,
@@ -1120,6 +1161,9 @@ impl VictauriMcpHandler {
                     .await
             }
             CssAction::Remove => {
+                if !self.state.privacy.is_tool_enabled("css.remove") {
+                    return tool_disabled("css.remove");
+                }
                 self.eval_bridge(
                     "return window.__VICTAURI__?.removeInjectedCss()",
                     params.webview_label.as_deref(),
@@ -1319,18 +1363,19 @@ impl VictauriMcpHandler {
             code.to_string()
         };
 
+        let id_js = js_string(&id);
         let inject = format!(
             r"
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
                     await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
-                        id: '{id}',
+                        id: {id_js},
                         result: JSON.stringify(__result)
                     }});
                 }} catch (e) {{
                     await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
-                        id: '{id}',
+                        id: {id_js},
                         result: JSON.stringify({{ __error: e.message }})
                     }});
                 }}
@@ -1545,6 +1590,12 @@ impl ServerHandler for VictauriMcpHandler {
                     None,
                 ));
             }
+        };
+
+        let json = if self.state.privacy.redaction_enabled {
+            self.state.privacy.redact_output(&json)
+        } else {
+            json
         };
 
         Ok(ReadResourceResult::new(vec![ResourceContents::text(

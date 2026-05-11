@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Procedural macros for Victauri — currently provides the `#[inspectable]` attribute
 //! for auto-registering Tauri commands with the MCP introspection layer.
 

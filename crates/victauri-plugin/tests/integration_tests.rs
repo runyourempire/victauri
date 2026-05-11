@@ -58,8 +58,8 @@ impl CallbackMockBridge {
 }
 
 fn extract_eval_id(script: &str) -> Option<String> {
-    // The injected JS contains: id: '<uuid>'
-    let marker = "id: '";
+    // The injected JS contains: id: "uuid" (json-escaped via js_string)
+    let marker = r#"id: ""#;
     let start = script.find(marker)? + marker.len();
     let end = start + 36; // UUID is always 36 chars
     if end <= script.len() {
@@ -1939,7 +1939,7 @@ async fn rate_limiter_returns_429_on_burst() {
 
 #[test]
 fn extract_eval_id_parses_uuid() {
-    let script = r"(async () => { id: '550e8400-e29b-41d4-a716-446655440000', result: ... })();";
+    let script = r#"(async () => { id: "550e8400-e29b-41d4-a716-446655440000", result: ... })();"#;
     assert_eq!(
         extract_eval_id(script),
         Some("550e8400-e29b-41d4-a716-446655440000".to_string())

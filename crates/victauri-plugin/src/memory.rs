@@ -43,15 +43,42 @@ fn process_memory_windows() -> serde_json::Value {
 fn process_memory_fallback() -> serde_json::Value {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
-            let fields: Vec<&str> = statm.split_whitespace().collect();
-            if fields.len() >= 2 {
-                let page_size = 4096_u64;
-                let total_pages: u64 = fields[0].parse().unwrap_or(0);
-                let resident_pages: u64 = fields[1].parse().unwrap_or(0);
+        // Read from /proc/self/status which reports in kB, avoiding page-size assumptions.
+        // (statm reports in pages, and the page size varies by architecture — 4 kB on x86_64
+        // but potentially 16 kB or 64 kB on aarch64.)
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+            let mut vm_rss_kb: u64 = 0;
+            let mut vm_hwm_kb: u64 = 0;
+            let mut vm_size_kb: u64 = 0;
+            for line in status.lines() {
+                if let Some(v) = line.strip_prefix("VmRSS:") {
+                    vm_rss_kb = v
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(0);
+                } else if let Some(v) = line.strip_prefix("VmHWM:") {
+                    vm_hwm_kb = v
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(0);
+                } else if let Some(v) = line.strip_prefix("VmSize:") {
+                    vm_size_kb = v
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(0);
+                }
+            }
+            if vm_rss_kb > 0 {
                 return serde_json::json!({
-                    "virtual_bytes": total_pages * page_size,
-                    "resident_bytes": resident_pages * page_size,
+                    "virtual_bytes": vm_size_kb * 1024,
+                    "resident_bytes": vm_rss_kb * 1024,
+                    "peak_resident_bytes": vm_hwm_kb * 1024,
                 });
             }
         }

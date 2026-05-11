@@ -27,4 +27,4 @@ data/
 
 # Bridge test dependencies (npm)
 **/node_modules/
-**/package-lock.json
+# Keep package-lock.json committed for reproducible CI builds

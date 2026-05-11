@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![forbid(unsafe_code)]
 //! Core types and protocol for Victauri — full-stack introspection for Tauri apps via MCP.
 //!
 //! This crate provides the shared type system used by all Victauri crates.

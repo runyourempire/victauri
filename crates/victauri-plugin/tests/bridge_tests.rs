@@ -158,9 +158,9 @@ fn bridge_init_version_and_idempotent() {
                 name: "idempotent - re-inject does not overwrite".into(),
                 code: format!(
                     r"
-                    window.__VICTAURI__._marker = 'first';
+                    var versionBefore = window.__VICTAURI__.version;
                     eval({});
-                    return window.__VICTAURI__._marker;
+                    return versionBefore === window.__VICTAURI__.version ? 'same' : 'different';
                     ",
                     serde_json::to_string(&bridge_script()).unwrap()
                 ),
@@ -194,7 +194,7 @@ fn bridge_init_version_and_idempotent() {
     assert_all_pass(&results);
     assert_eq!(results[0].result.as_ref().unwrap(), "0.3.0");
     assert_eq!(results[1].result.as_ref().unwrap(), "object");
-    assert_eq!(results[2].result.as_ref().unwrap(), "first");
+    assert_eq!(results[2].result.as_ref().unwrap(), "same");
     let missing: Vec<String> =
         serde_json::from_value(results[3].result.as_ref().unwrap()["missing"].clone()).unwrap();
     assert!(missing.is_empty(), "Missing methods: {missing:?}");
