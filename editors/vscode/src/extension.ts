@@ -26,7 +26,14 @@ export function activate(context: vscode.ExtensionContext): void {
   updateStatusBar();
   statusBarItem.show();
 
-  client.onDidChangeState(() => updateStatusBar());
+  client.onDidChangeState(() => {
+    updateStatusBar();
+    vscode.commands.executeCommand(
+      "setContext",
+      "victauri.connected",
+      client.connectionState === "connected"
+    );
+  });
 
   // Tree views
   const appStateProvider = new AppStateProvider(client);

@@ -27,6 +27,11 @@
   "activationEvents": [
     "workspaceContains:**/tauri.conf.json"
   ],
+  "icon": "media/icon.svg",
+  "galleryBanner": {
+    "color": "#1a1a2e",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -58,27 +63,32 @@
       {
         "command": "victauri.connect",
         "title": "Connect to Tauri App",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(plug)"
       },
       {
         "command": "victauri.disconnect",
         "title": "Disconnect",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(debug-disconnect)"
       },
       {
         "command": "victauri.screenshot",
         "title": "Take Screenshot",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(device-camera)"
       },
       {
         "command": "victauri.evalJs",
         "title": "Evaluate JavaScript",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(terminal)"
       },
       {
         "command": "victauri.smokeTest",
-        "title": "Run Smoke Test",
-        "category": "Victauri"
+        "title": "Run Diagnostics",
+        "category": "Victauri",
+        "icon": "$(beaker)"
       },
       {
         "command": "victauri.refreshAll",
@@ -89,17 +99,37 @@
       {
         "command": "victauri.copyRefId",
         "title": "Copy Ref ID",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(clippy)"
       },
       {
         "command": "victauri.generateTest",
         "title": "Generate Test for Element",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(beaker)"
       },
       {
         "command": "victauri.generateTestForCommand",
         "title": "Generate Test for Command",
-        "category": "Victauri"
+        "category": "Victauri",
+        "icon": "$(beaker)"
+      }
+    ],
+    "viewsWelcome": [
+      {
+        "view": "victauri.appState",
+        "contents": "No Tauri app connected.\n[Connect](command:victauri.connect)\n\nMake sure your Tauri app is running with victauri-plugin enabled.",
+        "when": "!victauri.connected"
+      },
+      {
+        "view": "victauri.domExplorer",
+        "contents": "Connect to a Tauri app to explore the DOM tree.\n[Connect](command:victauri.connect)",
+        "when": "!victauri.connected"
+      },
+      {
+        "view": "victauri.ipcLog",
+        "contents": "Connect to a Tauri app to see IPC traffic.\n[Connect](command:victauri.connect)",
+        "when": "!victauri.connected"
       }
     ],
     "menus": {
