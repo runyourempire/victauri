@@ -1060,6 +1060,17 @@ async fn ci_health_check() {
 
 ---
 
+## Documentation
+
+- [**Testing Tauri Apps**](docs/testing-tauri-apps.md) — comprehensive guide covering every testing approach (unit tests, frontend mocks, WebDriver, Playwright, Victauri)
+- [**Compatibility**](docs/compatibility.md) — CSP requirements, IPC pattern support, multi-window handling, tested apps
+- [**Agent Session Example**](examples/agent-session.md) — real AI agent session transcript
+- [**Demo App Tests**](examples/demo-app/tests/integration.rs) — 20 integration tests demonstrating every pattern
+- [**Migration Guide**](MIGRATION.md) — upgrading between versions
+- [**Contributing**](CONTRIBUTING.md) — how to contribute
+
+---
+
 ## What It Doesn't Do
 
 - **No production use** — debug builds only, by design
