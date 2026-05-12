@@ -700,7 +700,7 @@ Exit code 0 if all pass, 1 if any fail. Ideal for CI gates.
 
 ## MCP Tools
 
-Victauri exposes 23 MCP tools — 9 compound tools (grouped actions) and 14 standalone:
+Victauri exposes 24 MCP tools — 9 compound tools (grouped actions) and 15 standalone:
 
 ### Compound tools
 
@@ -734,6 +734,7 @@ Victauri exposes 23 MCP tools — 9 compound tools (grouped actions) and 14 stan
 | `get_registry` | List all `#[inspectable]` command schemas |
 | `get_memory_stats` | Real-time OS process memory statistics |
 | `get_plugin_info` | Plugin config: port, tools, privacy, version |
+| `get_diagnostics` | Detect edge cases: shadow DOM, service workers, iframes, large DOM |
 
 ---
 

@@ -123,3 +123,10 @@ pub struct FindElementsParams {
     /// Target webview label.
     pub webview_label: Option<String>,
 }
+
+/// Parameters for the `get_diagnostics` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DiagnosticsParams {
+    /// Target a specific webview window by label.
+    pub webview_label: Option<String>,
+}

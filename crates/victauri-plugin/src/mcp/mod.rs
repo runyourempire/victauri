@@ -35,7 +35,8 @@ use helpers::{
 pub use backend_params::*;
 pub use compound_params::*;
 pub use other_params::{
-    FindElementsParams, ResolveCommandParams, SemanticAssertParams, WaitCondition, WaitForParams,
+    DiagnosticsParams, FindElementsParams, ResolveCommandParams, SemanticAssertParams,
+    WaitCondition, WaitForParams,
 };
 pub use server::*;
 pub use verification_params::*;
@@ -546,6 +547,26 @@ impl VictauriMcpHandler {
             "uptime_secs": self.state.started_at.elapsed().as_secs(),
         });
         json_result(&result)
+    }
+
+    #[tool(
+        description = "Run environment diagnostics: detect service workers (break IPC interception), closed shadow DOM (invisible to snapshots), iframes (bridge absent), large DOM warnings, and CSP status. Call this first when connecting to an unfamiliar app.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn get_diagnostics(
+        &self,
+        Parameters(params): Parameters<DiagnosticsParams>,
+    ) -> CallToolResult {
+        self.eval_bridge(
+            "return window.__VICTAURI__?.getDiagnostics()",
+            params.webview_label.as_deref(),
+        )
+        .await
     }
 
     // ── Compound Tools ──────────────────────────────────────────────────────
@@ -1385,6 +1406,10 @@ impl VictauriMcpHandler {
             }
             "get_memory_stats" => self.get_memory_stats().await,
             "get_plugin_info" => self.get_plugin_info().await,
+            "get_diagnostics" => {
+                let p: DiagnosticsParams = Self::parse_args(args)?;
+                self.get_diagnostics(Parameters(p)).await
+            }
             "interact" => {
                 let p: InteractParams = Self::parse_args(args)?;
                 self.interact(Parameters(p)).await

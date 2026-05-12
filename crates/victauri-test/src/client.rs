@@ -717,6 +717,18 @@ impl VictauriClient {
         self.call_tool("get_plugin_info", json!({})).await
     }
 
+    /// Run environment diagnostics to detect potential compatibility issues.
+    ///
+    /// Checks for service workers, closed shadow DOM, iframes, large DOM,
+    /// and CSP status. Returns warnings and environment info.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn get_diagnostics(&mut self) -> Result<Value, TestError> {
+        self.call_tool("get_diagnostics", json!({})).await
+    }
+
     /// Wait for a condition to be met, polling at an interval.
     ///
     /// Conditions: `text`, `text_gone`, `selector`, `selector_gone`, `url`,

@@ -1106,6 +1106,81 @@ const INIT_SCRIPT_BODY: &str = r#"
 
             return result;
         },
+
+        getDiagnostics: function() {
+            var diag = { warnings: [], info: {} };
+
+            // Service worker detection
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                diag.warnings.push({
+                    id: 'service-worker-active',
+                    severity: 'high',
+                    message: 'Active service worker detected — may intercept fetch calls to ipc.localhost, causing IPC log gaps',
+                    details: { scope: navigator.serviceWorker.controller.scriptURL }
+                });
+            }
+
+            // Closed shadow DOM detection
+            var allEls = document.querySelectorAll('*');
+            var closedShadowCount = 0;
+            for (var i = 0; i < allEls.length; i++) {
+                if (allEls[i].attachShadow && !allEls[i].shadowRoot) {
+                    var tagName = allEls[i].tagName.toLowerCase();
+                    if (tagName.includes('-')) closedShadowCount++;
+                }
+            }
+            if (closedShadowCount > 0) {
+                diag.warnings.push({
+                    id: 'closed-shadow-dom',
+                    severity: 'medium',
+                    message: closedShadowCount + ' custom element(s) may use closed shadow DOM — their contents are invisible to dom_snapshot',
+                    details: { count: closedShadowCount }
+                });
+            }
+
+            // iframe detection
+            var iframes = document.querySelectorAll('iframe');
+            if (iframes.length > 0) {
+                diag.warnings.push({
+                    id: 'iframes-present',
+                    severity: 'medium',
+                    message: iframes.length + ' iframe(s) found — Victauri bridge is not injected inside iframes (Tauri limitation)',
+                    details: { count: iframes.length, srcs: Array.from(iframes).slice(0, 5).map(function(f) { return f.src || '(empty)'; }) }
+                });
+            }
+
+            // DOM size warning
+            var elementCount = allEls.length;
+            if (elementCount > 5000) {
+                diag.warnings.push({
+                    id: 'large-dom',
+                    severity: 'low',
+                    message: 'DOM has ' + elementCount + ' elements — dom_snapshot may be slow (>100ms)',
+                    details: { count: elementCount }
+                });
+            }
+
+            // CSP detection (best-effort)
+            var cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+            if (cspMeta) {
+                var cspContent = cspMeta.getAttribute('content') || '';
+                diag.info.csp_meta = cspContent;
+                if (cspContent.indexOf('unsafe-eval') === -1 && cspContent.indexOf('script-src') !== -1) {
+                    diag.info.csp_note = 'CSP restricts eval — Victauri uses native webview.eval() which bypasses CSP on most platforms';
+                }
+            }
+
+            // Environment info
+            diag.info.bridge_version = window.__VICTAURI__.version;
+            diag.info.user_agent = navigator.userAgent;
+            diag.info.url = window.location.href;
+            diag.info.dom_elements = elementCount;
+            diag.info.open_shadow_roots = (function() { var c = 0; for (var i = 0; i < allEls.length; i++) { if (allEls[i].shadowRoot) c++; } return c; })();
+            diag.info.event_listeners = listenerCount;
+            diag.info.protocol = window.location.protocol;
+
+            return diag;
+        },
     };
 
     try {

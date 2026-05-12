@@ -3762,6 +3762,10 @@ async fn rest_list_tools_returns_all_tools() {
     assert!(names.contains(&"screenshot"), "should contain screenshot");
     assert!(names.contains(&"interact"), "should contain interact");
     assert!(names.contains(&"window"), "should contain window");
+    assert!(
+        names.contains(&"get_diagnostics"),
+        "should contain get_diagnostics"
+    );
 
     for tool in &tools {
         assert!(tool["name"].is_string(), "each tool should have a name");
@@ -3965,5 +3969,36 @@ async fn rest_call_tool_with_callback_bridge() {
     assert_eq!(
         body["result"], "hello from eval",
         "should return eval result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn rest_get_diagnostics_returns_warnings_and_info() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_js| {
+        r#"{"warnings":[],"info":{"bridge_version":"0.3.0","dom_elements":42,"open_shadow_roots":0,"event_listeners":10,"protocol":"tauri:","url":"tauri://localhost/","user_agent":"test"}}"#.to_string()
+    }).await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .post(format!("{base}/api/tools/get_diagnostics"))
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let result = &body["result"];
+    assert!(result["warnings"].is_array(), "should have warnings array");
+    assert!(result["info"].is_object(), "should have info object");
+    assert_eq!(
+        result["info"]["bridge_version"], "0.3.0",
+        "should have bridge_version"
+    );
+    assert_eq!(
+        result["info"]["dom_elements"], 42,
+        "should have dom_elements count"
     );
 }
