@@ -737,11 +737,67 @@ Victauri exposes 23 MCP tools — 9 compound tools (grouped actions) and 14 stan
 
 ---
 
+## REST API
+
+Every MCP tool is also available via plain HTTP — no MCP client, no session handshake, no protocol overhead. Use `curl`, CI scripts, or any HTTP client:
+
+### List available tools
+
+```bash
+curl http://127.0.0.1:7373/api/tools
+```
+
+### Call a tool
+
+```bash
+# Evaluate JavaScript
+curl -X POST http://127.0.0.1:7373/api/tools/eval_js \
+  -H "Content-Type: application/json" \
+  -d '{"code": "document.title"}'
+# → {"result": "My App"}
+
+# Get DOM snapshot
+curl -X POST http://127.0.0.1:7373/api/tools/dom_snapshot \
+  -d '{}'
+# → {"result": {"tree": "...", "stale_refs": []}}
+
+# Take screenshot
+curl -X POST http://127.0.0.1:7373/api/tools/screenshot \
+  -d '{}'
+# → {"result": {"type": "image", "data": "iVBORw0KGgo...", "mimeType": "image/png"}}
+
+# Get memory stats (no body needed)
+curl -X POST http://127.0.0.1:7373/api/tools/get_memory_stats
+# → {"result": {"working_set_bytes": 77000000, ...}}
+```
+
+The REST API goes through the same auth, rate-limit, and privacy middleware as MCP. If auth is enabled, add `Authorization: Bearer <token>`.
+
+---
+
 ## CI Integration
 
-Victauri tests run in CI without special infrastructure. Two approaches:
+Victauri tests run in CI without special infrastructure. Pick the approach that fits:
 
-### Option A: Managed lifecycle with `TestApp`
+### Option A: GitHub Action (recommended)
+
+```yaml
+# .github/workflows/test.yml
+- name: Start app
+  run: xvfb-run --auto-servernum cargo run -p my-app &
+
+- uses: runyourempire/victauri@main
+  with:
+    max-load-ms: 5000
+    max-heap-mb: 256
+    coverage: true
+    coverage-threshold: 80
+    junit-path: results.xml
+```
+
+One step. Installs the CLI, waits for the server, runs smoke tests, and optionally gates on IPC coverage. See [`.github/actions/victauri-test/action.yml`](.github/actions/victauri-test/action.yml) for all inputs.
+
+### Option B: Managed lifecycle with `TestApp`
 
 ```yaml
 # .github/workflows/test.yml
@@ -751,7 +807,7 @@ Victauri tests run in CI without special infrastructure. Two approaches:
 
 `TestApp::spawn` handles starting the app, waiting for the server, and cleanup. Nothing else needed.
 
-### Option B: Manual server lifecycle
+### Option C: Manual server lifecycle
 
 ```yaml
 - name: Build app
@@ -775,7 +831,7 @@ Victauri tests run in CI without special infrastructure. Two approaches:
     VICTAURI_PORT: "7373"
 ```
 
-### Option C: Use the CLI
+### Option D: Use the CLI directly
 
 ```yaml
 - name: Start app
@@ -801,10 +857,13 @@ Victauri tests run in CI without special infrastructure. Two approaches:
 ## How It Works
 
 ```
-AI Agent / cargo test
+AI Agent / cargo test / curl
         |
         v
-  HTTP on :7373  (MCP protocol)
+  HTTP on :7373
+  ├── /mcp          (MCP protocol — for AI agents)
+  ├── /api/tools    (REST API — for scripts, CI, any HTTP client)
+  └── /health       (health check — for monitoring)
         |
         v
   Victauri Plugin  (inside Tauri process)
@@ -816,7 +875,20 @@ AI Agent / cargo test
   - eval   - result - registry
 ```
 
-The MCP server runs **inside** the Tauri process — not as a sidecar. Direct `AppHandle` access means sub-millisecond response times and zero state drift between what the tool sees and what the app does.
+### Why embedded matters
+
+Victauri's MCP server runs **inside** the Tauri process — same thread pool, same memory space, direct `AppHandle` access. This isn't just an implementation detail; it changes what's possible:
+
+| | Embedded (Victauri) | External process |
+|---|---|---|
+| **Tool response** | <1ms (function call) | 5–50ms (IPC + serialization) |
+| **State accuracy** | Zero drift (reads live state) | Stale (snapshot + transfer) |
+| **Backend access** | Full (`AppHandle`, DB, state) | Limited (webview only) |
+| **Runtime deps** | None (pure Rust) | Node.js / Python / etc. |
+| **Setup** | One line in `Cargo.toml` | Separate process + config |
+| **Release build** | Compiles away entirely | Must be disabled manually |
+
+External testing tools read state from outside the process through the webview. They can see the DOM but not why the DOM looks that way. Victauri sees both sides: what the frontend shows and what the backend knows. That's how it catches state drift, ghost commands, and IPC integrity issues that surface-level testing misses.
 
 **Port selection:** Victauri tries port 7373 first, then falls back through 7374–7383 if taken. The actual port is written to a temp directory for automatic client discovery.
 
@@ -836,7 +908,7 @@ victauri/
 │   ├── victauri-cli/        # CLI: init, check, test, record, watch, coverage
 │   └── victauri-watchdog/   # Health-check sidecar for crash recovery
 └── examples/
-    └── demo-app/            # Minimal Tauri app with 12 instrumented commands
+    └── demo-app/            # Multi-window Tauri app with 19 instrumented commands
 ```
 
 | Crate | Purpose | Tauri dependency? |

@@ -1,0 +1,99 @@
+name: Victauri Test
+description: Run Victauri smoke tests and coverage against a running Tauri app
+
+inputs:
+  port:
+    description: Port where the Victauri server is running
+    required: false
+    default: "7373"
+  max-load-ms:
+    description: Maximum DOM complete time in milliseconds
+    required: false
+    default: "10000"
+  max-heap-mb:
+    description: Maximum JS heap usage in megabytes
+    required: false
+    default: "512"
+  junit-path:
+    description: Path to write JUnit XML report
+    required: false
+    default: ""
+  coverage:
+    description: Run IPC command coverage report after tests
+    required: false
+    default: "false"
+  coverage-threshold:
+    description: Minimum coverage percentage (fails if below)
+    required: false
+    default: ""
+  victauri-version:
+    description: Version of victauri-cli to install (empty = latest)
+    required: false
+    default: ""
+  health-timeout:
+    description: Seconds to wait for the Victauri server to become healthy
+    required: false
+    default: "30"
+
+outputs:
+  test-result:
+    description: "pass or fail"
+    value: ${{ steps.test.outcome == 'success' && 'pass' || 'fail' }}
+  junit-report:
+    description: Path to JUnit XML report (if generated)
+    value: ${{ steps.test.outputs.junit-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install victauri-cli
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.victauri-version }}" ]; then
+          cargo install victauri-cli@${{ inputs.victauri-version }}
+        else
+          cargo install victauri-cli
+        fi
+
+    - name: Wait for Victauri server
+      shell: bash
+      env:
+        VICTAURI_PORT: ${{ inputs.port }}
+      run: |
+        echo "Waiting for Victauri server on port $VICTAURI_PORT..."
+        timeout=${{ inputs.health-timeout }}
+        elapsed=0
+        until curl -sf "http://127.0.0.1:${VICTAURI_PORT}/health" > /dev/null 2>&1; do
+          if [ "$elapsed" -ge "$timeout" ]; then
+            echo "::error::Victauri server did not become healthy within ${timeout}s on port ${VICTAURI_PORT}"
+            exit 1
+          fi
+          sleep 1
+          elapsed=$((elapsed + 1))
+        done
+        echo "Server healthy after ${elapsed}s"
+
+    - name: Run Victauri tests
+      id: test
+      shell: bash
+      env:
+        VICTAURI_PORT: ${{ inputs.port }}
+      run: |
+        args="--max-load-ms ${{ inputs.max-load-ms }} --max-heap-mb ${{ inputs.max-heap-mb }}"
+        if [ -n "${{ inputs.junit-path }}" ]; then
+          args="$args --junit ${{ inputs.junit-path }}"
+          echo "junit-path=${{ inputs.junit-path }}" >> "$GITHUB_OUTPUT"
+        fi
+        victauri test $args
+
+    - name: Run coverage report
+      if: inputs.coverage == 'true'
+      shell: bash
+      env:
+        VICTAURI_PORT: ${{ inputs.port }}
+      run: |
+        args="--allow-empty-registry"
+        if [ -n "${{ inputs.coverage-threshold }}" ]; then
+          args="$args --threshold ${{ inputs.coverage-threshold }}"
+        fi
+        victauri coverage $args
