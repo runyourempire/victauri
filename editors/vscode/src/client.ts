@@ -110,6 +110,7 @@ export class VictauriClient {
       this.refreshMemory(),
       this.refreshPluginInfo(),
       this.refreshDom(),
+      this.refreshDiagnostics(),
     ]);
     this.onDataUpdate.fire();
   }
@@ -215,6 +216,19 @@ export class VictauriClient {
         this.pluginInfo = result;
         const tools = result.tools as { total?: number } | undefined;
         this.toolCount = tools?.total ?? 0;
+      }
+    } catch {
+      // keep stale
+    }
+  }
+
+  private async refreshDiagnostics(): Promise<void> {
+    try {
+      const result = (await this.callTool(
+        "get_diagnostics"
+      )) as DiagnosticsResult;
+      if (result && typeof result === "object" && "warnings" in result) {
+        this.diagnostics = result;
       }
     } catch {
       // keep stale

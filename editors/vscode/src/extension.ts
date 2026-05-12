@@ -9,6 +9,7 @@ import {
   TauriCommandLensProvider,
   generateCommandTest,
 } from "./codeLens";
+import { ScreenshotPanel } from "./screenshotPanel";
 
 let client: VictauriClient;
 let statusBarItem: vscode.StatusBarItem;
@@ -78,26 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage("Victauri: Not connected");
         return;
       }
-      try {
-        const data = await client.screenshot();
-        if (data) {
-          const buf = Buffer.from(data, "base64");
-          const dir =
-            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "";
-          const filePath = path.join(
-            dir,
-            `victauri-screenshot-${Date.now()}.png`
-          );
-          fs.writeFileSync(filePath, buf);
-          const uri = vscode.Uri.file(filePath);
-          await vscode.commands.executeCommand("vscode.open", uri);
-          vscode.window.showInformationMessage(
-            `Victauri: Screenshot saved to ${path.basename(filePath)}`
-          );
-        }
-      } catch (e) {
-        vscode.window.showErrorMessage(`Victauri: Screenshot failed — ${e}`);
-      }
+      ScreenshotPanel.show(context, client);
     }),
 
     vscode.commands.registerCommand("victauri.evalJs", async () => {

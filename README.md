@@ -776,6 +776,41 @@ The REST API goes through the same auth, rate-limit, and privacy middleware as M
 
 ---
 
+## VS Code Extension
+
+Live inspection of your running Tauri app directly in VS Code. No browser DevTools, no CLI — just open your editor.
+
+### Install
+
+```bash
+cd editors/vscode && npm install && npm run build
+# Then: Ctrl+Shift+P → "Developer: Install Extension from Location..." → select editors/vscode
+```
+
+### Features
+
+- **Activity bar** with three tree views:
+  - **App State** — windows, memory usage, plugin info, diagnostic warnings
+  - **DOM Explorer** — navigable accessible tree with ref IDs, roles, bounds
+  - **IPC Log** — live command log with status, duration, timestamps
+- **Status bar** — connection state indicator (click to connect/disconnect)
+- **CodeLens** — "Generate Victauri test" appears on every `#[tauri::command]` in Rust files
+- **Commands** — Connect, Disconnect, Screenshot, Evaluate JS, Run Smoke Test
+- **Auto-connect** — detects `tauri.conf.json` in workspace, connects on activation
+- **Port discovery** — reads `victauri.port` temp file for auto-fallback detection
+- **Auth support** — configurable Bearer token via `victauri.authToken` setting
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `victauri.port` | `7373` | Port of the Victauri server |
+| `victauri.autoConnect` | `true` | Auto-connect when Tauri project detected |
+| `victauri.pollInterval` | `2000` | Polling interval (ms) for live updates |
+| `victauri.authToken` | `""` | Bearer token for authenticated connections |
+
+---
+
 ## CI Integration
 
 Victauri tests run in CI without special infrastructure. Pick the approach that fits:
@@ -1065,6 +1100,7 @@ async fn ci_health_check() {
 
 - [**Testing Tauri Apps**](docs/testing-tauri-apps.md) — comprehensive guide covering every testing approach (unit tests, frontend mocks, WebDriver, Playwright, Victauri)
 - [**Compatibility**](docs/compatibility.md) — CSP requirements, IPC pattern support, multi-window handling, tested apps
+- [**VS Code Extension**](editors/vscode/) — live app inspection, DOM explorer, IPC log, CodeLens test generation
 - [**Agent Session Example**](examples/agent-session.md) — real AI agent session transcript
 - [**Demo App Tests**](examples/demo-app/tests/integration.rs) — 20 integration tests demonstrating every pattern
 - [**Migration Guide**](MIGRATION.md) — upgrading between versions
