@@ -16,6 +16,7 @@ This crate has **no Tauri dependency** and can be used standalone for building t
 | `VerificationResult` / `Divergence` | Cross-boundary state verification output |
 | `GhostCommandReport` | Detects frontend-invoked commands missing from the registry |
 | `IpcIntegrityReport` | IPC health metrics (pending, stale, errored calls) |
+| `CodegenOptions` / `CodegenStyle` | Test code generation from recorded sessions (Direct or Locator API style) |
 
 ## Example
 
