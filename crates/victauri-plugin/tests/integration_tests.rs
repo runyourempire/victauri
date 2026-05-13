@@ -1957,7 +1957,7 @@ fn extract_inner_code_gets_user_code() {
         (async () => {
             try {
                 const __result = await (async () => { return document.title })();
-                await window.__TAURI__.core.invoke(...)
+                await window.__TAURI_INTERNALS__.invoke(...)
             } catch ...
         })();
     ";
@@ -3068,7 +3068,7 @@ async fn adversarial_slow_ipc_calls_returns_data() {
 async fn adversarial_invoke_command_succeeds() {
     let state = test_state();
     let base = start_callback_server(state, &["main"], |code| {
-        if code.contains("__TAURI__") && code.contains("invoke") {
+        if code.contains("__TAURI_INTERNALS__") && code.contains("invoke") {
             r#""Hello, test!""#.to_string()
         } else {
             "null".to_string()

@@ -205,7 +205,7 @@ impl VictauriMcpHandler {
         let args_json = params.args.unwrap_or(serde_json::json!({}));
         let args_str = serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
         let code = format!(
-            "return window.__TAURI__.core.invoke({}, {args_str})",
+            "return window.__TAURI_INTERNALS__.invoke({}, {args_str})",
             js_string(&params.command)
         );
         match self
@@ -1555,12 +1555,12 @@ impl VictauriMcpHandler {
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
-                    await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                         id: {id_js},
                         result: JSON.stringify(__result)
                     }});
                 }} catch (e) {{
-                    await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                    await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                         id: {id_js},
                         result: JSON.stringify({{ __error: e.message }})
                     }});

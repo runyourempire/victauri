@@ -20,12 +20,12 @@ pub async fn victauri_eval_js<R: Runtime>(
         (async () => {{
             try {{
                 const __result = await (async () => {{ {code} }})();
-                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                     id: '{id}',
                     result: JSON.stringify(__result)
                 }});
             }} catch (e) {{
-                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                     id: '{id}',
                     result: JSON.stringify({{ __error: e.message }})
                 }});
@@ -79,12 +79,12 @@ pub async fn victauri_dom_snapshot<R: Runtime>(
         (async () => {{
             try {{
                 const snapshot = window.__VICTAURI__?.snapshot();
-                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                     id: '{id}',
                     result: JSON.stringify(snapshot)
                 }});
             }} catch (e) {{
-                await window.__TAURI__.core.invoke('plugin:victauri|victauri_eval_callback', {{
+                await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                     id: '{id}',
                     result: JSON.stringify({{ __error: e.message }})
                 }});

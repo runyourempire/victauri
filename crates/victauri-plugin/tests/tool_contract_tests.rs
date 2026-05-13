@@ -338,7 +338,7 @@ async fn find_elements_happy_path() {
 async fn invoke_command_happy_path() {
     let state = test_state();
     let base = start_callback_server(state, &["main"], |script| {
-        if script.contains("core.invoke(") {
+        if script.contains("__TAURI_INTERNALS__.invoke(") {
             r#"{"greeting":"Hello, World"}"#.to_string()
         } else {
             "null".to_string()
