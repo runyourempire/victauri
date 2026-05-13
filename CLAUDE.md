@@ -157,9 +157,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
-## Current State (2026-05-13)
+## Current State (2026-05-14)
 
-**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + real-world compatibility testing. v0.2.1 published.** All 6 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 1004 tests pass (including 9 REST API integration tests + 5 REST unit tests + 85 tool contract tests + 38 adversarial tests + 30 bridge tests + 22 stress tests). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/` with live app state inspection, DOM interaction, screenshots, a11y audits, and perf metrics.
+**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + real-world compatibility testing (4 third-party apps, 96/96 pass). v0.2.1 published.** All 6 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 1004 tests pass (including 9 REST API integration tests + 5 REST unit tests + 85 tool contract tests + 38 adversarial tests + 30 bridge tests + 22 stress tests). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/` with live app state inspection, DOM interaction, screenshots, a11y audits, and perf metrics.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
@@ -224,6 +224,27 @@ Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 5
 - **get_performance_metrics**: Navigation timing (DNS, TTFB, DOM interactive/complete, load event), resource summary (count, transfer size, by type, 5 slowest), paint timing (FP, FCP), JS heap usage (used/total/limit MB), long task count, DOM stats (element count, max depth, event listener count).
 
 **Bridge methods:** version, snapshot, getRef, click, fill, type, pressKey, getConsoleLogs, clearConsoleLogs, getMutationLog, clearMutationLog, getEventStream, getStyles, getBoundingBoxes, highlightElement, clearHighlights, injectCss, removeInjectedCss, auditAccessibility, getPerformanceMetrics.
+
+### Real-app compatibility testing (2026-05-14):
+Tested against 4 third-party open-source Tauri 2 apps with fully built frontends. **96/96 tests pass — 24 tests per app, zero failures.**
+
+| App | Framework | Elements | JS Heap | Window Size | A11y Violations |
+|-----|-----------|----------|---------|-------------|-----------------|
+| **Kanri** (kanban board) | Nuxt 4 / Vue 3 / TailwindCSS | 234 | 6.19 MB | 1400×800 | 8 |
+| **En Croissant** (chess) | React / TanStack Router / Mantine | 201 | 18.17 MB | 800×631 | 9 |
+| **Duckling** (database explorer) | React 19 / Jotai / TailwindCSS 4 | 301 | 76.45 MB | 1000×800 | 8 |
+| **Lettura** (RSS reader) | React / PWA / Custom UI | 109 | 8.31 MB | 1440×740 | 1 |
+
+**Per-app tests (24 each):** health, info, tool listing (24 tools), eval_js (number/title/bridge detection/version), dom_snapshot, window list, window get_state, screenshot, memory_stats, plugin_info, console/ipc/network logs, diagnostics, accessibility audit, performance metrics, recording start/stop, registry, ipc_integrity, ghost_commands.
+
+**Deep interaction verified on Lettura:** Click on Settings button (ref `e304`) navigated from `/local/today` (109 elements) → `/settings` (242 elements). DOM snapshot returned full accessible tree with semantic ref handles. Performance profiling: FCP 456ms, DOM interactive 143ms, 1 long task (72ms), 35 resources loaded.
+
+**Key compatibility findings:**
+- Works across Vue 3 (Nuxt), React 18, React 19, PWA — framework-agnostic as designed.
+- `victauri:default` capability must be added to the app's capabilities JSON or IPC callbacks silently fail (Tauri permission system blocks with no error).
+- Debug binaries embed `frontendDist` at compile time — frontend must be built BEFORE `cargo build`. Running debug binary directly uses embedded files, not `devUrl`.
+- Apps with `devUrl` configured will use the live dev server if running, otherwise fall back to embedded `frontendDist` files.
+- All 4 apps required zero Victauri code changes — plugin integration is purely additive (1 line Cargo.toml + 1 line plugin init + 1 line capabilities).
 
 ### What exists and works:
 - **victauri-core**: `EventLog` (ring buffer), `CommandRegistry` (BTreeMap with search + NL resolve), `DomSnapshot`, `WindowState`, `VerificationResult`/`Divergence`, `GhostCommandReport`, `IpcIntegrityReport`, `SemanticAssertion`/`AssertionResult`, `ScoredCommand`, `EventRecorder` (time-travel recording with checkpoints), `RecordedSession`, `RecordedEvent`, `StateCheckpoint`. 157 tests (32 codegen unit + 121 core + 4 compile tests). 16 Criterion benchmarks across 5 groups. All mutex/rwlock calls use poisoning recovery.
