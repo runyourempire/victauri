@@ -16,8 +16,11 @@ pub struct TabState {
     pub url: String,
     pub title: String,
     pub bridge_ready: bool,
+    #[allow(dead_code)]
     pub recorder: EventRecorder,
+    #[allow(dead_code)]
     pub event_log: EventLog,
+    #[allow(dead_code)]
     pub pending_commands: HashMap<String, oneshot::Sender<Value>>,
 }
 
@@ -51,6 +54,7 @@ impl TabManager {
     }
 
     /// Register a pending command and return a receiver for the response.
+    #[allow(dead_code)]
     pub async fn register_pending(
         &self,
         tab_id: u32,
@@ -64,6 +68,7 @@ impl TabManager {
     }
 
     /// Resolve a pending command with a response value.
+    #[allow(dead_code)]
     pub async fn resolve_pending(&self, tab_id: u32, command_id: &str, value: Value) -> bool {
         let mut tabs = self.tabs.write().await;
         let Some(tab) = tabs.get_mut(&tab_id) else {
@@ -82,6 +87,7 @@ impl TabManager {
     /// # Errors
     ///
     /// Returns an error if no active tab is set or the specified tab doesn't exist.
+    #[allow(dead_code)]
     pub async fn resolve_tab(&self, tab_id: Option<u32>) -> Result<u32, TabError> {
         let id = tab_id.unwrap_or_else(|| self.active_tab.load(Ordering::Relaxed));
         if id == 0 {
@@ -131,6 +137,7 @@ impl TabManager {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_active_tab_id(&self) -> u32 {
         self.active_tab.load(Ordering::Relaxed)
     }
@@ -155,6 +162,7 @@ impl TabManager {
         self.tabs.read().await.len()
     }
 
+    #[allow(dead_code)]
     pub async fn is_bridge_ready(&self, tab_id: u32) -> bool {
         let tabs = self.tabs.read().await;
         tabs.get(&tab_id).is_some_and(|t| t.bridge_ready)
@@ -176,6 +184,7 @@ pub struct TabInfo {
     pub active: bool,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum TabError {
     #[error("no active tab — open a tab in the browser first")]
@@ -263,5 +272,127 @@ mod tests {
         let tabs = mgr.list_tabs().await;
         assert_eq!(tabs[0].url, "https://new.com");
         assert_eq!(tabs[0].title, "New Title");
+    }
+
+    #[tokio::test]
+    async fn bridge_ready_unknown_tab_noop() {
+        let mgr = TabManager::new();
+        mgr.on_bridge_ready(999).await;
+        assert!(!mgr.is_bridge_ready(999).await);
+    }
+
+    #[tokio::test]
+    async fn bridge_not_ready_by_default() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://x.com", "X").await;
+        assert!(!mgr.is_bridge_ready(1).await);
+    }
+
+    #[tokio::test]
+    async fn resolve_pending_unknown_tab_returns_false() {
+        let mgr = TabManager::new();
+        let resolved = mgr
+            .resolve_pending(999, "cmd-1", serde_json::json!({}))
+            .await;
+        assert!(!resolved);
+    }
+
+    #[tokio::test]
+    async fn resolve_pending_unknown_command_returns_false() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://x.com", "X").await;
+        let resolved = mgr
+            .resolve_pending(1, "nonexistent", serde_json::json!({}))
+            .await;
+        assert!(!resolved);
+    }
+
+    #[tokio::test]
+    async fn register_pending_unknown_tab_returns_none() {
+        let mgr = TabManager::new();
+        assert!(mgr.register_pending(999, "cmd-1").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn tab_update_unknown_tab_noop() {
+        let mgr = TabManager::new();
+        mgr.on_tab_updated(999, Some("https://x.com"), Some("X"))
+            .await;
+        assert_eq!(mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn tab_update_partial_url_only() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://old.com", "Title").await;
+        mgr.on_tab_updated(1, Some("https://new.com"), None).await;
+
+        let tabs = mgr.list_tabs().await;
+        assert_eq!(tabs[0].url, "https://new.com");
+        assert_eq!(tabs[0].title, "Title");
+    }
+
+    #[tokio::test]
+    async fn tab_update_partial_title_only() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://x.com", "Old").await;
+        mgr.on_tab_updated(1, None, Some("New")).await;
+
+        let tabs = mgr.list_tabs().await;
+        assert_eq!(tabs[0].url, "https://x.com");
+        assert_eq!(tabs[0].title, "New");
+    }
+
+    #[tokio::test]
+    async fn multiple_tabs_create_close() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://one.com", "One").await;
+        mgr.on_tab_created(2, "https://two.com", "Two").await;
+        mgr.on_tab_created(3, "https://three.com", "Three").await;
+        assert_eq!(mgr.tab_count().await, 3);
+
+        mgr.on_tab_closed(2).await;
+        assert_eq!(mgr.tab_count().await, 2);
+
+        let tabs = mgr.list_tabs().await;
+        let ids: Vec<u32> = tabs.iter().map(|t| t.tab_id).collect();
+        assert!(ids.contains(&1));
+        assert!(!ids.contains(&2));
+        assert!(ids.contains(&3));
+    }
+
+    #[tokio::test]
+    async fn close_nonexistent_tab_noop() {
+        let mgr = TabManager::new();
+        mgr.on_tab_closed(999).await;
+        assert_eq!(mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn default_trait_works() {
+        let mgr = TabManager::default();
+        assert_eq!(mgr.tab_count().await, 0);
+        assert_eq!(mgr.get_active_tab_id().await, 0);
+    }
+
+    #[tokio::test]
+    async fn active_tab_switches() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://one.com", "One").await;
+        mgr.on_tab_created(2, "https://two.com", "Two").await;
+
+        mgr.on_tab_activated(1).await;
+        assert_eq!(mgr.get_active_tab_id().await, 1);
+
+        mgr.on_tab_activated(2).await;
+        assert_eq!(mgr.get_active_tab_id().await, 2);
+    }
+
+    #[tokio::test]
+    async fn resolve_tab_with_explicit_id() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(5, "https://five.com", "Five").await;
+        let resolved = mgr.resolve_tab(Some(5)).await.unwrap();
+        assert_eq!(resolved, 5);
     }
 }

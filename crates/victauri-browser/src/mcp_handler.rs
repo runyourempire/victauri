@@ -721,4 +721,310 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("action"));
     }
+
+    #[tokio::test]
+    async fn plugin_info_increments_invocations() {
+        let handler = make_handler();
+        let r1 = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(r1["invocations"], 1);
+
+        let r2 = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(r2["invocations"], 2);
+    }
+
+    #[tokio::test]
+    async fn tabs_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("tabs", serde_json::json!({"action": "close"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown tabs action"));
+    }
+
+    #[tokio::test]
+    async fn tabs_default_action_is_list() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("tabs", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert!(result.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn interact_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("interact", serde_json::json!({"action": "destroy"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown interact action"));
+    }
+
+    #[tokio::test]
+    async fn input_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"ref_id": "e0"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn input_fill_requires_ref_id() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "fill", "value": "x"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ref_id"));
+    }
+
+    #[tokio::test]
+    async fn input_fill_requires_value() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "fill", "ref_id": "e0"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("value"));
+    }
+
+    #[tokio::test]
+    async fn input_type_requires_ref_id() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "type", "text": "hi"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ref_id"));
+    }
+
+    #[tokio::test]
+    async fn input_type_requires_text() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "type", "ref_id": "e0"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("text"));
+    }
+
+    #[tokio::test]
+    async fn input_press_key_requires_key() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "press_key"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("key"));
+    }
+
+    #[tokio::test]
+    async fn input_clear_requires_ref_id() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "clear"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ref_id"));
+    }
+
+    #[tokio::test]
+    async fn input_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("input", serde_json::json!({"action": "destroy"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown input action"));
+    }
+
+    #[tokio::test]
+    async fn inspect_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("inspect", serde_json::json!({"ref_id": "e0"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn inspect_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("inspect", serde_json::json!({"action": "destroy"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown inspect action"));
+    }
+
+    #[tokio::test]
+    async fn css_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("css", serde_json::json!({"css": "body{}"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn css_inject_requires_css() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("css", serde_json::json!({"action": "inject"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("css"));
+    }
+
+    #[tokio::test]
+    async fn css_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("css", serde_json::json!({"action": "compile"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown css action"));
+    }
+
+    #[tokio::test]
+    async fn logs_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("logs", serde_json::json!({}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn logs_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("logs", serde_json::json!({"action": "delete"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown logs action"));
+    }
+
+    #[tokio::test]
+    async fn storage_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("storage", serde_json::json!({"key": "x"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn storage_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("storage", serde_json::json!({"action": "drop"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown storage action"));
+    }
+
+    #[tokio::test]
+    async fn navigate_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("navigate", serde_json::json!({"url": "https://x.com"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn navigate_go_to_requires_url() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("navigate", serde_json::json!({"action": "go_to"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("url"));
+    }
+
+    #[tokio::test]
+    async fn navigate_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("navigate", serde_json::json!({"action": "refresh"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown navigate action"));
+    }
+
+    #[tokio::test]
+    async fn recording_requires_action() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("recording", serde_json::json!({"label": "test"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn recording_unknown_action_errors() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool("recording", serde_json::json!({"action": "rewind"}))
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown recording action"));
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_requires_expression() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool(
+                "assert_semantic",
+                serde_json::json!({"condition": "equals", "expected": "x"}),
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expression"));
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_requires_condition() {
+        let handler = make_handler();
+        let result = handler
+            .execute_tool(
+                "assert_semantic",
+                serde_json::json!({"expression": "1+1", "expected": "2"}),
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("condition"));
+    }
+
+    #[tokio::test]
+    async fn tool_info_fields() {
+        let handler = make_handler();
+        let tools = handler.list_tools();
+        for tool in &tools {
+            assert!(!tool.name.is_empty());
+            assert!(!tool.description.is_empty());
+        }
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"eval_js"));
+        assert!(names.contains(&"screenshot"));
+        assert!(names.contains(&"assert_semantic"));
+    }
 }

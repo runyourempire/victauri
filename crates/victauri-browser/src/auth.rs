@@ -205,4 +205,36 @@ mod tests {
         assert!(!constant_time_eq(b"hello", b"world"));
         assert!(!constant_time_eq(b"hello", b"hell"));
     }
+
+    #[test]
+    fn constant_time_eq_empty_strings() {
+        assert!(constant_time_eq(b"", b""));
+        assert!(!constant_time_eq(b"", b"x"));
+    }
+
+    #[test]
+    fn constant_time_eq_single_bit_diff() {
+        assert!(!constant_time_eq(b"\x00", b"\x01"));
+        assert!(!constant_time_eq(b"\xff", b"\xfe"));
+    }
+
+    #[test]
+    fn rate_limiter_single_token() {
+        let limiter = RateLimiterState::new(1);
+        assert!(limiter.try_acquire());
+        assert!(!limiter.try_acquire());
+    }
+
+    #[test]
+    fn token_format_is_uuid() {
+        let token = generate_token();
+        assert_eq!(token.len(), 36);
+        assert_eq!(token.chars().filter(|c| *c == '-').count(), 4);
+    }
+
+    #[test]
+    fn default_rate_limiter_has_budget() {
+        let limiter = default_rate_limiter();
+        assert!(limiter.try_acquire());
+    }
 }

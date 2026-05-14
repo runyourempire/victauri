@@ -311,4 +311,85 @@ mod tests {
         let handler = make_handler();
         assert!(handler.get_tool("nonexistent").is_none());
     }
+
+    #[test]
+    fn all_tools_have_input_schema() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            assert!(
+                !tool.input_schema.is_empty(),
+                "tool {} has empty input schema",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn tools_with_required_action_param() {
+        let action_tools = [
+            "interact", "input", "inspect", "css", "logs", "storage", "navigate", "recording",
+        ];
+        let tools = build_tool_definitions();
+        for name in action_tools {
+            let tool = tools.iter().find(|t| t.name.as_ref() == name).unwrap();
+            let schema_value = serde_json::Value::Object((*tool.input_schema).clone());
+            let required = schema_value.get("required").and_then(|r| r.as_array());
+            assert!(
+                required.is_some_and(|r| r.iter().any(|v| v == "action")),
+                "tool {name} should require 'action' parameter"
+            );
+        }
+    }
+
+    #[test]
+    fn eval_js_requires_code_in_schema() {
+        let tools = build_tool_definitions();
+        let eval = tools.iter().find(|t| t.name.as_ref() == "eval_js").unwrap();
+        let schema_value = serde_json::Value::Object((*eval.input_schema).clone());
+        let required = schema_value.get("required").unwrap().as_array().unwrap();
+        assert!(required.iter().any(|v| v == "code"));
+    }
+
+    #[test]
+    fn assert_semantic_schema_has_conditions() {
+        let tools = build_tool_definitions();
+        let tool = tools
+            .iter()
+            .find(|t| t.name.as_ref() == "assert_semantic")
+            .unwrap();
+        let schema_value = serde_json::Value::Object((*tool.input_schema).clone());
+        let condition_enum = schema_value["properties"]["condition"]["enum"]
+            .as_array()
+            .unwrap();
+        let conditions: Vec<&str> = condition_enum.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(conditions.contains(&"equals"));
+        assert!(conditions.contains(&"truthy"));
+        assert!(conditions.contains(&"greater_than"));
+        assert!(conditions.contains(&"less_than"));
+        assert!(conditions.contains(&"contains"));
+        assert!(conditions.contains(&"not_equals"));
+    }
+
+    #[test]
+    fn get_tool_matches_list_tools() {
+        let handler = make_handler();
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            let found = handler.get_tool(tool.name.as_ref());
+            assert!(found.is_some(), "get_tool should find {}", tool.name);
+            assert_eq!(found.unwrap().name, tool.name);
+        }
+    }
+
+    #[test]
+    fn server_instructions_mention_all_tools() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            assert!(
+                SERVER_INSTRUCTIONS.contains(tool.name.as_ref()),
+                "instructions should mention {}",
+                tool.name
+            );
+        }
+    }
 }

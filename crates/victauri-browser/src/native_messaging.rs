@@ -151,4 +151,85 @@ mod tests {
             assert_eq!(&decoded, expected);
         }
     }
+
+    #[tokio::test]
+    async fn partial_length_prefix_is_disconnect() {
+        let buf: &[u8] = &[0x02, 0x00];
+        let mut reader = BufReader::new(buf);
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::Disconnected)));
+    }
+
+    #[tokio::test]
+    async fn invalid_json_returns_error() {
+        let invalid = b"not json at all";
+        let len = invalid.len() as u32;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(invalid);
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::Json(_))));
+    }
+
+    #[tokio::test]
+    async fn zero_length_message() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::Json(_))));
+    }
+
+    #[tokio::test]
+    async fn unicode_message_roundtrip() {
+        let msg = serde_json::json!({"emoji": "🔥🚀", "cjk": "日本語テスト", "mixed": "hello 世界"});
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded["emoji"], "🔥🚀");
+        assert_eq!(decoded["cjk"], "日本語テスト");
+    }
+
+    #[tokio::test]
+    async fn large_message_near_limit() {
+        let big_string = "x".repeat(500_000);
+        let msg = serde_json::json!({"data": big_string});
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded["data"].as_str().unwrap().len(), 500_000);
+    }
+
+    #[tokio::test]
+    async fn write_message_length_prefix_correct() {
+        let msg = serde_json::json!({"a": 1});
+        let expected_json = serde_json::to_vec(&msg).unwrap();
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+        assert_eq!(len, expected_json.len());
+        assert_eq!(&buf[4..], &expected_json);
+    }
+
+    #[tokio::test]
+    async fn truncated_body_is_io_error() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&100u32.to_le_bytes());
+        buf.extend_from_slice(b"short");
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::Io(_))));
+    }
 }

@@ -90,6 +90,7 @@ impl BridgeDispatch {
     /// # Errors
     ///
     /// Returns an error on write failure, disconnect, or timeout.
+    #[allow(dead_code)]
     pub async fn dispatch_cdp(
         &self,
         tab_id: u32,
@@ -160,6 +161,7 @@ impl BridgeDispatch {
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub async fn pending_count(&self) -> usize {
         self.pending.lock().await.len()
     }
@@ -240,6 +242,79 @@ mod tests {
             .on_response("nonexistent", Some(serde_json::json!({})), None)
             .await;
 
+        assert_eq!(dispatch.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn pending_count_tracks_insertions() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        assert_eq!(dispatch.pending_count().await, 0);
+
+        let (tx1, _rx1) = oneshot::channel();
+        let (tx2, _rx2) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("a".to_string(), tx1);
+            pending.insert("b".to_string(), tx2);
+        }
+        assert_eq!(dispatch.pending_count().await, 2);
+
+        dispatch
+            .on_response("a", Some(serde_json::json!({"ok": true})), None)
+            .await;
+        assert_eq!(dispatch.pending_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn on_response_with_null_data_and_no_error() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("test-null".to_string(), tx);
+        }
+
+        dispatch.on_response("test-null", None, None).await;
+
+        let result = rx.await.unwrap();
+        assert!(result.data.is_none());
+        assert!(result.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_all_with_multiple_pending() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx1, rx1) = oneshot::channel();
+        let (tx2, rx2) = oneshot::channel();
+        let (tx3, rx3) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("a".to_string(), tx1);
+            pending.insert("b".to_string(), tx2);
+            pending.insert("c".to_string(), tx3);
+        }
+
+        dispatch.cancel_all().await;
+        assert_eq!(dispatch.pending_count().await, 0);
+
+        for rx in [rx1, rx2, rx3] {
+            let result = rx.await.unwrap();
+            assert!(result.error.is_some());
+            assert!(result.error.unwrap().contains("disconnected"));
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_all_on_empty_is_noop() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+        dispatch.cancel_all().await;
         assert_eq!(dispatch.pending_count().await, 0);
     }
 }

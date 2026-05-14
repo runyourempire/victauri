@@ -55,6 +55,7 @@ pub fn host_manifest(binary_path: &str, extension_id: &str) -> serde_json::Value
 /// # Errors
 ///
 /// Returns an error if the home directory cannot be determined.
+#[allow(dead_code)]
 pub fn install_dir() -> Result<PathBuf, InstallerError> {
     let home = home_dir()?;
     Ok(home.join(".victauri").join("bin"))

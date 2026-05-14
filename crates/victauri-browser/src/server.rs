@@ -296,4 +296,182 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), 200);
     }
+
+    fn make_app_with_rate_limit(budget: u64) -> axum::Router {
+        let tab_mgr = Arc::new(TabManager::new());
+        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
+        let limiter = Arc::new(crate::auth::RateLimiterState::new(budget));
+        build_app_full(handler, None, Some(limiter))
+    }
+
+    #[tokio::test]
+    async fn rate_limit_exhaustion_returns_429() {
+        let app = make_app_with_rate_limit(1);
+
+        let req1 = axum::http::Request::builder()
+            .uri("/info")
+            .body(Body::empty())
+            .unwrap();
+        let resp1 = app.clone().oneshot(req1).await.unwrap();
+        assert_eq!(resp1.status(), 200);
+
+        let req2 = axum::http::Request::builder()
+            .uri("/info")
+            .body(Body::empty())
+            .unwrap();
+        let resp2 = app.oneshot(req2).await.unwrap();
+        assert_eq!(resp2.status(), 429);
+    }
+
+    #[tokio::test]
+    async fn auth_wrong_token_returns_401() {
+        let app = make_app(Some("correct-token".to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer wrong-token")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn auth_no_bearer_prefix_returns_401() {
+        let app = make_app(Some("my-token".to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "my-token")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn auth_case_insensitive_bearer() {
+        let token = "my-secret-token";
+        let app = make_app(Some(token.to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", format!("BEARER {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn rest_tool_with_auth() {
+        let token = "secret";
+        let (status, json) = post_json(
+            make_app(Some(token.to_string())),
+            "/api/tools/get_plugin_info",
+            serde_json::json!({}),
+            Some(token),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(json["result"]["name"], "victauri-browser");
+    }
+
+    #[tokio::test]
+    async fn rest_tool_without_auth_when_required() {
+        let (status, _) = post_json(
+            make_app(Some("secret".to_string())),
+            "/api/tools/get_plugin_info",
+            serde_json::json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, 401);
+    }
+
+    #[tokio::test]
+    async fn localhost_origin_allowed() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://localhost:3000")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn ipv6_localhost_origin_allowed() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://[::1]:7474")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn no_origin_header_allowed() {
+        let app = make_app(None);
+        let (status, json) = get_json(app, "/health").await;
+        assert_eq!(status, 200);
+        assert_eq!(json["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn info_shows_auth_required() {
+        let (_, json_no_auth) = get_json(make_app(None), "/info").await;
+        assert_eq!(json_no_auth["auth_required"], false);
+
+        let app = make_app(Some("tok".to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer tok")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json_auth: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json_auth["auth_required"], true);
+    }
+
+    #[tokio::test]
+    async fn tool_list_via_rest_has_names() {
+        let (_, json) = get_json(make_app(None), "/api/tools").await;
+        let tools = json.as_array().unwrap();
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"eval_js"));
+        assert!(names.contains(&"dom_snapshot"));
+        assert!(names.contains(&"screenshot"));
+        assert!(names.contains(&"tabs"));
+    }
+
+    #[tokio::test]
+    async fn rest_error_format() {
+        let (status, json) = post_json(
+            make_app(None),
+            "/api/tools/nonexistent",
+            serde_json::json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(json.get("error").is_some());
+        assert!(json.get("result").is_none());
+    }
+
+    #[tokio::test]
+    async fn rest_success_format() {
+        let (status, json) = post_json(
+            make_app(None),
+            "/api/tools/get_plugin_info",
+            serde_json::json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(json.get("result").is_some());
+        assert!(json.get("error").is_none());
+    }
 }
