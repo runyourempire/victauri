@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="20"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="64" fill="#0d0d0d"/>
+  <path d="M 128 100 L 256 400 L 384 100" fill="none" stroke="#3b82f6" stroke-width="52" stroke-linecap="round" stroke-linejoin="round" filter="url(#g)" opacity="0.5"/>
+  <path d="M 128 100 L 256 400 L 384 100" fill="none" stroke="#ffffff" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

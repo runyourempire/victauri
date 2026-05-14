@@ -1,12 +1,20 @@
-# Victauri
+<p align="center">
+  <img src="assets/logo.png" alt="Victauri" width="120">
+</p>
 
-**Full-stack testing for Tauri apps. Click a button in the frontend, verify the Rust handler ran, confirm the database row was written — from one test.**
+<h1 align="center">Victauri</h1>
 
-[![CI](https://github.com/runyourempire/victauri/actions/workflows/ci.yml/badge.svg)](https://github.com/runyourempire/victauri/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/victauri-plugin.svg)](https://crates.io/crates/victauri-plugin)
-[![docs.rs](https://docs.rs/victauri-plugin/badge.svg)](https://docs.rs/victauri-plugin)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![MSRV: 1.88+](https://img.shields.io/badge/MSRV-1.88+-informational)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
+<p align="center">
+  <strong>Full-stack testing for Tauri apps. Click a button in the frontend, verify the Rust handler ran, confirm the database row was written — from one test.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/runyourempire/victauri/actions/workflows/ci.yml"><img src="https://github.com/runyourempire/victauri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/victauri-plugin"><img src="https://img.shields.io/crates/v/victauri-plugin.svg" alt="crates.io"></a>
+  <a href="https://docs.rs/victauri-plugin"><img src="https://docs.rs/victauri-plugin/badge.svg" alt="docs.rs"></a>
+  <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0"></a>
+  <a href="https://doc.rust-lang.org/edition-guide/rust-2024/index.html"><img src="https://img.shields.io/badge/MSRV-1.88+-informational" alt="MSRV: 1.88+"></a>
+</p>
 
 ---
 
