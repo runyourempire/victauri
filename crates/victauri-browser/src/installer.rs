@@ -60,31 +60,83 @@ pub fn install_dir() -> Result<PathBuf, InstallerError> {
     Ok(home.join(".victauri").join("bin"))
 }
 
-/// Install the native messaging host manifest.
+/// Install the native messaging host manifest for all supported Chromium browsers.
 ///
-/// 1. Writes the manifest JSON to the platform-specific location
-/// 2. On Windows, creates the registry key
+/// Writes the manifest JSON to Chrome, Edge, and Brave locations.
+/// On Windows, also creates registry keys for all browsers.
 ///
 /// # Errors
 ///
 /// Returns an error if file I/O or registry operations fail.
 pub fn install(binary_path: &str, extension_id: &str) -> Result<String, InstallerError> {
-    let manifest_path = host_manifest_path()?;
     let manifest = host_manifest(binary_path, extension_id);
-
-    if let Some(parent) = manifest_path.parent() {
-        std::fs::create_dir_all(parent).map_err(InstallerError::Io)?;
-    }
-
     let json = serde_json::to_string_pretty(&manifest).map_err(InstallerError::Json)?;
-    std::fs::write(&manifest_path, &json).map_err(InstallerError::Io)?;
+
+    let primary_path = host_manifest_path()?;
+
+    for path in all_manifest_paths()? {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, &json);
+    }
 
     #[cfg(target_os = "windows")]
     {
-        register_windows_host(&manifest_path)?;
+        register_windows_host(&primary_path)?;
     }
 
-    Ok(manifest_path.to_string_lossy().to_string())
+    Ok(primary_path.to_string_lossy().to_string())
+}
+
+fn all_manifest_paths() -> Result<Vec<PathBuf>, InstallerError> {
+    let home = home_dir()?;
+    let mut paths = vec![];
+
+    #[cfg(target_os = "windows")]
+    {
+        paths.push(home.join(".victauri").join("native-host-manifest.json"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let app_support = home.join("Library").join("Application Support");
+        let manifest_file = format!("{HOST_NAME}.json");
+        for browser_dir in [
+            "Google/Chrome",
+            "Microsoft Edge",
+            "BraveSoftware/Brave-Browser",
+            "Arc/User Data",
+        ] {
+            paths.push(
+                app_support
+                    .join(browser_dir)
+                    .join("NativeMessagingHosts")
+                    .join(&manifest_file),
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let manifest_file = format!("{HOST_NAME}.json");
+        let config = home.join(".config");
+        for browser_dir in [
+            "google-chrome",
+            "microsoft-edge",
+            "BraveSoftware/Brave-Browser",
+            "chromium",
+        ] {
+            paths.push(
+                config
+                    .join(browser_dir)
+                    .join("NativeMessagingHosts")
+                    .join(&manifest_file),
+            );
+        }
+    }
+
+    Ok(paths)
 }
 
 /// Uninstall the native messaging host manifest.
@@ -107,18 +159,24 @@ pub fn uninstall() -> Result<(), InstallerError> {
 }
 
 #[cfg(target_os = "windows")]
+const WINDOWS_REGISTRY_PATHS: &[&str] = &[
+    r"HKCU\Software\Google\Chrome\NativeMessagingHosts",
+    r"HKCU\Software\Microsoft\Edge\NativeMessagingHosts",
+    r"HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts",
+];
+
+#[cfg(target_os = "windows")]
 fn register_windows_host(manifest_path: &std::path::Path) -> Result<(), InstallerError> {
     use std::process::Command;
 
-    let key = format!(
-        r"HKCU\Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}"
-    );
     let value = manifest_path.to_string_lossy();
 
-    Command::new("reg")
-        .args(["add", &key, "/ve", "/t", "REG_SZ", "/d", &value, "/f"])
-        .output()
-        .map_err(InstallerError::Io)?;
+    for base_key in WINDOWS_REGISTRY_PATHS {
+        let key = format!(r"{base_key}\{HOST_NAME}");
+        let _ = Command::new("reg")
+            .args(["add", &key, "/ve", "/t", "REG_SZ", "/d", &value, "/f"])
+            .output();
+    }
 
     Ok(())
 }
@@ -127,11 +185,10 @@ fn register_windows_host(manifest_path: &std::path::Path) -> Result<(), Installe
 fn unregister_windows_host() {
     use std::process::Command;
 
-    let key = format!(
-        r"HKCU\Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}"
-    );
-
-    let _ = Command::new("reg").args(["delete", &key, "/f"]).output();
+    for base_key in WINDOWS_REGISTRY_PATHS {
+        let key = format!(r"{base_key}\{HOST_NAME}");
+        let _ = Command::new("reg").args(["delete", &key, "/f"]).output();
+    }
 }
 
 fn home_dir() -> Result<PathBuf, InstallerError> {

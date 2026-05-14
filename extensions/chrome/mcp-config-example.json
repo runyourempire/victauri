@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "victauri-browser": {
+      "url": "http://127.0.0.1:7474/mcp"
+    }
+  }
+}
