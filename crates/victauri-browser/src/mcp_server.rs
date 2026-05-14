@@ -241,10 +241,74 @@ fn build_tool_definitions() -> Vec<Tool> {
 }
 
 fn tool_def(name: &str, description: &str, schema: serde_json::Value) -> Tool {
-    Tool {
-        name: name.into(),
-        description: Some(description.into()),
-        input_schema: serde_json::from_value(schema).unwrap_or_default(),
-        ..Default::default()
+    serde_json::from_value(json!({
+        "name": name,
+        "description": description,
+        "inputSchema": schema,
+    }))
+    .expect("tool definition must be valid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bridge_dispatch::BridgeDispatch;
+    use crate::tab_state::TabManager;
+    use rmcp::ServerHandler;
+    use std::sync::Arc;
+
+    fn make_handler() -> VictauriBrowserHandler {
+        let tab_mgr = Arc::new(TabManager::new());
+        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        VictauriBrowserHandler::new(tab_mgr, dispatch)
+    }
+
+    #[test]
+    fn server_info_has_tools_capability() {
+        let handler = make_handler();
+        let info = handler.get_info();
+        let caps = info.capabilities;
+        assert!(caps.tools.is_some());
+    }
+
+    #[test]
+    fn tool_definitions_are_20() {
+        let tools = build_tool_definitions();
+        assert_eq!(tools.len(), 20);
+    }
+
+    #[test]
+    fn all_tools_have_descriptions() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            assert!(
+                tool.description.is_some(),
+                "tool {} missing description",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn tool_names_are_unique() {
+        let tools = build_tool_definitions();
+        let mut names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), 20);
+    }
+
+    #[test]
+    fn get_tool_finds_existing() {
+        let handler = make_handler();
+        let tool = handler.get_tool("eval_js");
+        assert!(tool.is_some());
+        assert_eq!(tool.unwrap().name.as_ref(), "eval_js");
+    }
+
+    #[test]
+    fn get_tool_returns_none_for_unknown() {
+        let handler = make_handler();
+        assert!(handler.get_tool("nonexistent").is_none());
     }
 }

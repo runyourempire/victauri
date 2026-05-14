@@ -155,6 +155,29 @@ pub async fn rate_limit(
     }
 }
 
+/// Security headers middleware: X-Content-Type-Options, Cache-Control.
+pub async fn security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert("x-content-type-options", "nosniff".parse().unwrap());
+    headers.insert("cache-control", "no-store".parse().unwrap());
+    response
+}
+
+/// Localhost origin guard: rejects requests with non-localhost Origin header.
+pub async fn origin_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
+    if let Some(origin) = request.headers().get("origin").and_then(|v| v.to_str().ok()) {
+        let is_local = origin.contains("127.0.0.1")
+            || origin.contains("localhost")
+            || origin.contains("[::1]");
+        if !is_local {
+            tracing::warn!("rejected non-local origin: {origin}");
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+    Ok(next.run(request).await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

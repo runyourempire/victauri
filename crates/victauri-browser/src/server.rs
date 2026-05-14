@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use axum::extract::DefaultBodyLimit;
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 
 use crate::auth;
 use crate::mcp_handler::VictauriBrowserHandler;
@@ -21,6 +23,13 @@ pub fn build_app_full(
 ) -> axum::Router {
     let rest = rest_routes(handler.clone());
 
+    let mcp_handler = handler.clone();
+    let mcp_service = StreamableHttpService::new(
+        move || Ok(mcp_handler.clone()),
+        Arc::new(LocalSessionManager::default()),
+        StreamableHttpServerConfig::default(),
+    );
+
     let info_handler_ref = handler.clone();
     let info_auth = auth_token.is_some();
 
@@ -29,6 +38,7 @@ pub fn build_app_full(
     });
 
     let mut router = axum::Router::new()
+        .route_service("/mcp", mcp_service)
         .nest("/api/tools", rest)
         .route(
             "/info",
@@ -63,6 +73,8 @@ pub fn build_app_full(
             axum::routing::get(|| async { axum::Json(serde_json::json!({"status": "ok"})) }),
         )
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .layer(axum::middleware::from_fn(auth::security_headers))
+        .layer(axum::middleware::from_fn(auth::origin_guard))
 }
 
 fn rest_routes(handler: VictauriBrowserHandler) -> axum::Router {
