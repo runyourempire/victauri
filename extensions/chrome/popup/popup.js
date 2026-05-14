@@ -51,4 +51,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         mcpUrl.style.color = '#22c55e';
         setTimeout(() => { mcpUrl.style.color = ''; }, 1000);
     });
+
+    // Action buttons
+    document.getElementById('btn-screenshot').addEventListener('click', async () => {
+        if (!tab || !tab.id) return;
+        try {
+            const result = await sendCommand(tab.id, 'screenshot', {});
+            if (result) {
+                const blob = await (await fetch('data:image/png;base64,' + (result.data || result))).blob();
+                const url = URL.createObjectURL(blob);
+                chrome.tabs.create({ url });
+            }
+        } catch (e) {
+            console.error('Screenshot failed:', e);
+        }
+    });
+
+    document.getElementById('btn-a11y').addEventListener('click', async () => {
+        if (!tab || !tab.id) return;
+        try {
+            const result = await sendCommand(tab.id, 'auditAccessibility', {});
+            console.log('A11y audit:', result);
+        } catch (e) {
+            console.error('A11y audit failed:', e);
+        }
+    });
+
+    document.getElementById('btn-snapshot').addEventListener('click', async () => {
+        if (!tab || !tab.id) return;
+        try {
+            const result = await sendCommand(tab.id, 'snapshot', { format: 'compact' });
+            console.log('DOM snapshot:', result);
+        } catch (e) {
+            console.error('Snapshot failed:', e);
+        }
+    });
 });
+
+async function sendCommand(tabId, method, args) {
+    return new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(
+            tabId,
+            { type: 'victauri_command', id: 'popup-' + Date.now(), method, args },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else if (response && response.type === 'error') {
+                    reject(new Error(response.error));
+                } else {
+                    resolve(response);
+                }
+            }
+        );
+    });
+}

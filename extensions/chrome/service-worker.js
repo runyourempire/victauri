@@ -70,6 +70,17 @@ async function handleHostCommand(command) {
         } else if (method === 'screenshot') {
             const data = await captureScreenshot(tabId, args || {});
             sendToHost({ id, type: 'response', data });
+        } else if (method === 'getCookies') {
+            const tab = await chrome.tabs.get(tabId);
+            const url = tab.url;
+            const cookies = await chrome.cookies.getAll({ url });
+            sendToHost({ id, type: 'response', data: cookies });
+        } else if (method === 'navigate' && args && args.url) {
+            await chrome.tabs.update(tabId, { url: args.url });
+            sendToHost({ id, type: 'response', data: { ok: true, url: args.url } });
+        } else if (method === 'navigateBack') {
+            await chrome.tabs.goBack(tabId);
+            sendToHost({ id, type: 'response', data: { ok: true } });
         } else {
             const result = await sendToContentScript(tabId, id, method, args);
             sendToHost({ id, type: 'response', data: result });
