@@ -2,10 +2,11 @@
 
 All notable changes to the Victauri VS Code extension will be documented in this file.
 
-## 0.1.2 (2026-05-14)
+## 0.2.0 (2026-05-14)
 
-- New logo — minimalist glowing V on dark background, replacing generic beaker icon
+- New logo — minimalist glowing V with electric blue glow on dark background
 - Updated gallery banner color to match new branding
+- Cleaned up VSIX packaging (117 KB, no unused assets)
 
 ## 0.1.1 (2026-05-14)
 
