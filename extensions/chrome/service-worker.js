@@ -39,7 +39,7 @@ function scheduleReconnect() {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'victauri-reconnect') {
+    if (alarm.name === 'victauri-reconnect' || alarm.name === 'victauri-keepalive') {
         connectNative();
     }
 });
@@ -58,10 +58,16 @@ async function handleHostCommand(command) {
         if (!tabId) {
             const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!activeTab) {
-                sendToHost({ id, type: 'error', error: 'No active tab' });
+                sendToHost({ id, type: 'response', error: 'No active tab' });
                 return;
             }
             tabId = activeTab.id;
+        }
+
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:'))) {
+            sendToHost({ id, type: 'response', error: `Cannot inspect ${tab.url} — browser internal pages are not accessible` });
+            return;
         }
 
         if (cmdType === 'cdp') {
@@ -257,6 +263,11 @@ async function syncExistingTabs() {
         console.error('[victauri] Tab sync failed:', e);
     }
 }
+
+// Keepalive: Chrome MV3 terminates service workers after 5 min of inactivity.
+// The native messaging port keeps it alive during active use, but we also set
+// a periodic alarm as a safety net to ensure reconnection.
+chrome.alarms.create('victauri-keepalive', { periodInMinutes: 4 });
 
 // Connect on startup
 connectNative();
