@@ -1439,4 +1439,101 @@ mod tests {
             assert!(is_known, "action {action} not recognized");
         }
     }
+
+    // --- Deep assert_semantic edge cases ---
+
+    #[tokio::test]
+    async fn assert_semantic_numeric_from_non_string_value() {
+        // When eval returns a number (not wrapped in quotes), as_str() returns None
+        // and we fall through to eval_result.to_string() — this is the numeric path
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!(42), "greater_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], true);
+        assert_eq!(result["actual"], "42");
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_truthy_empty_string_quoted() {
+        // The literal string "" (two quotes) should be falsy
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("\"\""), "truthy", None).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_truthy_whitespace_is_truthy() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!(" "), "truthy", None).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_contains_empty_expected() {
+        // Every string contains ""
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("anything"), "contains", Some("")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_negative_numbers() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("-5"), "greater_than", Some("-10")).await.unwrap();
+        assert_eq!(result["passed"], true);
+
+        let result2 = run_assert_semantic(&h, &d, serde_json::json!("-20"), "greater_than", Some("-10")).await.unwrap();
+        assert_eq!(result2["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_less_than_zero() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("-1"), "less_than", Some("0")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_equals_with_json_object() {
+        // When eval returns an object, as_str() is None, so actual_str = to_string()
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(
+            &h, &d,
+            serde_json::json!({"key": "val"}),
+            "contains",
+            Some("key"),
+        ).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_infinity() {
+        let (h, d) = make_handler_with_dispatch();
+        // "inf" parses as f64::INFINITY in Rust, so inf > 999999 is true
+        let result = run_assert_semantic(&h, &d, serde_json::json!("inf"), "greater_than", Some("999999")).await.unwrap();
+        assert_eq!(result["passed"], true);
+
+        // "infinity" also parses
+        let result2 = run_assert_semantic(&h, &d, serde_json::json!("infinity"), "greater_than", Some("999999")).await.unwrap();
+        assert_eq!(result2["passed"], true);
+
+        // "NaN" parses but NaN > x is always false
+        let result3 = run_assert_semantic(&h, &d, serde_json::json!("NaN"), "greater_than", Some("0")).await.unwrap();
+        assert_eq!(result3["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_not_equals_with_no_expected() {
+        let (h, d) = make_handler_with_dispatch();
+        // not_equals with no expected — is_some_and returns false
+        let result = run_assert_semantic(&h, &d, serde_json::json!("x"), "not_equals", None).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_contains_case_sensitive() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("Hello World"), "contains", Some("hello")).await.unwrap();
+        // Contains is case-sensitive
+        assert_eq!(result["passed"], false);
+    }
 }

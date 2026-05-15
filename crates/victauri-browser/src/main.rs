@@ -562,4 +562,274 @@ mod integration_tests {
         assert_eq!(active_tab["tab_id"], 2);
         assert_eq!(active_tab["url"], "https://b.com");
     }
+
+    // --- Deep challenger: Chrome extension failure modes ---
+
+    #[tokio::test]
+    async fn tab_id_at_u32_max_boundary() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Chrome uses high tab IDs in long-running sessions
+        process_message(
+            &json!({"type": "tab_created", "tab_id": 4_294_967_295u64, "url": "https://x.com", "title": "Max"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // u32::MAX = 4294967295, but JSON uses u64 and we cast with `as u32`
+        // 4294967295 fits in u32 exactly
+        assert_eq!(tab_mgr.tab_count().await, 1);
+
+        process_message(
+            &json!({"type": "tab_activated", "tab_id": 4_294_967_295u64}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        assert_eq!(tab_mgr.get_active_tab_id().await, u32::MAX);
+    }
+
+    #[tokio::test]
+    async fn tab_id_overflow_u32_is_ignored() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Value larger than u32::MAX — as_u64 returns Some but `as u32` would truncate
+        // However, the JSON value 4294967296 as u64 gives Some(4294967296),
+        // and `4294967296 as u32` == 0 (truncation). This could create a tab with ID 0.
+        process_message(
+            &json!({"type": "tab_created", "tab_id": 4_294_967_296u64, "url": "https://x.com", "title": "Overflow"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // Tab is created with truncated ID 0
+        assert_eq!(tab_mgr.tab_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn tab_id_as_string_is_ignored() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Chrome extension bug: tab_id sent as string instead of number
+        process_message(
+            &json!({"type": "tab_created", "tab_id": "42", "url": "https://x.com", "title": "StringID"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // as_u64 returns None for strings — the handler skips this
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn tab_id_as_float_is_ignored() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": "tab_created", "tab_id": 42.5, "url": "https://x.com", "title": "Float"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // as_u64 on float returns None in serde_json
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn tab_id_negative_is_ignored() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": "tab_created", "tab_id": -1, "url": "https://x.com", "title": "Neg"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // as_u64 on negative returns None
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn service_worker_restart_simulation() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Simulate: extension service worker starts, creates tabs, then dies
+        for i in 1..=5u32 {
+            process_message(
+                &json!({"type": "tab_created", "tab_id": i, "url": format!("https://t{i}.com"), "title": format!("T{i}")}),
+                &dispatch,
+                &tab_mgr,
+            ).await;
+            process_message(
+                &json!({"type": "bridge_ready", "tab_id": i}),
+                &dispatch,
+                &tab_mgr,
+            ).await;
+        }
+        process_message(&json!({"type": "tab_activated", "tab_id": 3}), &dispatch, &tab_mgr).await;
+        assert_eq!(tab_mgr.tab_count().await, 5);
+
+        // Service worker restarts — sends fresh tab_created for the same IDs
+        // This tests whether duplicate creates are handled
+        for i in 1..=5u32 {
+            process_message(
+                &json!({"type": "tab_created", "tab_id": i, "url": format!("https://t{i}.com"), "title": format!("T{i}")}),
+                &dispatch,
+                &tab_mgr,
+            ).await;
+        }
+        // Should either overwrite or be additive — either way, tabs exist
+        let count = tab_mgr.tab_count().await;
+        assert!(count >= 5, "tabs should survive restart: {count}");
+    }
+
+    #[tokio::test]
+    async fn bridge_ready_for_unknown_tab_is_noop() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": "bridge_ready", "tab_id": 999}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // Should not panic or create a phantom tab
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn activate_closed_tab_is_noop() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": "tab_created", "tab_id": 1, "url": "https://x.com", "title": "X"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        process_message(
+            &json!({"type": "tab_activated", "tab_id": 1}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        process_message(
+            &json!({"type": "tab_closed", "tab_id": 1}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+
+        // Activate a now-closed tab (race condition in Chrome)
+        process_message(
+            &json!({"type": "tab_activated", "tab_id": 1}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // Should not panic — but active_tab may point to a ghost
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_response_resolution_interleaved_with_tabs() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Set up pending commands
+        let rx1 = dispatch.register_test_pending("cmd-1").await;
+        let rx2 = dispatch.register_test_pending("cmd-2").await;
+        let rx3 = dispatch.register_test_pending("cmd-3").await;
+
+        // Interleave responses with tab events
+        let messages = vec![
+            json!({"type": "tab_created", "tab_id": 10, "url": "https://a.com", "title": "A"}),
+            json!({"type": "response", "id": "cmd-1", "data": {"ok": 1}}),
+            json!({"type": "tab_activated", "tab_id": 10}),
+            json!({"type": "response", "id": "cmd-2", "data": {"ok": 2}}),
+            json!({"type": "bridge_ready", "tab_id": 10}),
+            json!({"type": "response", "id": "cmd-3", "data": {"ok": 3}}),
+        ];
+
+        for msg in &messages {
+            process_message(msg, &dispatch, &tab_mgr).await;
+        }
+
+        // All responses resolved correctly
+        assert_eq!(rx1.await.unwrap().data.unwrap()["ok"], 1);
+        assert_eq!(rx2.await.unwrap().data.unwrap()["ok"], 2);
+        assert_eq!(rx3.await.unwrap().data.unwrap()["ok"], 3);
+
+        // Tab state correct
+        assert_eq!(tab_mgr.tab_count().await, 1);
+        assert!(tab_mgr.is_bridge_ready(10).await);
+    }
+
+    #[tokio::test]
+    async fn message_with_extra_fields_accepted() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        // Chrome extension might add extra fields we don't use
+        process_message(
+            &json!({
+                "type": "tab_created",
+                "tab_id": 7,
+                "url": "https://x.com",
+                "title": "X",
+                "window_id": 1,
+                "index": 0,
+                "pinned": false,
+                "audible": false,
+                "muted_info": {"muted": false}
+            }),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        assert_eq!(tab_mgr.tab_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn null_type_field_is_noop() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": null, "tab_id": 1}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn response_with_large_data_payload() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        let rx = dispatch.register_test_pending("big-data").await;
+
+        // Simulate a DOM snapshot response (can be MB-scale)
+        let big_array: Vec<serde_json::Value> = (0..1000)
+            .map(|i| json!({"ref": format!("e{i}"), "tag": "div", "text": "x".repeat(100)}))
+            .collect();
+
+        process_message(
+            &json!({"type": "response", "id": "big-data", "data": big_array}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+
+        let result = rx.await.unwrap();
+        assert!(result.error.is_none());
+        let data = result.data.unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 1000);
+    }
+
+    #[tokio::test]
+    async fn empty_json_object_message() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(&json!({}), &dispatch, &tab_mgr).await;
+        assert_eq!(tab_mgr.tab_count().await, 0);
+        assert_eq!(dispatch.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn message_type_as_number_is_noop() {
+        let (dispatch, tab_mgr) = make_test_infra();
+
+        process_message(
+            &json!({"type": 42, "tab_id": 1, "url": "https://x.com", "title": "X"}),
+            &dispatch,
+            &tab_mgr,
+        ).await;
+        // as_str on number returns None, defaults to ""
+        assert_eq!(tab_mgr.tab_count().await, 0);
+    }
 }

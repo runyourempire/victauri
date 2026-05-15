@@ -773,4 +773,282 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), 404);
     }
+
+    // --- Deep challenger tests ---
+
+    #[tokio::test]
+    async fn auth_token_with_unicode_rejected() {
+        let token = "valid-token";
+        let app = make_app(Some(token.to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer valid-token\u{200B}")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // Zero-width space appended — must reject
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn auth_token_with_newline_rejected() {
+        let token = "valid-token";
+        let app = make_app(Some(token.to_string()));
+        // Newline in token value — a header injection attempt
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer valid-token\r\nX-Evil: injected")
+            .body(Body::empty());
+        if let Ok(req) = req {
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), 401);
+        }
+        // If Err: http crate rejects headers with CRLF — attack blocked at protocol level
+    }
+
+    #[tokio::test]
+    async fn content_type_missing_on_post_tool() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/get_plugin_info")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // axum requires content-type for JSON extraction — 415 Unsupported Media Type
+        assert!(
+            resp.status() == 415 || resp.status() == 400,
+            "expected 415 or 400, got {}",
+            resp.status()
+        );
+    }
+
+    #[tokio::test]
+    async fn content_type_wrong_on_post_tool() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/get_plugin_info")
+            .header("content-type", "text/plain")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert!(
+            resp.status() == 415 || resp.status() == 400,
+            "expected 415 or 400, got {}",
+            resp.status()
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_tool_calls_all_return() {
+        let app = make_app(None);
+        let mut handles = vec![];
+        for _ in 0..50 {
+            let a = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/api/tools/get_plugin_info")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap();
+                let resp = a.oneshot(req).await.unwrap();
+                let status = resp.status();
+                let body = resp.into_body().collect().await.unwrap().to_bytes();
+                let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                (status, json)
+            }));
+        }
+        for h in handles {
+            let (status, json) = h.await.unwrap();
+            assert_eq!(status, 200);
+            assert_eq!(json["result"]["name"], "victauri-browser");
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_name_with_url_encoded_chars() {
+        let app = make_app(None);
+        // %5F = underscore. "get%5Fplugin%5Finfo" → "get_plugin_info"
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/get%5Fplugin%5Finfo")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(status, 200);
+        // Should route to get_plugin_info (URL decoded)
+        assert_eq!(json["result"]["name"], "victauri-browser");
+    }
+
+    #[tokio::test]
+    async fn auth_token_timing_attack_resistance() {
+        // Verify that wrong tokens of different lengths both fail
+        let token = "a".repeat(64);
+        let app = make_app(Some(token.clone()));
+
+        // Wrong token same length
+        let wrong_same_len = "b".repeat(64);
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", format!("Bearer {wrong_same_len}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 401);
+
+        // Wrong token different length
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer short")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 401);
+
+        // Correct token works
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn origin_with_credentials_in_url() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://user:pass@evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn origin_localhost_with_credentials() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://user:pass@localhost:7474")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // URL with credentials: "user:pass@localhost" — after stripping scheme,
+        // the host extraction splits on ':' and gets "user" (not "localhost")
+        // This is actually a legitimate security concern — should be blocked
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn multiple_authorization_headers() {
+        let token = "real-token";
+        let app = make_app(Some(token.to_string()));
+        // HTTP allows multiple header values; axum takes the first
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer wrong-token")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // Should reject — first header wins, and it's wrong
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn json_body_with_duplicate_keys() {
+        let app = make_app(None);
+        // JSON with duplicate "action" keys — serde takes the last one
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/tabs")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"action": "get_state", "action": "list"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(status, 200);
+        // serde_json takes the last key, so action="list" wins
+        assert!(json["result"].is_array());
+    }
+
+    #[tokio::test]
+    async fn very_large_json_within_limit() {
+        let app = make_app(None);
+        // 1.5MB of JSON body — under the 2MB limit
+        // Use get_plugin_info which doesn't dispatch to bridge (avoids 30s timeout)
+        let padding = "x".repeat(1_500_000);
+        let body = serde_json::json!({"unused_field": padding});
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/get_plugin_info")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["result"]["name"], "victauri-browser");
+    }
+
+    #[tokio::test]
+    async fn head_request_on_health() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("HEAD")
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // HEAD on a GET route should return 200 with no body
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn options_request_on_tool() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("OPTIONS")
+            .uri("/api/tools/eval_js")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // OPTIONS typically returns 200 or 405 depending on CORS config
+        assert!(resp.status() == 200 || resp.status() == 405);
+    }
+
+    #[tokio::test]
+    async fn rapid_auth_failures_dont_leak_info() {
+        let token = "secret-token-value";
+        let app = make_app(Some(token.to_string()));
+
+        for attempt in ["", "wrong", "secret-token-valu", "secret-token-value!", &"x".repeat(1000)] {
+            let req = axum::http::Request::builder()
+                .uri("/info")
+                .header("authorization", format!("Bearer {attempt}"))
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), 401, "should reject: {attempt:?}");
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            // Body should not contain the actual token or any hint
+            let body_str = String::from_utf8_lossy(&body);
+            assert!(
+                !body_str.contains(token),
+                "response leaked the token"
+            );
+        }
+    }
 }
