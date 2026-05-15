@@ -392,4 +392,151 @@ mod tests {
             );
         }
     }
+
+    // --- Adversarial schema validation tests ---
+
+    #[test]
+    fn all_schemas_have_type_object() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            let schema = serde_json::Value::Object((*tool.input_schema).clone());
+            assert_eq!(
+                schema["type"], "object",
+                "tool {} schema must be type:object",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn all_schemas_have_properties() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            let schema = serde_json::Value::Object((*tool.input_schema).clone());
+            assert!(
+                schema.get("properties").is_some(),
+                "tool {} schema must have 'properties'",
+                tool.name
+            );
+        }
+    }
+
+    #[test]
+    fn tool_names_match_handler_list() {
+        let handler = make_handler();
+        let handler_tools = handler.list_tools();
+        let mcp_tools = build_tool_definitions();
+
+        let mut handler_names: Vec<&str> = handler_tools.iter().map(|t| t.name.as_str()).collect();
+        let mut mcp_names: Vec<&str> = mcp_tools.iter().map(|t| t.name.as_ref()).collect();
+        handler_names.sort();
+        mcp_names.sort();
+
+        assert_eq!(handler_names, mcp_names, "handler tools must match MCP definitions");
+    }
+
+    #[test]
+    fn tab_id_present_in_most_schemas() {
+        let tools = build_tool_definitions();
+        let no_tab_tools = ["get_plugin_info", "tabs"];
+        for tool in &tools {
+            let name = tool.name.as_ref();
+            if no_tab_tools.contains(&name) {
+                continue;
+            }
+            let schema = serde_json::Value::Object((*tool.input_schema).clone());
+            assert!(
+                schema["properties"].get("tab_id").is_some(),
+                "tool {name} should have tab_id property"
+            );
+        }
+    }
+
+    #[test]
+    fn action_enum_values_match_handler_routing() {
+        let tools = build_tool_definitions();
+
+        let expected_actions: std::collections::HashMap<&str, Vec<&str>> = [
+            ("interact", vec!["click", "double_click", "hover", "focus", "scroll", "scroll_into_view", "select"]),
+            ("input", vec!["fill", "type", "press_key", "clear"]),
+            ("inspect", vec!["styles", "bounds", "highlight", "clear_highlights", "accessibility", "performance"]),
+            ("css", vec!["inject", "remove"]),
+            ("logs", vec!["console", "network", "navigation", "dialogs", "events"]),
+            ("storage", vec!["get", "set", "delete", "cookies"]),
+            ("navigate", vec!["go_to", "back", "history", "dialogs"]),
+            ("recording", vec!["start", "stop", "checkpoint", "get_events", "list_checkpoints", "export"]),
+        ]
+        .into_iter()
+        .collect();
+
+        for (tool_name, expected) in &expected_actions {
+            let tool = tools.iter().find(|t| t.name.as_ref() == *tool_name).unwrap();
+            let schema = serde_json::Value::Object((*tool.input_schema).clone());
+            let enum_vals = schema["properties"]["action"]["enum"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{tool_name} missing action enum"));
+            let mut actual: Vec<&str> = enum_vals.iter().map(|v| v.as_str().unwrap()).collect();
+            let mut expected_sorted = expected.clone();
+            actual.sort();
+            expected_sorted.sort();
+            assert_eq!(
+                actual, expected_sorted,
+                "action enum mismatch for {tool_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn wait_for_requires_condition_and_value() {
+        let tools = build_tool_definitions();
+        let tool = tools.iter().find(|t| t.name.as_ref() == "wait_for").unwrap();
+        let schema = serde_json::Value::Object((*tool.input_schema).clone());
+        let required = schema["required"].as_array().unwrap();
+        let required_names: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(required_names.contains(&"condition"));
+        assert!(required_names.contains(&"value"));
+    }
+
+    #[test]
+    fn assert_semantic_requires_expression_and_condition() {
+        let tools = build_tool_definitions();
+        let tool = tools
+            .iter()
+            .find(|t| t.name.as_ref() == "assert_semantic")
+            .unwrap();
+        let schema = serde_json::Value::Object((*tool.input_schema).clone());
+        let required = schema["required"].as_array().unwrap();
+        let required_names: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(required_names.contains(&"expression"));
+        assert!(required_names.contains(&"condition"));
+    }
+
+    #[test]
+    fn no_tool_has_empty_description() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            let desc = tool.description.as_deref().unwrap_or("");
+            assert!(
+                desc.len() > 10,
+                "tool {} has too-short description: {:?}",
+                tool.name,
+                desc
+            );
+        }
+    }
+
+    #[test]
+    fn tool_def_json_roundtrips() {
+        let tools = build_tool_definitions();
+        for tool in &tools {
+            let serialized = serde_json::to_string(&tool).unwrap();
+            let deserialized: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(
+                deserialized["name"].as_str().unwrap(),
+                tool.name.as_ref(),
+                "tool {} failed JSON roundtrip",
+                tool.name
+            );
+        }
+    }
 }

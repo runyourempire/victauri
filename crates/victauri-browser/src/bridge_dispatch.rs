@@ -170,6 +170,12 @@ impl BridgeDispatch {
         let mut pending = self.pending.lock().await;
         pending.remove(id);
     }
+
+    /// Return the IDs of all currently pending commands (for testing).
+    #[cfg(test)]
+    pub(crate) async fn pending_ids(&self) -> Vec<String> {
+        self.pending.lock().await.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]
@@ -317,4 +323,176 @@ mod tests {
         dispatch.cancel_all().await;
         assert_eq!(dispatch.pending_count().await, 0);
     }
+
+    // --- Adversarial stress tests ---
+
+    #[tokio::test]
+    async fn concurrent_100_pending_insertions_and_resolutions() {
+        let stdout = tokio::io::stdout();
+        let dispatch = Arc::new(BridgeDispatch::new(stdout));
+
+        let mut receivers = vec![];
+        for i in 0..100 {
+            let (tx, rx) = oneshot::channel();
+            {
+                let mut pending = dispatch.pending.lock().await;
+                pending.insert(format!("stress-{i}"), tx);
+            }
+            receivers.push((i, rx));
+        }
+        assert_eq!(dispatch.pending_count().await, 100);
+
+        let mut handles = vec![];
+        for i in 0..100 {
+            let d = Arc::clone(&dispatch);
+            handles.push(tokio::spawn(async move {
+                d.on_response(
+                    &format!("stress-{i}"),
+                    Some(serde_json::json!({"idx": i})),
+                    None,
+                )
+                .await;
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(dispatch.pending_count().await, 0);
+        for (i, rx) in receivers {
+            let result = rx.await.unwrap();
+            assert_eq!(result.data.unwrap()["idx"], i);
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_after_cancel_all_is_noop() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx, _rx) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("doomed".to_string(), tx);
+        }
+
+        dispatch.cancel_all().await;
+
+        // Trying to resolve after cancel should be a no-op (key already removed)
+        dispatch
+            .on_response("doomed", Some(serde_json::json!({"late": true})), None)
+            .await;
+        assert_eq!(dispatch.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn duplicate_id_response_only_resolves_once() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("dup".to_string(), tx);
+        }
+
+        dispatch
+            .on_response("dup", Some(serde_json::json!({"first": true})), None)
+            .await;
+        // Second response with same ID should be silently ignored
+        dispatch
+            .on_response("dup", Some(serde_json::json!({"second": true})), None)
+            .await;
+
+        let result = rx.await.unwrap();
+        assert_eq!(result.data.unwrap()["first"], true);
+    }
+
+    #[tokio::test]
+    async fn cancel_all_then_insert_new() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx1, rx1) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("before".to_string(), tx1);
+        }
+
+        dispatch.cancel_all().await;
+        let result1 = rx1.await.unwrap();
+        assert!(result1.error.is_some());
+
+        // New insertions after cancel should work normally
+        let (tx2, rx2) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("after".to_string(), tx2);
+        }
+        assert_eq!(dispatch.pending_count().await, 1);
+
+        dispatch
+            .on_response("after", Some(serde_json::json!({"ok": true})), None)
+            .await;
+        let result2 = rx2.await.unwrap();
+        assert_eq!(result2.data.unwrap()["ok"], true);
+    }
+
+    #[tokio::test]
+    async fn concurrent_cancel_and_resolve_race() {
+        let stdout = tokio::io::stdout();
+        let dispatch = Arc::new(BridgeDispatch::new(stdout));
+
+        for i in 0..50 {
+            let (tx, _rx) = oneshot::channel();
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert(format!("race-{i}"), tx);
+        }
+
+        let d1 = Arc::clone(&dispatch);
+        let cancel_task = tokio::spawn(async move {
+            d1.cancel_all().await;
+        });
+
+        let d2 = Arc::clone(&dispatch);
+        let resolve_task = tokio::spawn(async move {
+            for i in 0..50 {
+                d2.on_response(&format!("race-{i}"), Some(serde_json::json!({})), None)
+                    .await;
+            }
+        });
+
+        cancel_task.await.unwrap();
+        resolve_task.await.unwrap();
+
+        // Regardless of ordering, pending should be empty
+        assert_eq!(dispatch.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn on_response_with_both_data_and_error() {
+        let stdout = tokio::io::stdout();
+        let dispatch = BridgeDispatch::new(stdout);
+
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = dispatch.pending.lock().await;
+            pending.insert("both".to_string(), tx);
+        }
+
+        dispatch
+            .on_response(
+                "both",
+                Some(serde_json::json!({"partial": true})),
+                Some("also an error".to_string()),
+            )
+            .await;
+
+        let result = rx.await.unwrap();
+        assert!(result.data.is_some());
+        assert!(result.error.is_some());
+    }
+
+    use std::sync::Arc;
 }

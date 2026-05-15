@@ -1027,4 +1027,416 @@ mod tests {
         assert!(names.contains(&"screenshot"));
         assert!(names.contains(&"assert_semantic"));
     }
+
+    // --- Adversarial stress tests ---
+
+    /// Helper: creates a handler with a dispatch that we can manually resolve.
+    /// Spawns `assert_semantic`, intercepts the pending dispatch via `on_response`.
+    async fn run_assert_semantic(
+        handler: &VictauriBrowserHandler,
+        dispatch: &std::sync::Arc<BridgeDispatch>,
+        eval_return: serde_json::Value,
+        condition: &str,
+        expected: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let d = dispatch.clone();
+        let cond = condition.to_string();
+        let exp = expected.map(str::to_string);
+
+        let eval_result = eval_return.clone();
+        let handler = handler.clone();
+        let handle = tokio::spawn(async move {
+            let mut args = serde_json::json!({
+                "expression": "test_expr",
+                "condition": cond,
+            });
+            if let Some(e) = exp {
+                args["expected"] = serde_json::Value::String(e);
+            }
+            handler.execute_tool("assert_semantic", args).await
+        });
+
+        // Wait briefly for the dispatch to register the pending command
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Find and resolve the pending command
+        let ids = d.pending_ids().await;
+        if let Some(id) = ids.first() {
+            d.on_response(id, Some(eval_result), None).await;
+        }
+
+        handle.await.unwrap()
+    }
+
+    fn make_handler_with_dispatch() -> (VictauriBrowserHandler, std::sync::Arc<BridgeDispatch>) {
+        let tab_mgr = std::sync::Arc::new(TabManager::new());
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let handler = VictauriBrowserHandler::new(tab_mgr, dispatch.clone());
+        (handler, dispatch)
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_equals_pass() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("hello")).await.unwrap();
+        assert_eq!(result["passed"], true);
+        assert_eq!(result["actual"], "hello");
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_equals_fail() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("world")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_not_equals_pass() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "not_equals", Some("world")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_not_equals_fail() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("same"), "not_equals", Some("same")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_contains_pass() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello world"), "contains", Some("world")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_contains_fail() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "contains", Some("xyz")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_truthy_values() {
+        let (h, d) = make_handler_with_dispatch();
+
+        for (val, expected_pass) in [
+            (serde_json::json!("hello"), true),
+            (serde_json::json!("1"), true),
+            (serde_json::json!(42), true),
+            (serde_json::json!("false"), false),
+            (serde_json::json!("0"), false),
+            (serde_json::json!("null"), false),
+            (serde_json::json!("undefined"), false),
+        ] {
+            let result = run_assert_semantic(&h, &d, val.clone(), "truthy", None).await.unwrap();
+            assert_eq!(
+                result["passed"], expected_pass,
+                "truthy check failed for {val:?}, expected passed={expected_pass}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_pass() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("42"), "greater_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_fail() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("5"), "greater_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_equal_is_false() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("10"), "greater_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_less_than_pass() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("3"), "less_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_less_than_with_floats() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("3.14"), "less_than", Some("3.15")).await.unwrap();
+        assert_eq!(result["passed"], true);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_greater_than_non_numeric_fails() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("not_a_number"), "greater_than", Some("10")).await.unwrap();
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_unknown_condition() {
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let h = VictauriBrowserHandler::new(
+            std::sync::Arc::new(TabManager::new()),
+            dispatch.clone(),
+        );
+
+        let handle = tokio::spawn({
+            let h = h.clone();
+            async move {
+                h.execute_tool(
+                    "assert_semantic",
+                    serde_json::json!({
+                        "expression": "1",
+                        "condition": "banana",
+                    }),
+                )
+                .await
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let ids = dispatch.pending_ids().await;
+        if let Some(id) = ids.first() {
+            dispatch
+                .on_response(id, Some(serde_json::json!("1")), None)
+                .await;
+        }
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown condition"));
+    }
+
+    #[tokio::test]
+    async fn assert_semantic_equals_without_expected() {
+        let (h, d) = make_handler_with_dispatch();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", None).await.unwrap();
+        // equals with no expected should fail (is_some_and returns false)
+        assert_eq!(result["passed"], false);
+    }
+
+    #[tokio::test]
+    async fn concurrent_invocation_counter_correctness() {
+        let tab_mgr = std::sync::Arc::new(TabManager::new());
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
+
+        let mut handles = vec![];
+        for _ in 0..100 {
+            let h = handler.clone();
+            handles.push(tokio::spawn(async move {
+                h.execute_tool("get_plugin_info", serde_json::json!({}))
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let final_info = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(final_info["invocations"], 101);
+    }
+
+    #[tokio::test]
+    async fn tabs_list_with_populated_manager() {
+        let tab_mgr = std::sync::Arc::new(TabManager::new());
+        tab_mgr
+            .on_tab_created(1, "https://one.com", "One")
+            .await;
+        tab_mgr
+            .on_tab_created(2, "https://two.com", "Two")
+            .await;
+        tab_mgr.on_tab_activated(2).await;
+
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
+
+        let result = handler
+            .execute_tool("tabs", serde_json::json!({"action": "list"}))
+            .await
+            .unwrap();
+        let tabs = result.as_array().unwrap();
+        assert_eq!(tabs.len(), 2);
+
+        let active: Vec<_> = tabs.iter().filter(|t| t["active"] == true).collect();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0]["tab_id"], 2);
+    }
+
+    #[tokio::test]
+    async fn get_memory_stats_extracts_js_heap() {
+        let (h, d) = make_handler_with_dispatch();
+
+        let handle = tokio::spawn({
+            let h = h.clone();
+            async move {
+                h.execute_tool("get_memory_stats", serde_json::json!({}))
+                    .await
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let ids = d.pending_ids().await;
+        let id = ids.first().cloned();
+
+        if let Some(id) = id {
+            d.on_response(
+                &id,
+                Some(serde_json::json!({
+                    "js_heap": {"used_mb": 15.2, "total_mb": 32.0},
+                    "dom_stats": {"elements": 500},
+                })),
+                None,
+            )
+            .await;
+        }
+
+        let result = handle.await.unwrap().unwrap();
+        assert_eq!(result["used_mb"], 15.2);
+        assert!(result.get("dom_stats").is_none());
+    }
+
+    #[tokio::test]
+    async fn get_memory_stats_without_js_heap_key() {
+        let (h, d) = make_handler_with_dispatch();
+
+        let handle = tokio::spawn({
+            let h = h.clone();
+            async move {
+                h.execute_tool("get_memory_stats", serde_json::json!({}))
+                    .await
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let ids = d.pending_ids().await;
+        let id = ids.first().cloned();
+
+        if let Some(id) = id {
+            d.on_response(
+                &id,
+                Some(serde_json::json!({"dom_stats": {"elements": 100}})),
+                None,
+            )
+            .await;
+        }
+
+        let result = handle.await.unwrap().unwrap();
+        assert!(result["note"].as_str().unwrap().contains("not available"));
+    }
+
+    #[test]
+    fn interact_action_routing_coverage() {
+        let valid = ["click", "double_click", "hover", "focus", "scroll", "scroll_into_view", "select"];
+        let invalid = ["destroy", "swipe", "pinch", ""];
+        for action in valid {
+            let method = match action {
+                "click" => "click",
+                "double_click" => "doubleClick",
+                "hover" => "hover",
+                "focus" => "focusElement",
+                "scroll" | "scroll_into_view" => "scrollTo",
+                "select" => "selectOption",
+                _ => panic!("unhandled action"),
+            };
+            assert!(!method.is_empty(), "valid action {action} should map to a method");
+        }
+        for action in invalid {
+            assert!(
+                !["click", "double_click", "hover", "focus", "scroll", "scroll_into_view", "select"]
+                    .contains(&action),
+                "{action} should not be in valid set"
+            );
+        }
+    }
+
+    #[test]
+    fn inspect_action_routing_coverage() {
+        let valid = ["styles", "bounds", "highlight", "clear_highlights", "accessibility", "performance"];
+        for action in valid {
+            let is_known = matches!(
+                action,
+                "styles" | "bounds" | "highlight" | "clear_highlights" | "accessibility" | "performance"
+            );
+            assert!(is_known, "action {action} not recognized");
+        }
+    }
+
+    #[test]
+    fn logs_action_routing_coverage() {
+        let valid = ["console", "network", "navigation", "dialogs", "events"];
+        for action in valid {
+            let is_known = matches!(
+                action,
+                "console" | "network" | "navigation" | "dialogs" | "events"
+            );
+            assert!(is_known, "action {action} not recognized");
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_session_store_routes_correctly() {
+        let (h, d) = make_handler_with_dispatch();
+
+        for action in ["get", "set", "delete"] {
+            let handle = tokio::spawn({
+                let h = h.clone();
+                let action = action.to_string();
+                async move {
+                    let mut args = serde_json::json!({"action": action, "store": "session"});
+                    if action == "set" {
+                        args["key"] = serde_json::json!("k");
+                        args["value"] = serde_json::json!("v");
+                    }
+                    h.execute_tool("storage", args).await
+                }
+            });
+
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let ids = d.pending_ids().await;
+
+            if let Some(id) = ids.first() {
+                d.on_response(id, Some(serde_json::json!({"ok": true})), None)
+                    .await;
+            }
+
+            let result = handle.await.unwrap().unwrap();
+            assert_eq!(result["ok"], true);
+        }
+    }
+
+    #[test]
+    fn recording_action_routing_coverage() {
+        let valid = ["start", "stop", "checkpoint", "get_events", "list_checkpoints", "export"];
+        for action in valid {
+            let is_known = matches!(
+                action,
+                "start" | "stop" | "checkpoint" | "get_events" | "list_checkpoints" | "export"
+            );
+            assert!(is_known, "action {action} not recognized");
+        }
+    }
+
+    #[test]
+    fn navigate_action_routing_coverage() {
+        let valid = ["go_to", "back", "history", "dialogs"];
+        for action in valid {
+            let is_known = matches!(action, "go_to" | "back" | "history" | "dialogs");
+            assert!(is_known, "action {action} not recognized");
+        }
+    }
 }

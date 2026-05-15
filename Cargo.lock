@@ -5005,6 +5005,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "http-body-util",
  "rmcp",
  "serde",
  "serde_json",

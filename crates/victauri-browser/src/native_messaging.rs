@@ -232,4 +232,177 @@ mod tests {
         let result = read_message(&mut reader).await;
         assert!(matches!(result, Err(NativeMessageError::Io(_))));
     }
+
+    // --- Adversarial stress tests ---
+
+    #[tokio::test]
+    async fn message_at_exact_1mb_boundary_rejected() {
+        let len = MAX_INPUT_SIZE as u32 + 1;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend(vec![b'x'; MAX_INPUT_SIZE + 1]);
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::TooLarge { .. })));
+    }
+
+    #[tokio::test]
+    async fn message_at_exact_1mb_minus_one_accepted_if_valid_json() {
+        let padding = "x".repeat(MAX_INPUT_SIZE - 20);
+        let json_str = format!(r#"{{"d":"{padding}"}}"#);
+        let json_bytes = json_str.as_bytes();
+        assert!(json_bytes.len() <= MAX_INPUT_SIZE);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+        buf.extend_from_slice(json_bytes);
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded["d"].as_str().unwrap().len(), padding.len());
+    }
+
+    #[tokio::test]
+    async fn deeply_nested_json_1000_levels() {
+        let mut json = String::from("null");
+        for _ in 0..1000 {
+            json = format!(r#"{{"n":{json}}}"#);
+        }
+        let json_bytes = json.as_bytes();
+        assert!(json_bytes.len() <= MAX_INPUT_SIZE);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+        buf.extend_from_slice(json_bytes);
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        // serde_json has a recursion limit of 128 by default
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn json_with_null_bytes_in_strings() {
+        let msg = serde_json::json!({"data": "hello\u{0000}world"});
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert!(decoded["data"].as_str().unwrap().contains('\u{0000}'));
+    }
+
+    #[tokio::test]
+    async fn rapid_sequential_50_messages() {
+        let mut buf = Vec::new();
+        for i in 0..50 {
+            let msg = serde_json::json!({"seq": i, "ts": "2024-01-01T00:00:00Z"});
+            write_message(&mut buf, &msg).await.unwrap();
+        }
+
+        let mut reader = BufReader::new(buf.as_slice());
+        for i in 0..50 {
+            let decoded = read_message(&mut reader).await.unwrap();
+            assert_eq!(decoded["seq"], i);
+        }
+        let eof = read_message(&mut reader).await;
+        assert!(matches!(eof, Err(NativeMessageError::Disconnected)));
+    }
+
+    #[tokio::test]
+    async fn json_with_10000_keys() {
+        let mut map = serde_json::Map::new();
+        for i in 0..10_000 {
+            map.insert(format!("key_{i}"), serde_json::Value::Number(i.into()));
+        }
+        let msg = serde_json::Value::Object(map);
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded.as_object().unwrap().len(), 10_000);
+    }
+
+    #[tokio::test]
+    async fn output_at_64mb_limit_rejected() {
+        let big = "x".repeat(MAX_OUTPUT_SIZE + 1);
+        let msg = serde_json::json!({"huge": big});
+
+        let mut buf = Vec::new();
+        let result = write_message(&mut buf, &msg).await;
+        assert!(matches!(result, Err(NativeMessageError::TooLarge { .. })));
+    }
+
+    #[tokio::test]
+    async fn message_with_all_json_value_types() {
+        let msg = serde_json::json!({
+            "null": null,
+            "bool_true": true,
+            "bool_false": false,
+            "int": 42,
+            "float": 1.23456,
+            "negative": -999,
+            "string": "hello",
+            "array": [1, "two", null, [3]],
+            "object": {"nested": {"deep": true}},
+            "empty_array": [],
+            "empty_object": {},
+            "big_int": 9007199254740992_i64,
+        });
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded, msg);
+    }
+
+    #[tokio::test]
+    async fn length_prefix_u32_max_rejected() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&u32::MAX.to_le_bytes());
+        buf.extend(vec![0u8; 100]);
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let result = read_message(&mut reader).await;
+        assert!(matches!(result, Err(NativeMessageError::TooLarge { .. })));
+    }
+
+    #[tokio::test]
+    async fn interleaved_write_read_sequence() {
+        let mut buf = Vec::new();
+
+        let msg1 = serde_json::json!({"phase": "init"});
+        write_message(&mut buf, &msg1).await.unwrap();
+        let msg2 = serde_json::json!({"phase": "execute", "data": [1,2,3]});
+        write_message(&mut buf, &msg2).await.unwrap();
+        let msg3 = serde_json::json!({"phase": "complete", "ok": true});
+        write_message(&mut buf, &msg3).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "init");
+        assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "execute");
+        assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "complete");
+    }
+
+    #[tokio::test]
+    async fn unicode_surrogate_edge_cases() {
+        let msg = serde_json::json!({
+            "emoji_sequence": "👨‍👩‍👧‍👦",
+            "zalgo": "h̷̡̢̧e̵̢̧̛l̸̨̧̛l̵̡̢̧ơ̷̢̧",
+            "rtl": "مرحبا",
+            "combining": "a\u{0300}\u{0301}\u{0302}",
+        });
+
+        let mut buf = Vec::new();
+        write_message(&mut buf, &msg).await.unwrap();
+
+        let mut reader = BufReader::new(buf.as_slice());
+        let decoded = read_message(&mut reader).await.unwrap();
+        assert_eq!(decoded["emoji_sequence"], "👨‍👩‍👧‍👦");
+    }
 }

@@ -474,4 +474,303 @@ mod tests {
         assert!(json.get("result").is_some());
         assert!(json.get("error").is_none());
     }
+
+    // --- Adversarial stress tests ---
+
+    // SECURITY: Origin guard bypass attempts — all must be BLOCKED
+    #[tokio::test]
+    async fn origin_bypass_localhost_in_subdomain_blocked() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "https://localhost.evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn origin_bypass_127_in_subdomain_blocked() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "https://127.0.0.1.evil.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn origin_with_path_containing_localhost_blocked() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "https://evil.com/localhost")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn origin_evil_localhost_prefix_blocked() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "https://evil-localhost.com")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn origin_localhost_with_port_allowed() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://localhost:9999")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn origin_127_with_port_allowed() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/health")
+            .header("origin", "http://127.0.0.1:8080")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn auth_with_extra_spaces_in_bearer() {
+        let token = "test-token";
+        let app = make_app(Some(token.to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer  test-token")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // Extra space becomes part of the token — should reject
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn auth_with_trailing_whitespace() {
+        let token = "test-token";
+        let app = make_app(Some(token.to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer test-token ")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // Trailing space: "test-token " != "test-token"
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn auth_empty_bearer_token() {
+        let token = "secret";
+        let app = make_app(Some(token.to_string()));
+        let req = axum::http::Request::builder()
+            .uri("/info")
+            .header("authorization", "Bearer ")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_concurrent_burst() {
+        let app = make_app_with_rate_limit(5);
+
+        let mut handles = vec![];
+        for _ in 0..20 {
+            let a = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = axum::http::Request::builder()
+                    .uri("/info")
+                    .body(Body::empty())
+                    .unwrap();
+                let resp = a.oneshot(req).await.unwrap();
+                resp.status()
+            }));
+        }
+
+        let mut ok_count = 0u32;
+        let mut limited_count = 0u32;
+        for h in handles {
+            match h.await.unwrap().as_u16() {
+                200 => ok_count += 1,
+                429 => limited_count += 1,
+                s => panic!("unexpected status: {s}"),
+            }
+        }
+
+        assert!(ok_count <= 5, "too many passed: {ok_count}");
+        assert!(ok_count >= 1, "none passed");
+        assert!(limited_count >= 15, "not enough limited: {limited_count}");
+    }
+
+    #[tokio::test]
+    async fn body_limit_enforcement() {
+        let app = make_app(None);
+        let huge_body = "x".repeat(3 * 1024 * 1024);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/eval_js")
+            .header("content-type", "application/json")
+            .body(Body::from(huge_body))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 413);
+    }
+
+    #[tokio::test]
+    async fn malformed_json_body() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/eval_js")
+            .header("content-type", "application/json")
+            .body(Body::from("not json {{{"))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // axum returns 400 Bad Request for malformed JSON
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn empty_body_on_post() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/tools/eval_js")
+            .header("content-type", "application/json")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        // axum returns 400 for empty body (can't parse as JSON)
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn very_long_tool_name_in_path() {
+        let long_name = "x".repeat(10_000);
+        let (status, json) = post_json(
+            make_app(None),
+            &format!("/api/tools/{long_name}"),
+            serde_json::json!({}),
+            None,
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(json["error"].as_str().unwrap().contains("unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn tool_name_with_path_traversal() {
+        let (status, json) = post_json(
+            make_app(None),
+            "/api/tools/../../../etc/passwd",
+            serde_json::json!({}),
+            None,
+        )
+        .await;
+        // axum normalizes paths, so this should be a 404 or match a different route
+        assert!(status == 200 || status == 404);
+        if status == 200 {
+            assert!(json.get("error").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn security_headers_on_all_responses() {
+        let app = make_app(None);
+
+        for path in ["/health", "/info", "/api/tools"] {
+            let req = axum::http::Request::builder()
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(
+                resp.headers().get("x-content-type-options").unwrap(),
+                "nosniff",
+                "missing header on {path}"
+            );
+            assert_eq!(
+                resp.headers().get("cache-control").unwrap(),
+                "no-store",
+                "missing cache header on {path}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_health_checks_100() {
+        let app = make_app(None);
+        let mut handles = vec![];
+
+        for _ in 0..100 {
+            let a = app.clone();
+            handles.push(tokio::spawn(async move {
+                let req = axum::http::Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap();
+                a.oneshot(req).await.unwrap().status()
+            }));
+        }
+
+        for h in handles {
+            assert_eq!(h.await.unwrap(), 200);
+        }
+    }
+
+    #[tokio::test]
+    async fn method_not_allowed_on_get_to_tool() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/tools/eval_js")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 405);
+    }
+
+    #[tokio::test]
+    async fn put_method_on_health() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 405);
+    }
+
+    #[tokio::test]
+    async fn nonexistent_path_returns_404() {
+        let app = make_app(None);
+        let req = axum::http::Request::builder()
+            .uri("/nonexistent")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 404);
+    }
 }

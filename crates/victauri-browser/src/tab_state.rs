@@ -395,4 +395,187 @@ mod tests {
         let resolved = mgr.resolve_tab(Some(5)).await.unwrap();
         assert_eq!(resolved, 5);
     }
+
+    // --- Adversarial stress tests ---
+
+    #[tokio::test]
+    async fn concurrent_tab_creation_1000() {
+        let mgr = Arc::new(TabManager::new());
+        let mut handles = vec![];
+
+        for i in 0..1000u32 {
+            let m = Arc::clone(&mgr);
+            handles.push(tokio::spawn(async move {
+                m.on_tab_created(i, &format!("https://{i}.com"), &format!("Tab {i}"))
+                    .await;
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(mgr.tab_count().await, 1000);
+    }
+
+    #[tokio::test]
+    async fn concurrent_create_close_race() {
+        let mgr = Arc::new(TabManager::new());
+        let mut handles = vec![];
+
+        // Create 500 tabs
+        for i in 0..500u32 {
+            let m = Arc::clone(&mgr);
+            handles.push(tokio::spawn(async move {
+                m.on_tab_created(i, &format!("https://{i}.com"), &format!("Tab {i}"))
+                    .await;
+            }));
+        }
+
+        // Simultaneously close even-numbered tabs
+        for i in (0..500u32).step_by(2) {
+            let m = Arc::clone(&mgr);
+            handles.push(tokio::spawn(async move {
+                m.on_tab_closed(i).await;
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        // Some creates may happen after close, some before
+        // Final count should be at least 250 (the odd ones that were never closed)
+        // and at most 500 (if all closes ran before creates)
+        let count = mgr.tab_count().await;
+        assert!((200..=500).contains(&count), "unexpected count: {count}");
+    }
+
+    #[tokio::test]
+    async fn rapid_activate_deactivate() {
+        let mgr = Arc::new(TabManager::new());
+
+        for i in 1..=10u32 {
+            mgr.on_tab_created(i, &format!("https://{i}.com"), &format!("Tab {i}"))
+                .await;
+        }
+
+        let mut handles = vec![];
+        for i in 1..=10u32 {
+            let m = Arc::clone(&mgr);
+            handles.push(tokio::spawn(async move {
+                for _ in 0..100 {
+                    m.on_tab_activated(i).await;
+                }
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let active = mgr.get_active_tab_id().await;
+        assert!((1..=10).contains(&active));
+    }
+
+    #[tokio::test]
+    async fn tab_with_very_long_url() {
+        let mgr = TabManager::new();
+        let long_url = format!("https://example.com/{}", "a".repeat(100_000));
+        mgr.on_tab_created(1, &long_url, "Test").await;
+
+        let tabs = mgr.list_tabs().await;
+        assert_eq!(tabs[0].url.len(), long_url.len());
+    }
+
+    #[tokio::test]
+    async fn tab_with_unicode_title() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://example.com", "日本語タイトル 🚀 émojis")
+            .await;
+
+        let tabs = mgr.list_tabs().await;
+        assert!(tabs[0].title.contains("🚀"));
+    }
+
+    #[tokio::test]
+    async fn pending_command_overwrite() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://x.com", "X").await;
+
+        let rx1 = mgr.register_pending(1, "cmd-dup").await.unwrap();
+        let rx2 = mgr.register_pending(1, "cmd-dup").await.unwrap();
+
+        // First rx should be orphaned (sender dropped when overwritten)
+        assert!(rx1.await.is_err());
+
+        mgr.resolve_pending(1, "cmd-dup", serde_json::json!({"v": 2}))
+            .await;
+        let result = rx2.await.unwrap();
+        assert_eq!(result, serde_json::json!({"v": 2}));
+    }
+
+    #[tokio::test]
+    async fn resolve_tab_after_active_closed() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(1, "https://one.com", "One").await;
+        mgr.on_tab_activated(1).await;
+        mgr.on_tab_closed(1).await;
+
+        let result = mgr.resolve_tab(None).await;
+        assert!(matches!(result, Err(TabError::TabNotFound(1))));
+    }
+
+    #[tokio::test]
+    async fn concurrent_pending_commands() {
+        let mgr = Arc::new(TabManager::new());
+        mgr.on_tab_created(1, "https://x.com", "X").await;
+
+        let mut receivers = vec![];
+        for i in 0..100 {
+            let rx = mgr
+                .register_pending(1, &format!("cmd-{i}"))
+                .await
+                .unwrap();
+            receivers.push((i, rx));
+        }
+
+        let mut handles = vec![];
+        for i in 0..100 {
+            let m = Arc::clone(&mgr);
+            handles.push(tokio::spawn(async move {
+                m.resolve_pending(1, &format!("cmd-{i}"), serde_json::json!({"i": i}))
+                    .await
+            }));
+        }
+
+        for h in handles {
+            assert!(h.await.unwrap());
+        }
+
+        for (i, rx) in receivers {
+            let val = rx.await.unwrap();
+            assert_eq!(val["i"], i);
+        }
+    }
+
+    #[tokio::test]
+    async fn list_tabs_empty_is_empty_vec() {
+        let mgr = TabManager::new();
+        let tabs = mgr.list_tabs().await;
+        assert!(tabs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn tab_id_zero_not_confused_with_no_active() {
+        let mgr = TabManager::new();
+        mgr.on_tab_created(0, "https://zero.com", "Zero").await;
+        mgr.on_tab_activated(0).await;
+
+        // active_tab is 0, but 0 is treated as "no active tab"
+        let result = mgr.resolve_tab(None).await;
+        assert!(matches!(result, Err(TabError::NoActiveTab)));
+    }
+
+    use std::sync::Arc;
 }

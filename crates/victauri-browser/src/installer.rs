@@ -253,4 +253,48 @@ mod tests {
         assert!(dir.to_string_lossy().contains(".victauri"));
         assert!(dir.to_string_lossy().contains("bin"));
     }
+
+    #[test]
+    fn manifest_binary_path_preserved() {
+        let path = "/some/deeply/nested/path/to/victauri-browser-host";
+        let manifest = host_manifest(path, "abc");
+        assert_eq!(manifest["path"], path);
+    }
+
+    #[test]
+    fn manifest_extension_id_in_origin() {
+        let id = "abcdefghijklmnopqrstuvwxyz012345";
+        let manifest = host_manifest("/bin/host", id);
+        let origin = manifest["allowed_origins"][0].as_str().unwrap();
+        assert_eq!(origin, format!("chrome-extension://{id}/"));
+    }
+
+    #[test]
+    fn manifest_type_is_stdio() {
+        let manifest = host_manifest("/bin/host", "ext");
+        assert_eq!(manifest["type"], "stdio");
+    }
+
+    #[test]
+    fn manifest_description_present() {
+        let manifest = host_manifest("/bin/host", "ext");
+        assert!(manifest["description"].as_str().unwrap().len() > 5);
+    }
+
+    #[test]
+    fn manifest_path_components_are_valid() {
+        let path = host_manifest_path().unwrap();
+        let path_str = path.to_string_lossy();
+        assert!(path_str.contains("victauri") || path_str.contains(HOST_NAME));
+        assert!(path_str.ends_with(".json"));
+    }
+
+    #[test]
+    fn all_manifest_paths_non_empty() {
+        let paths = all_manifest_paths().unwrap();
+        assert!(!paths.is_empty());
+        for p in &paths {
+            assert!(p.to_string_lossy().ends_with(".json"));
+        }
+    }
 }
