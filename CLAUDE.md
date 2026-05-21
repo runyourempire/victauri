@@ -12,7 +12,7 @@ X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 1004 tests
+cargo test --workspace                                # Run all 1748 tests
 cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format check
@@ -176,7 +176,7 @@ Standalone binary. Monitors the MCP server health endpoint.
 
 ## Current State (2026-05-15)
 
-**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + ultimate compatibility testing (5 third-party apps, 867/895 pass across 179 tests each = 96.9%). v0.2.1 published. victauri-browser crate + Chrome extension scaffold complete.** All 7 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 1051 tests pass (1004 existing + 47 victauri-browser). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS. Tauri 2.10.3 + rmcp 1.5.0. All 6 original crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/`. Chrome extension in `extensions/chrome/` with MV3, 20 MCP tools, native messaging host on :7474.
+**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + ultimate compatibility testing (5 third-party apps, 867/895 pass across 179 tests each = 96.9%). v0.2.1 published. victauri-browser crate + Chrome extension scaffold complete.** All 7 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 1748 tests pass (1004 core + 47 browser + 697 adversarial/bridge/deep). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS + E2E job (xvfb demo-app integration). Tauri 2.10.3 + rmcp 1.5.0. All 6 original crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/`. Chrome extension in `extensions/chrome/` with MV3, 20 MCP tools, native messaging host on :7474. `invoke_command` surfaces Tauri errors (no longer swallows). `find_elements` accepts `selector` as alias for `css` param.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
