@@ -128,11 +128,17 @@ impl VictauriBrowserHandler {
             }
 
             "find_elements" => {
-                let query = if args.get("query").is_some() {
+                let mut query = if args.get("query").is_some() {
                     args["query"].clone()
                 } else {
                     args.clone()
                 };
+                if query.get("css").is_none()
+                    && let Some(sel) = query.get("selector").cloned()
+                    && let Some(obj) = query.as_object_mut()
+                {
+                    obj.insert("css".to_string(), sel);
+                }
                 self.dispatch.dispatch(tab_id, "findElements", query).await
             }
 

@@ -9,6 +9,13 @@ use crate::visual::{VisualDiff, VisualOptions};
 // ── Typed Response Structs (Phase 4E) ───────────────────────────────────────
 
 /// Structured plugin information returned by [`VictauriClient::plugin_info`].
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let info = client.plugin_info().await.unwrap();
+/// println!("v{} — {} tools, up {:.0}s", info.version, info.tools.total, info.uptime_secs);
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginInfo {
     /// Plugin version string (e.g. `"0.2.0"`).
@@ -38,6 +45,14 @@ pub struct PluginToolInfo {
 }
 
 /// Structured process memory statistics returned by [`VictauriClient::memory_stats`].
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let mem = client.memory_stats().await.unwrap();
+/// let mb = mem.working_set_bytes as f64 / 1_048_576.0;
+/// assert!(mb < 512.0, "memory usage too high: {mb:.1} MB");
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct MemoryStats {
     /// Current working set size in bytes.
@@ -122,6 +137,17 @@ impl<'a> WaitForBuilder<'a> {
 ///
 /// Manages session lifecycle (initialize → tool calls → cleanup) and provides
 /// convenient methods for common test operations.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use victauri_test::VictauriClient;
+///
+/// let mut client = VictauriClient::connect(7373).await.unwrap();
+/// let title = client.eval_js("document.title").await.unwrap();
+/// client.click("e3").await.unwrap();
+/// let snapshot = client.dom_snapshot().await.unwrap();
+/// ```
 pub struct VictauriClient {
     http: reqwest::Client,
     base_url: String,

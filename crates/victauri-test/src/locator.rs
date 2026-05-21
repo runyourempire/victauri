@@ -113,6 +113,25 @@ enum Pick {
 ///
 /// All refinement methods return a new `Locator` (the type is `Clone`), so the
 /// original remains usable.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use victauri_test::locator::Locator;
+///
+/// // Find by role + filter by text, then click
+/// let btn = Locator::role("button").and_text("Save");
+/// btn.click(&mut client).await.unwrap();
+///
+/// // Find by test ID, fill an input
+/// Locator::test_id("email-input")
+///     .fill(&mut client, "user@example.com")
+///     .await
+///     .unwrap();
+///
+/// // Chain an expectation
+/// Locator::css(".toast").expect(&mut client).to_be_visible().await.unwrap();
+/// ```
 #[derive(Debug, Clone)]
 pub struct Locator {
     strategy: Strategy,

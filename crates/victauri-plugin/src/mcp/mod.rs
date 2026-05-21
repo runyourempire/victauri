@@ -120,7 +120,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Search for elements by text, role, test_id, CSS selector, or accessible name without a full snapshot. Returns lightweight matches with ref handles.",
+        description = "Search for elements by text, role, test_id, CSS selector (via `css` or `selector` param), or accessible name without a full snapshot. Returns lightweight matches with ref handles.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -142,7 +142,7 @@ impl VictauriMcpHandler {
         if let Some(tid) = &params.test_id {
             parts.push(format!("test_id: {}", js_string(tid)));
         }
-        if let Some(c) = &params.css {
+        if let Some(c) = params.css.as_ref().or(params.selector.as_ref()) {
             parts.push(format!("css: {}", js_string(c)));
         }
         if let Some(n) = &params.name {
@@ -212,7 +212,17 @@ impl VictauriMcpHandler {
             .eval_with_return(&code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
+            Ok(result) => {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result)
+                    && let Some(err) = parsed.get("__error").and_then(|e| e.as_str())
+                {
+                    return tool_error(format!(
+                        "command '{}' returned error: {err}",
+                        params.command
+                    ));
+                }
+                CallToolResult::success(vec![Content::text(result)])
+            }
             Err(e) => tool_error(format!("invoke_command failed: {e}")),
         }
     }

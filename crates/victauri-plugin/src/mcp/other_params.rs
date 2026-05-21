@@ -101,8 +101,10 @@ pub struct FindElementsParams {
     pub role: Option<String>,
     /// data-testid attribute value to match (exact match).
     pub test_id: Option<String>,
-    /// CSS selector to match.
+    /// CSS selector to match (also accepts `selector` as an alias).
     pub css: Option<String>,
+    /// Alias for `css` — CSS selector to match.
+    pub selector: Option<String>,
     /// Accessible name to search for (aria-label, title, placeholder -- case-insensitive substring).
     pub name: Option<String>,
     /// Maximum number of results to return. Default: 10.
