@@ -66,7 +66,8 @@ pub struct SemanticAssertParams {
     pub label: String,
     /// Condition to evaluate against the actual value.
     pub condition: victauri_core::AssertionCondition,
-    /// Expected value for the assertion.
+    /// Expected value for the assertion. Optional for truthy/falsy/exists conditions.
+    #[serde(default)]
     pub expected: serde_json::Value,
     /// Target webview label.
     pub webview_label: Option<String>,

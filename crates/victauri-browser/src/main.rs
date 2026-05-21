@@ -1,18 +1,13 @@
-mod auth;
-mod bridge_dispatch;
-mod installer;
-mod mcp_handler;
-mod mcp_server;
-mod native_messaging;
-mod server;
-mod tab_state;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bridge_dispatch::BridgeDispatch;
-use mcp_handler::VictauriBrowserHandler;
-use tab_state::TabManager;
+use victauri_browser::auth;
+use victauri_browser::bridge_dispatch::BridgeDispatch;
+use victauri_browser::installer;
+use victauri_browser::mcp_handler::VictauriBrowserHandler;
+use victauri_browser::native_messaging;
+use victauri_browser::server;
+use victauri_browser::tab_state::TabManager;
 
 const DEFAULT_PORT: u16 = 7474;
 const PORT_RANGE: u16 = 10;
@@ -32,9 +27,7 @@ async fn main() -> anyhow::Result<()> {
     match command {
         "install" => {
             let extension_id = args.get(2).map_or("EXTENSION_ID", String::as_str);
-            let binary = std::env::current_exe()?
-                .to_string_lossy()
-                .to_string();
+            let binary = std::env::current_exe()?.to_string_lossy().to_string();
             let path = installer::install(&binary, extension_id)?;
             println!("Native messaging host registered at: {path}");
             println!("Extension ID: {extension_id}");
@@ -69,11 +62,13 @@ async fn serve() -> anyhow::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_PORT);
 
-    let auth_token = std::env::var("VICTAURI_BROWSER_AUTH_TOKEN").ok().or_else(|| {
-        let token = auth::generate_token();
-        tracing::info!("Generated auth token: {token}");
-        Some(token)
-    });
+    let auth_token = std::env::var("VICTAURI_BROWSER_AUTH_TOKEN")
+        .ok()
+        .or_else(|| {
+            let token = auth::generate_token();
+            tracing::info!("Generated auth token: {token}");
+            Some(token)
+        });
 
     let tab_manager = Arc::new(TabManager::new());
     let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
@@ -234,7 +229,8 @@ mod integration_tests {
             &json!({"type": "tab_activated", "tab_id": 42}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.get_active_tab_id().await, 42);
 
         // Chrome sends bridge_ready
@@ -242,7 +238,8 @@ mod integration_tests {
             &json!({"type": "bridge_ready", "tab_id": 42}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert!(tab_mgr.is_bridge_ready(42).await);
 
         // Chrome sends tab_updated (URL changed)
@@ -250,7 +247,8 @@ mod integration_tests {
             &json!({"type": "tab_updated", "tab_id": 42, "url": "https://new-url.com"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         let tabs = tab_mgr.list_tabs().await;
         assert_eq!(tabs[0].url, "https://new-url.com");
         assert_eq!(tabs[0].title, "Example");
@@ -260,7 +258,8 @@ mod integration_tests {
             &json!({"type": "tab_closed", "tab_id": 42}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
 
@@ -282,7 +281,8 @@ mod integration_tests {
             &json!({"type": "response", "id": "test-cmd-123", "data": {"result": "snapshot_data"}}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         let result = rx.await.unwrap();
         assert_eq!(result.data.unwrap()["result"], "snapshot_data");
@@ -299,7 +299,8 @@ mod integration_tests {
             &json!({"type": "response", "id": "err-cmd", "error": "element not found"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         let result = rx.await.unwrap();
         assert!(result.data.is_none());
@@ -324,14 +325,16 @@ mod integration_tests {
             &json!({"type": "tab_activated", "tab_id": 3}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.get_active_tab_id().await, 3);
 
         process_message(
             &json!({"type": "tab_closed", "tab_id": 2}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 4);
     }
 
@@ -343,7 +346,8 @@ mod integration_tests {
             &json!({"type": "some_future_event", "data": "irrelevant"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         assert_eq!(tab_mgr.tab_count().await, 0);
         assert_eq!(dispatch.pending_count().await, 0);
@@ -357,7 +361,8 @@ mod integration_tests {
             &json!({"tab_id": 1, "url": "https://x.com"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
@@ -371,7 +376,8 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": 1, "url": "https://x.com"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 0);
 
         // Missing url
@@ -379,7 +385,8 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": 1, "title": "X"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 0);
 
         // Missing tab_id
@@ -387,7 +394,8 @@ mod integration_tests {
             &json!({"type": "tab_created", "url": "https://x.com", "title": "X"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
 
@@ -399,7 +407,8 @@ mod integration_tests {
             &json!({"type": "response", "id": "nonexistent-id", "data": {"x": 1}}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         assert_eq!(dispatch.pending_count().await, 0);
     }
@@ -452,7 +461,8 @@ mod integration_tests {
             &json!({"type": "response", "data": {"x": 1}}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         // The "real-id" should still be pending (not resolved)
         assert_eq!(dispatch.pending_count().await, 1);
@@ -478,7 +488,8 @@ mod integration_tests {
                 &json!({"type": "tab_activated", "tab_id": i}),
                 &dispatch,
                 &tab_mgr,
-            ).await;
+            )
+            .await;
         }
         assert_eq!(tab_mgr.get_active_tab_id().await, 100);
 
@@ -488,7 +499,8 @@ mod integration_tests {
                 &json!({"type": "tab_closed", "tab_id": i}),
                 &dispatch,
                 &tab_mgr,
-            ).await;
+            )
+            .await;
         }
         assert_eq!(tab_mgr.tab_count().await, 50);
     }
@@ -504,24 +516,24 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": 1, "url": "https://app.com", "title": "App"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "tab_activated", "tab_id": 1}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "bridge_ready", "tab_id": 1}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         // Spawn a tool call
-        let handle = tokio::spawn(async move {
-            handler
-                .execute_tool("get_plugin_info", json!({}))
-                .await
-        });
+        let handle =
+            tokio::spawn(async move { handler.execute_tool("get_plugin_info", json!({})).await });
 
         // get_plugin_info is handled locally, doesn't need dispatch
         let result = handle.await.unwrap().unwrap();
@@ -539,17 +551,20 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": 1, "url": "https://a.com", "title": "A"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "tab_created", "tab_id": 2, "url": "https://b.com", "title": "B"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "tab_activated", "tab_id": 2}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         let result = handler
             .execute_tool("tabs", json!({"action": "list"}))
@@ -583,7 +598,8 @@ mod integration_tests {
             &json!({"type": "tab_activated", "tab_id": 4_294_967_295u64}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.get_active_tab_id().await, u32::MAX);
     }
 
@@ -638,7 +654,8 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": -1, "url": "https://x.com", "title": "Neg"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         // as_u64 on negative returns None
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
@@ -658,9 +675,15 @@ mod integration_tests {
                 &json!({"type": "bridge_ready", "tab_id": i}),
                 &dispatch,
                 &tab_mgr,
-            ).await;
+            )
+            .await;
         }
-        process_message(&json!({"type": "tab_activated", "tab_id": 3}), &dispatch, &tab_mgr).await;
+        process_message(
+            &json!({"type": "tab_activated", "tab_id": 3}),
+            &dispatch,
+            &tab_mgr,
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 5);
 
         // Service worker restarts — sends fresh tab_created for the same IDs
@@ -685,7 +708,8 @@ mod integration_tests {
             &json!({"type": "bridge_ready", "tab_id": 999}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         // Should not panic or create a phantom tab
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
@@ -698,24 +722,28 @@ mod integration_tests {
             &json!({"type": "tab_created", "tab_id": 1, "url": "https://x.com", "title": "X"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "tab_activated", "tab_id": 1}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         process_message(
             &json!({"type": "tab_closed", "tab_id": 1}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         // Activate a now-closed tab (race condition in Chrome)
         process_message(
             &json!({"type": "tab_activated", "tab_id": 1}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         // Should not panic — but active_tab may point to a ghost
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
@@ -772,7 +800,8 @@ mod integration_tests {
             }),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         assert_eq!(tab_mgr.tab_count().await, 1);
     }
 
@@ -780,11 +809,7 @@ mod integration_tests {
     async fn null_type_field_is_noop() {
         let (dispatch, tab_mgr) = make_test_infra();
 
-        process_message(
-            &json!({"type": null, "tab_id": 1}),
-            &dispatch,
-            &tab_mgr,
-        ).await;
+        process_message(&json!({"type": null, "tab_id": 1}), &dispatch, &tab_mgr).await;
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
 
@@ -803,7 +828,8 @@ mod integration_tests {
             &json!({"type": "response", "id": "big-data", "data": big_array}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
 
         let result = rx.await.unwrap();
         assert!(result.error.is_none());
@@ -828,7 +854,8 @@ mod integration_tests {
             &json!({"type": 42, "tab_id": 1, "url": "https://x.com", "title": "X"}),
             &dispatch,
             &tab_mgr,
-        ).await;
+        )
+        .await;
         // as_str on number returns None, defaults to ""
         assert_eq!(tab_mgr.tab_count().await, 0);
     }
@@ -844,7 +871,7 @@ mod integration_tests {
         let tab_mgr = Arc::new(TabManager::new());
         let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
-        let app = crate::server::build_app(handler, None);
+        let app = victauri_browser::server::build_app(handler, None);
 
         // Set up a tab
         tab_mgr.on_tab_created(1, "https://app.com", "App").await;
@@ -864,7 +891,8 @@ mod integration_tests {
                             &id,
                             Some(json!({"tag": "body", "children": [{"tag": "div", "ref": "e0"}]})),
                             None,
-                        ).await;
+                        )
+                        .await;
                     }
                     break;
                 }
@@ -909,11 +937,8 @@ mod integration_tests {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 let ids = d.pending_ids().await;
                 for id in ids {
-                    d.on_response(
-                        &id,
-                        Some(json!({"resolved": resolved})),
-                        None,
-                    ).await;
+                    d.on_response(&id, Some(json!({"resolved": resolved})), None)
+                        .await;
                     resolved += 1;
                 }
             }
@@ -955,7 +980,8 @@ mod integration_tests {
                 let ids = d.pending_ids().await;
                 if !ids.is_empty() {
                     for id in ids {
-                        d.on_response(&id, None, Some("element not found: e99".to_string())).await;
+                        d.on_response(&id, None, Some("element not found: e99".to_string()))
+                            .await;
                     }
                     break;
                 }
@@ -1018,11 +1044,7 @@ mod integration_tests {
                 ).await;
             }
             for i in (1..=20u32).step_by(3) {
-                process_message(
-                    &json!({"type": "tab_closed", "tab_id": i}),
-                    &d3,
-                    &tm2,
-                ).await;
+                process_message(&json!({"type": "tab_closed", "tab_id": i}), &d3, &tm2).await;
             }
         });
 

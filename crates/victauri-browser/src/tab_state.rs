@@ -194,7 +194,6 @@ pub enum TabError {
     TabNotFound(u32),
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,7 +202,8 @@ mod tests {
     async fn tab_lifecycle() {
         let mgr = TabManager::new();
 
-        mgr.on_tab_created(1, "https://example.com", "Example").await;
+        mgr.on_tab_created(1, "https://example.com", "Example")
+            .await;
         mgr.on_tab_activated(1).await;
 
         assert_eq!(mgr.tab_count().await, 1);
@@ -533,10 +533,7 @@ mod tests {
 
         let mut receivers = vec![];
         for i in 0..100 {
-            let rx = mgr
-                .register_pending(1, &format!("cmd-{i}"))
-                .await
-                .unwrap();
+            let rx = mgr.register_pending(1, &format!("cmd-{i}")).await.unwrap();
             receivers.push((i, rx));
         }
 
@@ -638,7 +635,9 @@ mod tests {
     #[tokio::test]
     async fn resolve_pending_on_nonexistent_tab_returns_false() {
         let mgr = TabManager::new();
-        let result = mgr.resolve_pending(999, "cmd-1", serde_json::json!({})).await;
+        let result = mgr
+            .resolve_pending(999, "cmd-1", serde_json::json!({}))
+            .await;
         assert!(!result);
     }
 
@@ -685,7 +684,8 @@ mod tests {
     async fn on_tab_updated_unknown_tab_is_silent() {
         let mgr = TabManager::new();
         // Should not panic on unknown tab
-        mgr.on_tab_updated(999, Some("https://new.com"), Some("New")).await;
+        mgr.on_tab_updated(999, Some("https://new.com"), Some("New"))
+            .await;
         assert_eq!(mgr.tab_count().await, 0);
     }
 

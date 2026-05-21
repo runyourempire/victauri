@@ -15,10 +15,26 @@ pub struct PluginInfo {
     pub version: String,
     /// Seconds since the plugin was initialized.
     pub uptime_secs: f64,
-    /// Number of tools registered by the plugin.
-    pub tool_count: usize,
     /// Total number of tool invocations served.
     pub tool_invocations: u64,
+    /// Tool details (nested object with `total`, `enabled`, etc.).
+    #[serde(default)]
+    pub tools: PluginToolInfo,
+    /// Number of tools — derived from `tools.total` if present, else top-level
+    /// `tool_count` for backwards compatibility.
+    #[serde(default)]
+    pub tool_count: usize,
+}
+
+/// Tool information nested inside [`PluginInfo`].
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct PluginToolInfo {
+    /// Total number of tools registered.
+    #[serde(default)]
+    pub total: usize,
+    /// Number of enabled tools.
+    #[serde(default)]
+    pub enabled: usize,
 }
 
 /// Structured process memory statistics returned by [`VictauriClient::memory_stats`].
@@ -392,12 +408,16 @@ impl VictauriClient {
         let content = &body["result"]["content"];
         if let Some(arr) = content.as_array()
             && let Some(first) = arr.first()
-            && let Some(text) = first["text"].as_str()
         {
-            if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                return Ok(parsed);
+            if let Some(text) = first["text"].as_str() {
+                if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+                    return Ok(parsed);
+                }
+                return Ok(Value::String(text.to_string()));
             }
-            return Ok(Value::String(text.to_string()));
+            if first.get("type").and_then(Value::as_str) == Some("image") {
+                return Ok(first.clone());
+            }
         }
 
         Ok(body)

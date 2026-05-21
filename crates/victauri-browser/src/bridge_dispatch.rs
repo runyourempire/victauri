@@ -80,7 +80,9 @@ impl BridgeDispatch {
             }
             Err(_) => {
                 self.cleanup_pending(&id).await;
-                Err(format!("timeout ({DISPATCH_TIMEOUT:?}) waiting for {method}"))
+                Err(format!(
+                    "timeout ({DISPATCH_TIMEOUT:?}) waiting for {method}"
+                ))
             }
         }
     }
@@ -172,17 +174,12 @@ impl BridgeDispatch {
     }
 
     /// Return the IDs of all currently pending commands (for testing).
-    #[cfg(test)]
-    pub(crate) async fn pending_ids(&self) -> Vec<String> {
+    pub async fn pending_ids(&self) -> Vec<String> {
         self.pending.lock().await.keys().cloned().collect()
     }
 
     /// Insert a pending command directly and return the receiver (for testing).
-    #[cfg(test)]
-    pub(crate) async fn register_test_pending(
-        &self,
-        id: &str,
-    ) -> oneshot::Receiver<DispatchResult> {
+    pub async fn register_test_pending(&self, id: &str) -> oneshot::Receiver<DispatchResult> {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id.to_string(), tx);
         rx

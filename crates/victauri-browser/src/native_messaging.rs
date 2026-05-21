@@ -35,7 +35,10 @@ pub async fn read_message(
     }
 
     let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf).await.map_err(NativeMessageError::Io)?;
+    reader
+        .read_exact(&mut buf)
+        .await
+        .map_err(NativeMessageError::Io)?;
 
     serde_json::from_slice(&buf).map_err(NativeMessageError::Json)
 }
@@ -61,8 +64,14 @@ pub async fn write_message(
     }
 
     let len_bytes = (bytes.len() as u32).to_le_bytes();
-    writer.write_all(&len_bytes).await.map_err(NativeMessageError::Io)?;
-    writer.write_all(&bytes).await.map_err(NativeMessageError::Io)?;
+    writer
+        .write_all(&len_bytes)
+        .await
+        .map_err(NativeMessageError::Io)?;
+    writer
+        .write_all(&bytes)
+        .await
+        .map_err(NativeMessageError::Io)?;
     writer.flush().await.map_err(NativeMessageError::Io)?;
     Ok(())
 }
@@ -185,7 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn unicode_message_roundtrip() {
-        let msg = serde_json::json!({"emoji": "🔥🚀", "cjk": "日本語テスト", "mixed": "hello 世界"});
+        let msg =
+            serde_json::json!({"emoji": "🔥🚀", "cjk": "日本語テスト", "mixed": "hello 世界"});
 
         let mut buf = Vec::new();
         write_message(&mut buf, &msg).await.unwrap();
@@ -386,7 +396,10 @@ mod tests {
         let mut reader = BufReader::new(buf.as_slice());
         assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "init");
         assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "execute");
-        assert_eq!(read_message(&mut reader).await.unwrap()["phase"], "complete");
+        assert_eq!(
+            read_message(&mut reader).await.unwrap()["phase"],
+            "complete"
+        );
     }
 
     #[tokio::test]
@@ -453,13 +466,20 @@ mod tests {
     #[tokio::test]
     async fn multiple_messages_then_disconnect() {
         let mut buf = Vec::new();
-        write_message(&mut buf, &serde_json::json!({"n": 1})).await.unwrap();
-        write_message(&mut buf, &serde_json::json!({"n": 2})).await.unwrap();
+        write_message(&mut buf, &serde_json::json!({"n": 1}))
+            .await
+            .unwrap();
+        write_message(&mut buf, &serde_json::json!({"n": 2}))
+            .await
+            .unwrap();
 
         let mut reader = BufReader::new(buf.as_slice());
         assert_eq!(read_message(&mut reader).await.unwrap()["n"], 1);
         assert_eq!(read_message(&mut reader).await.unwrap()["n"], 2);
-        assert!(matches!(read_message(&mut reader).await, Err(NativeMessageError::Disconnected)));
+        assert!(matches!(
+            read_message(&mut reader).await,
+            Err(NativeMessageError::Disconnected)
+        ));
     }
 
     #[tokio::test]

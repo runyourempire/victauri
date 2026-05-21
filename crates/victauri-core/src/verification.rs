@@ -548,6 +548,24 @@ pub struct AssertionResult {
     pub message: Option<String>,
 }
 
+fn coerce_f64(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+}
+
+fn values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    if a == b {
+        return true;
+    }
+    if let (Some(na), Some(nb)) = (coerce_f64(a), coerce_f64(b)) {
+        (na - nb).abs() < f64::EPSILON
+    } else {
+        let sa = a.as_str().map_or_else(|| a.to_string(), str::to_owned);
+        let sb = b.as_str().map_or_else(|| b.to_string(), str::to_owned);
+        sa == sb
+    }
+}
+
 /// Evaluates a semantic assertion against an actual runtime value.
 ///
 /// ```
@@ -568,21 +586,25 @@ pub fn evaluate_assertion(
     assertion: &SemanticAssertion,
 ) -> AssertionResult {
     let passed = match assertion.condition {
-        AssertionCondition::Equals => actual == assertion.expected,
-        AssertionCondition::NotEquals => actual != assertion.expected,
+        AssertionCondition::Equals => values_equal(&actual, &assertion.expected),
+        AssertionCondition::NotEquals => !values_equal(&actual, &assertion.expected),
         AssertionCondition::Contains => match (&actual, &assertion.expected) {
             (serde_json::Value::String(a), serde_json::Value::String(e)) => a.contains(e.as_str()),
             (serde_json::Value::Array(arr), val) => arr.contains(val),
             _ => false,
         },
-        AssertionCondition::GreaterThan => match (actual.as_f64(), assertion.expected.as_f64()) {
-            (Some(a), Some(e)) => a > e,
-            _ => false,
-        },
-        AssertionCondition::LessThan => match (actual.as_f64(), assertion.expected.as_f64()) {
-            (Some(a), Some(e)) => a < e,
-            _ => false,
-        },
+        AssertionCondition::GreaterThan => {
+            match (coerce_f64(&actual), coerce_f64(&assertion.expected)) {
+                (Some(a), Some(e)) => a > e,
+                _ => false,
+            }
+        }
+        AssertionCondition::LessThan => {
+            match (coerce_f64(&actual), coerce_f64(&assertion.expected)) {
+                (Some(a), Some(e)) => a < e,
+                _ => false,
+            }
+        }
         AssertionCondition::Truthy => match &actual {
             serde_json::Value::Null | serde_json::Value::Bool(false) => false,
             serde_json::Value::String(s) => !s.is_empty(),

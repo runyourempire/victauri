@@ -156,6 +156,9 @@ pub async fn rate_limit(
 }
 
 /// Security headers middleware: X-Content-Type-Options, Cache-Control.
+///
+/// # Panics
+/// Panics if header values cannot be parsed (hardcoded valid values).
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
@@ -168,8 +171,15 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
 ///
 /// Parses the origin as a URL and checks the host component directly,
 /// preventing bypass via subdomains like "localhost.evil.com".
+///
+/// # Errors
+/// Returns `403 Forbidden` if the Origin header contains a non-localhost host.
 pub async fn origin_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
-    if let Some(origin) = request.headers().get("origin").and_then(|v| v.to_str().ok()) {
+    if let Some(origin) = request
+        .headers()
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+    {
         let is_local = is_localhost_origin(origin);
         if !is_local {
             tracing::warn!("rejected non-local origin: {origin}");

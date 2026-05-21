@@ -34,7 +34,10 @@ impl VictauriBrowserHandler {
                 "find_elements",
                 "Search DOM elements by text, role, selector, or attribute",
             ),
-            ToolInfo::new("interact", "Click, hover, focus, scroll, or select elements"),
+            ToolInfo::new(
+                "interact",
+                "Click, hover, focus, scroll, or select elements",
+            ),
             ToolInfo::new("input", "Fill, type text, or press keys"),
             ToolInfo::new(
                 "inspect",
@@ -78,7 +81,10 @@ impl VictauriBrowserHandler {
     ) -> Result<serde_json::Value, String> {
         self.tool_invocations.fetch_add(1, Ordering::Relaxed);
 
-        let tab_id = args.get("tab_id").and_then(serde_json::Value::as_u64).map(|v| v as u32);
+        let tab_id = args
+            .get("tab_id")
+            .and_then(serde_json::Value::as_u64)
+            .map(|v| v as u32);
 
         match name {
             "get_plugin_info" => Ok(serde_json::json!({
@@ -117,11 +123,7 @@ impl VictauriBrowserHandler {
             "dom_snapshot" => {
                 let format = args.get("format").and_then(serde_json::Value::as_str);
                 self.dispatch
-                    .dispatch(
-                        tab_id,
-                        "snapshot",
-                        serde_json::json!({"format": format}),
-                    )
+                    .dispatch(tab_id, "snapshot", serde_json::json!({"format": format}))
                     .await
             }
 
@@ -131,9 +133,7 @@ impl VictauriBrowserHandler {
                 } else {
                     args.clone()
                 };
-                self.dispatch
-                    .dispatch(tab_id, "findElements", query)
-                    .await
+                self.dispatch.dispatch(tab_id, "findElements", query).await
             }
 
             "interact" => {
@@ -322,11 +322,7 @@ impl VictauriBrowserHandler {
                             .and_then(serde_json::Value::as_str)
                             .ok_or("missing 'css'")?;
                         self.dispatch
-                            .dispatch(
-                                tab_id,
-                                "injectCss",
-                                serde_json::json!({"css": css}),
-                            )
+                            .dispatch(tab_id, "injectCss", serde_json::json!({"css": css}))
                             .await
                     }
                     "remove" => {
@@ -407,11 +403,7 @@ impl VictauriBrowserHandler {
                             "getLocalStorage"
                         };
                         self.dispatch
-                            .dispatch(
-                                tab_id,
-                                method,
-                                serde_json::json!({"key": args.get("key")}),
-                            )
+                            .dispatch(tab_id, method, serde_json::json!({"key": args.get("key")}))
                             .await
                     }
                     "set" => {
@@ -446,11 +438,7 @@ impl VictauriBrowserHandler {
                             "deleteLocalStorage"
                         };
                         self.dispatch
-                            .dispatch(
-                                tab_id,
-                                method,
-                                serde_json::json!({"key": args.get("key")}),
-                            )
+                            .dispatch(tab_id, method, serde_json::json!({"key": args.get("key")}))
                             .await
                     }
                     "cookies" => {
@@ -475,11 +463,7 @@ impl VictauriBrowserHandler {
                             .and_then(serde_json::Value::as_str)
                             .ok_or("missing 'url'")?;
                         self.dispatch
-                            .dispatch(
-                                tab_id,
-                                "navigate",
-                                serde_json::json!({"url": url}),
-                            )
+                            .dispatch(tab_id, "navigate", serde_json::json!({"url": url}))
                             .await
                     }
                     "back" => {
@@ -501,11 +485,7 @@ impl VictauriBrowserHandler {
                 }
             }
 
-            "wait_for" => {
-                self.dispatch
-                    .dispatch(tab_id, "waitFor", args)
-                    .await
-            }
+            "wait_for" => self.dispatch.dispatch(tab_id, "waitFor", args).await,
 
             "assert_semantic" => {
                 let expression = args
@@ -519,11 +499,7 @@ impl VictauriBrowserHandler {
 
                 let eval_result = self
                     .dispatch
-                    .dispatch(
-                        tab_id,
-                        "eval",
-                        serde_json::json!({"code": expression}),
-                    )
+                    .dispatch(tab_id, "eval", serde_json::json!({"code": expression}))
                     .await?;
 
                 let actual_str = eval_result
@@ -546,20 +522,18 @@ impl VictauriBrowserHandler {
                             && !actual_str.is_empty()
                     }
                     "greater_than" => {
-                        if let (Ok(a), Some(Ok(e))) = (
-                            actual_str.parse::<f64>(),
-                            expected.map(str::parse::<f64>),
-                        ) {
+                        if let (Ok(a), Some(Ok(e))) =
+                            (actual_str.parse::<f64>(), expected.map(str::parse::<f64>))
+                        {
                             a > e
                         } else {
                             false
                         }
                     }
                     "less_than" => {
-                        if let (Ok(a), Some(Ok(e))) = (
-                            actual_str.parse::<f64>(),
-                            expected.map(str::parse::<f64>),
-                        ) {
+                        if let (Ok(a), Some(Ok(e))) =
+                            (actual_str.parse::<f64>(), expected.map(str::parse::<f64>))
+                        {
                             a < e
                         } else {
                             false
@@ -623,16 +597,15 @@ impl VictauriBrowserHandler {
                     .await
             }
 
-            "get_memory_stats" => {
-                self.dispatch
-                    .dispatch(tab_id, "getPerformanceMetrics", serde_json::json!({}))
-                    .await
-                    .map(|v| {
-                        v.get("js_heap")
-                            .cloned()
-                            .unwrap_or(serde_json::json!({"note": "JS heap stats not available"}))
-                    })
-            }
+            "get_memory_stats" => self
+                .dispatch
+                .dispatch(tab_id, "getPerformanceMetrics", serde_json::json!({}))
+                .await
+                .map(|v| {
+                    v.get("js_heap")
+                        .cloned()
+                        .unwrap_or(serde_json::json!({"note": "JS heap stats not available"}))
+                }),
 
             _ => Err(format!("unknown tool: {name}")),
         }
@@ -705,9 +678,7 @@ mod tests {
     #[tokio::test]
     async fn eval_js_requires_code() {
         let handler = make_handler();
-        let result = handler
-            .execute_tool("eval_js", serde_json::json!({}))
-            .await;
+        let result = handler.execute_tool("eval_js", serde_json::json!({})).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("code"));
     }
@@ -792,7 +763,10 @@ mod tests {
     async fn input_fill_requires_value() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("input", serde_json::json!({"action": "fill", "ref_id": "e0"}))
+            .execute_tool(
+                "input",
+                serde_json::json!({"action": "fill", "ref_id": "e0"}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("value"));
@@ -812,7 +786,10 @@ mod tests {
     async fn input_type_requires_text() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("input", serde_json::json!({"action": "type", "ref_id": "e0"}))
+            .execute_tool(
+                "input",
+                serde_json::json!({"action": "type", "ref_id": "e0"}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("text"));
@@ -901,9 +878,7 @@ mod tests {
     #[tokio::test]
     async fn logs_requires_action() {
         let handler = make_handler();
-        let result = handler
-            .execute_tool("logs", serde_json::json!({}))
-            .await;
+        let result = handler.execute_tool("logs", serde_json::json!({})).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("action"));
     }
@@ -1078,7 +1053,10 @@ mod tests {
     #[tokio::test]
     async fn assert_semantic_equals_pass() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("hello")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("hello"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], true);
         assert_eq!(result["actual"], "hello");
     }
@@ -1086,35 +1064,65 @@ mod tests {
     #[tokio::test]
     async fn assert_semantic_equals_fail() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("world")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", Some("world"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_not_equals_pass() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "not_equals", Some("world")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("hello"),
+            "not_equals",
+            Some("world"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_not_equals_fail() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("same"), "not_equals", Some("same")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("same"),
+            "not_equals",
+            Some("same"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_contains_pass() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello world"), "contains", Some("world")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("hello world"),
+            "contains",
+            Some("world"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_contains_fail() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "contains", Some("xyz")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("hello"), "contains", Some("xyz"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], false);
     }
 
@@ -1131,7 +1139,9 @@ mod tests {
             (serde_json::json!("null"), false),
             (serde_json::json!("undefined"), false),
         ] {
-            let result = run_assert_semantic(&h, &d, val.clone(), "truthy", None).await.unwrap();
+            let result = run_assert_semantic(&h, &d, val.clone(), "truthy", None)
+                .await
+                .unwrap();
             assert_eq!(
                 result["passed"], expected_pass,
                 "truthy check failed for {val:?}, expected passed={expected_pass}",
@@ -1142,52 +1152,72 @@ mod tests {
     #[tokio::test]
     async fn assert_semantic_greater_than_pass() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("42"), "greater_than", Some("10")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("42"), "greater_than", Some("10"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_greater_than_fail() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("5"), "greater_than", Some("10")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("5"), "greater_than", Some("10"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_greater_than_equal_is_false() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("10"), "greater_than", Some("10")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("10"), "greater_than", Some("10"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_less_than_pass() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("3"), "less_than", Some("10")).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("3"), "less_than", Some("10"))
+            .await
+            .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_less_than_with_floats() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("3.14"), "less_than", Some("3.15")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("3.14"), "less_than", Some("3.15"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_greater_than_non_numeric_fails() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("not_a_number"), "greater_than", Some("10")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("not_a_number"),
+            "greater_than",
+            Some("10"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_unknown_condition() {
         let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
-        let h = VictauriBrowserHandler::new(
-            std::sync::Arc::new(TabManager::new()),
-            dispatch.clone(),
-        );
+        let h =
+            VictauriBrowserHandler::new(std::sync::Arc::new(TabManager::new()), dispatch.clone());
 
         let handle = tokio::spawn({
             let h = h.clone();
@@ -1219,7 +1249,9 @@ mod tests {
     #[tokio::test]
     async fn assert_semantic_equals_without_expected() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", None).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("hello"), "equals", None)
+            .await
+            .unwrap();
         // equals with no expected should fail (is_some_and returns false)
         assert_eq!(result["passed"], false);
     }
@@ -1254,12 +1286,8 @@ mod tests {
     #[tokio::test]
     async fn tabs_list_with_populated_manager() {
         let tab_mgr = std::sync::Arc::new(TabManager::new());
-        tab_mgr
-            .on_tab_created(1, "https://one.com", "One")
-            .await;
-        tab_mgr
-            .on_tab_created(2, "https://two.com", "Two")
-            .await;
+        tab_mgr.on_tab_created(1, "https://one.com", "One").await;
+        tab_mgr.on_tab_created(2, "https://two.com", "Two").await;
         tab_mgr.on_tab_activated(2).await;
 
         let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
@@ -1341,7 +1369,15 @@ mod tests {
 
     #[test]
     fn interact_action_routing_coverage() {
-        let valid = ["click", "double_click", "hover", "focus", "scroll", "scroll_into_view", "select"];
+        let valid = [
+            "click",
+            "double_click",
+            "hover",
+            "focus",
+            "scroll",
+            "scroll_into_view",
+            "select",
+        ];
         let invalid = ["destroy", "swipe", "pinch", ""];
         for action in valid {
             let method = match action {
@@ -1353,12 +1389,23 @@ mod tests {
                 "select" => "selectOption",
                 _ => panic!("unhandled action"),
             };
-            assert!(!method.is_empty(), "valid action {action} should map to a method");
+            assert!(
+                !method.is_empty(),
+                "valid action {action} should map to a method"
+            );
         }
         for action in invalid {
             assert!(
-                !["click", "double_click", "hover", "focus", "scroll", "scroll_into_view", "select"]
-                    .contains(&action),
+                ![
+                    "click",
+                    "double_click",
+                    "hover",
+                    "focus",
+                    "scroll",
+                    "scroll_into_view",
+                    "select"
+                ]
+                .contains(&action),
                 "{action} should not be in valid set"
             );
         }
@@ -1366,11 +1413,23 @@ mod tests {
 
     #[test]
     fn inspect_action_routing_coverage() {
-        let valid = ["styles", "bounds", "highlight", "clear_highlights", "accessibility", "performance"];
+        let valid = [
+            "styles",
+            "bounds",
+            "highlight",
+            "clear_highlights",
+            "accessibility",
+            "performance",
+        ];
         for action in valid {
             let is_known = matches!(
                 action,
-                "styles" | "bounds" | "highlight" | "clear_highlights" | "accessibility" | "performance"
+                "styles"
+                    | "bounds"
+                    | "highlight"
+                    | "clear_highlights"
+                    | "accessibility"
+                    | "performance"
             );
             assert!(is_known, "action {action} not recognized");
         }
@@ -1421,7 +1480,14 @@ mod tests {
 
     #[test]
     fn recording_action_routing_coverage() {
-        let valid = ["start", "stop", "checkpoint", "get_events", "list_checkpoints", "export"];
+        let valid = [
+            "start",
+            "stop",
+            "checkpoint",
+            "get_events",
+            "list_checkpoints",
+            "export",
+        ];
         for action in valid {
             let is_known = matches!(
                 action,
@@ -1447,7 +1513,9 @@ mod tests {
         // When eval returns a number (not wrapped in quotes), as_str() returns None
         // and we fall through to eval_result.to_string() — this is the numeric path
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!(42), "greater_than", Some("10")).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!(42), "greater_than", Some("10"))
+            .await
+            .unwrap();
         assert_eq!(result["passed"], true);
         assert_eq!(result["actual"], "42");
     }
@@ -1456,14 +1524,18 @@ mod tests {
     async fn assert_semantic_truthy_empty_string_quoted() {
         // The literal string "" (two quotes) should be falsy
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("\"\""), "truthy", None).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("\"\""), "truthy", None)
+            .await
+            .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_truthy_whitespace_is_truthy() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!(" "), "truthy", None).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!(" "), "truthy", None)
+            .await
+            .unwrap();
         assert_eq!(result["passed"], true);
     }
 
@@ -1471,24 +1543,40 @@ mod tests {
     async fn assert_semantic_contains_empty_expected() {
         // Every string contains ""
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("anything"), "contains", Some("")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("anything"), "contains", Some(""))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], true);
     }
 
     #[tokio::test]
     async fn assert_semantic_greater_than_negative_numbers() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("-5"), "greater_than", Some("-10")).await.unwrap();
+        let result =
+            run_assert_semantic(&h, &d, serde_json::json!("-5"), "greater_than", Some("-10"))
+                .await
+                .unwrap();
         assert_eq!(result["passed"], true);
 
-        let result2 = run_assert_semantic(&h, &d, serde_json::json!("-20"), "greater_than", Some("-10")).await.unwrap();
+        let result2 = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("-20"),
+            "greater_than",
+            Some("-10"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result2["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_less_than_zero() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("-1"), "less_than", Some("0")).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("-1"), "less_than", Some("0"))
+            .await
+            .unwrap();
         assert_eq!(result["passed"], true);
     }
 
@@ -1497,11 +1585,14 @@ mod tests {
         // When eval returns an object, as_str() is None, so actual_str = to_string()
         let (h, d) = make_handler_with_dispatch();
         let result = run_assert_semantic(
-            &h, &d,
+            &h,
+            &d,
             serde_json::json!({"key": "val"}),
             "contains",
             Some("key"),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], true);
     }
 
@@ -1509,15 +1600,34 @@ mod tests {
     async fn assert_semantic_greater_than_infinity() {
         let (h, d) = make_handler_with_dispatch();
         // "inf" parses as f64::INFINITY in Rust, so inf > 999999 is true
-        let result = run_assert_semantic(&h, &d, serde_json::json!("inf"), "greater_than", Some("999999")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("inf"),
+            "greater_than",
+            Some("999999"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result["passed"], true);
 
         // "infinity" also parses
-        let result2 = run_assert_semantic(&h, &d, serde_json::json!("infinity"), "greater_than", Some("999999")).await.unwrap();
+        let result2 = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("infinity"),
+            "greater_than",
+            Some("999999"),
+        )
+        .await
+        .unwrap();
         assert_eq!(result2["passed"], true);
 
         // "NaN" parses but NaN > x is always false
-        let result3 = run_assert_semantic(&h, &d, serde_json::json!("NaN"), "greater_than", Some("0")).await.unwrap();
+        let result3 =
+            run_assert_semantic(&h, &d, serde_json::json!("NaN"), "greater_than", Some("0"))
+                .await
+                .unwrap();
         assert_eq!(result3["passed"], false);
     }
 
@@ -1525,14 +1635,24 @@ mod tests {
     async fn assert_semantic_not_equals_with_no_expected() {
         let (h, d) = make_handler_with_dispatch();
         // not_equals with no expected — is_some_and returns false
-        let result = run_assert_semantic(&h, &d, serde_json::json!("x"), "not_equals", None).await.unwrap();
+        let result = run_assert_semantic(&h, &d, serde_json::json!("x"), "not_equals", None)
+            .await
+            .unwrap();
         assert_eq!(result["passed"], false);
     }
 
     #[tokio::test]
     async fn assert_semantic_contains_case_sensitive() {
         let (h, d) = make_handler_with_dispatch();
-        let result = run_assert_semantic(&h, &d, serde_json::json!("Hello World"), "contains", Some("hello")).await.unwrap();
+        let result = run_assert_semantic(
+            &h,
+            &d,
+            serde_json::json!("Hello World"),
+            "contains",
+            Some("hello"),
+        )
+        .await
+        .unwrap();
         // Contains is case-sensitive
         assert_eq!(result["passed"], false);
     }
@@ -1544,7 +1664,10 @@ mod tests {
         let handler = make_handler();
         // action field is a number instead of string
         let result = handler
-            .execute_tool("interact", serde_json::json!({"action": 42, "ref_id": "e0"}))
+            .execute_tool(
+                "interact",
+                serde_json::json!({"action": 42, "ref_id": "e0"}),
+            )
             .await;
         // as_str on number returns None → "missing action"
         assert!(result.is_err());
@@ -1555,7 +1678,10 @@ mod tests {
     async fn tool_with_action_as_array_errors() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("input", serde_json::json!({"action": ["fill"], "ref_id": "e0"}))
+            .execute_tool(
+                "input",
+                serde_json::json!({"action": ["fill"], "ref_id": "e0"}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("action"));
@@ -1595,7 +1721,10 @@ mod tests {
     async fn navigate_go_to_url_as_object_errors() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("navigate", serde_json::json!({"action": "go_to", "url": {"href": "https://x.com"}}))
+            .execute_tool(
+                "navigate",
+                serde_json::json!({"action": "go_to", "url": {"href": "https://x.com"}}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("url"));
@@ -1605,7 +1734,10 @@ mod tests {
     async fn input_fill_value_as_number_errors() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("input", serde_json::json!({"action": "fill", "ref_id": "e0", "value": 42}))
+            .execute_tool(
+                "input",
+                serde_json::json!({"action": "fill", "ref_id": "e0", "value": 42}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("value"));
@@ -1615,7 +1747,10 @@ mod tests {
     async fn css_inject_css_as_array_errors() {
         let handler = make_handler();
         let result = handler
-            .execute_tool("css", serde_json::json!({"action": "inject", "css": ["body{}", "div{}"]}))
+            .execute_tool(
+                "css",
+                serde_json::json!({"action": "inject", "css": ["body{}", "div{}"]}),
+            )
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("css"));
@@ -1654,9 +1789,14 @@ mod tests {
     async fn tool_invocations_count_includes_failures() {
         let handler = make_handler();
         // Even failed calls should increment the counter
-        let _ = handler.execute_tool("nonexistent", serde_json::json!({})).await;
+        let _ = handler
+            .execute_tool("nonexistent", serde_json::json!({}))
+            .await;
         let _ = handler.execute_tool("eval_js", serde_json::json!({})).await;
-        let info = handler.execute_tool("get_plugin_info", serde_json::json!({})).await.unwrap();
+        let info = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(info["invocations"], 3);
     }
 
@@ -1669,7 +1809,10 @@ mod tests {
         tab_mgr.on_tab_created(2, "https://b.com", "B").await;
 
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
-        let info = handler.execute_tool("get_plugin_info", serde_json::json!({})).await.unwrap();
+        let info = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(info["tab_count"], 2);
     }
 
@@ -1683,7 +1826,10 @@ mod tests {
         tab_mgr.on_tab_activated(20).await;
 
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
-        let result = handler.execute_tool("tabs", serde_json::json!({"action": "list"})).await.unwrap();
+        let result = handler
+            .execute_tool("tabs", serde_json::json!({"action": "list"}))
+            .await
+            .unwrap();
         let tabs = result.as_array().unwrap();
         let active: Vec<_> = tabs.iter().filter(|t| t["active"] == true).collect();
         assert_eq!(active.len(), 1);
@@ -1693,15 +1839,21 @@ mod tests {
     #[tokio::test]
     async fn all_action_tools_reject_empty_string_action() {
         let handler = make_handler();
-        let tools_with_actions = ["interact", "input", "inspect", "css", "logs", "storage", "navigate", "recording"];
+        let tools_with_actions = [
+            "interact",
+            "input",
+            "inspect",
+            "css",
+            "logs",
+            "storage",
+            "navigate",
+            "recording",
+        ];
         for tool in tools_with_actions {
             let result = handler
                 .execute_tool(tool, serde_json::json!({"action": ""}))
                 .await;
-            assert!(
-                result.is_err(),
-                "{tool} should reject empty string action"
-            );
+            assert!(result.is_err(), "{tool} should reject empty string action");
             let err = result.unwrap_err();
             assert!(
                 err.contains("unknown") || err.contains("action"),
@@ -1717,13 +1869,18 @@ mod tests {
         for _ in 0..100 {
             let h = Arc::clone(&handler);
             handles.push(tokio::spawn(async move {
-                h.execute_tool("get_plugin_info", serde_json::json!({})).await.unwrap()
+                h.execute_tool("get_plugin_info", serde_json::json!({}))
+                    .await
+                    .unwrap()
             }));
         }
         for h in handles {
             h.await.unwrap();
         }
-        let info = handler.execute_tool("get_plugin_info", serde_json::json!({})).await.unwrap();
+        let info = handler
+            .execute_tool("get_plugin_info", serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(info["invocations"], 101);
     }
 
@@ -1743,7 +1900,10 @@ mod tests {
             ("cookies", serde_json::json!({})),
             ("dom_snapshot", serde_json::json!({})),
             ("find_elements", serde_json::json!({"text": "x"})),
-            ("wait_for", serde_json::json!({"condition": "selector", "value": "body"})),
+            (
+                "wait_for",
+                serde_json::json!({"condition": "selector", "value": "body"}),
+            ),
         ];
 
         for (tool_name, args) in bridge_tools {
@@ -1753,7 +1913,12 @@ mod tests {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 let ids = d.pending_ids().await;
                 for id in ids {
-                    d.on_response(&id, Some(serde_json::json!({"mock": true, "js_heap": {}})), None).await;
+                    d.on_response(
+                        &id,
+                        Some(serde_json::json!({"mock": true, "js_heap": {}})),
+                        None,
+                    )
+                    .await;
                 }
             });
 

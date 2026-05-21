@@ -10,6 +10,10 @@ rust-version.workspace = true
 keywords = ["browser", "mcp", "chrome", "extension", "inspection"]
 categories = ["development-tools::testing", "web-programming"]
 
+[lib]
+name = "victauri_browser"
+path = "src/lib.rs"
+
 [[bin]]
 name = "victauri-browser-host"
 path = "src/main.rs"

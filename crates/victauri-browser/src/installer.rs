@@ -319,7 +319,10 @@ mod tests {
         let manifest = host_manifest("/bin/host", "ext");
         let name = manifest["name"].as_str().unwrap();
         assert!(name.chars().next().unwrap().is_ascii_lowercase());
-        assert!(name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_'));
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
+        );
         assert!(name.len() <= 255);
     }
 
@@ -334,7 +337,10 @@ mod tests {
 
     #[test]
     fn manifest_handles_windows_path() {
-        let manifest = host_manifest(r"C:\Program Files\Victauri\victauri-browser-host.exe", "ext");
+        let manifest = host_manifest(
+            r"C:\Program Files\Victauri\victauri-browser-host.exe",
+            "ext",
+        );
         let path = manifest["path"].as_str().unwrap();
         assert!(path.contains("victauri-browser-host"));
         assert!(path.contains(r"C:\Program Files"));
@@ -374,7 +380,10 @@ mod tests {
     #[test]
     fn all_manifest_paths_cover_browsers() {
         let paths = all_manifest_paths().unwrap();
-        let path_strs: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let path_strs: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         assert!(path_strs.iter().any(|p| p.contains("Chrome")));
         assert!(path_strs.iter().any(|p| p.contains("Edge")));
         assert!(path_strs.iter().any(|p| p.contains("Brave")));
@@ -385,7 +394,10 @@ mod tests {
     #[test]
     fn all_manifest_paths_cover_browsers() {
         let paths = all_manifest_paths().unwrap();
-        let path_strs: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let path_strs: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         assert!(path_strs.iter().any(|p| p.contains("google-chrome")));
         assert!(path_strs.iter().any(|p| p.contains("microsoft-edge")));
         assert!(path_strs.iter().any(|p| p.contains("Brave")));

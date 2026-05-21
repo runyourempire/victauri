@@ -385,12 +385,16 @@ fn show_notification_window(app: tauri::AppHandle) -> Result<(), String> {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
     } else {
-        WebviewWindow::builder(&app, "notifications", tauri::WebviewUrl::App("notification.html".into()))
-            .title("Notifications")
-            .inner_size(400.0, 500.0)
-            .resizable(true)
-            .build()
-            .map_err(|e| e.to_string())?;
+        WebviewWindow::builder(
+            &app,
+            "notifications",
+            tauri::WebviewUrl::App("notification.html".into()),
+        )
+        .title("Notifications")
+        .inner_size(400.0, 500.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

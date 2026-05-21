@@ -3753,12 +3753,12 @@ async fn rest_list_tools_returns_all_tools() {
         tools.len()
     );
 
-    let names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"eval_js"), "should contain eval_js");
-    assert!(names.contains(&"dom_snapshot"), "should contain dom_snapshot");
+    assert!(
+        names.contains(&"dom_snapshot"),
+        "should contain dom_snapshot"
+    );
     assert!(names.contains(&"screenshot"), "should contain screenshot");
     assert!(names.contains(&"interact"), "should contain interact");
     assert!(names.contains(&"window"), "should contain window");
@@ -3811,7 +3811,10 @@ async fn rest_call_tool_with_invalid_params_returns_400() {
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert!(
-        body["error"].as_str().unwrap().contains("invalid parameters"),
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid parameters"),
         "should report invalid parameters, got: {body}"
     );
 }
@@ -3911,7 +3914,10 @@ async fn rest_get_registry_returns_json_result() {
 
     let body: serde_json::Value = resp.json().await.unwrap();
     let result = &body["result"];
-    assert!(result.is_array(), "registry should return array, got: {body}");
+    assert!(
+        result.is_array(),
+        "registry should return array, got: {body}"
+    );
     assert_eq!(result.as_array().unwrap().len(), 1);
     assert_eq!(result[0]["name"], "test_cmd");
 }
@@ -3940,20 +3946,14 @@ async fn rest_respects_auth_middleware() {
         .send()
         .await
         .unwrap();
-    assert_eq!(
-        resp.status(),
-        200,
-        "authenticated request should succeed"
-    );
+    assert_eq!(resp.status(), 200, "authenticated request should succeed");
 }
 
 #[tokio::test]
 async fn rest_call_tool_with_callback_bridge() {
     let state = test_state();
-    let base = start_callback_server(state, &["main"], |_js| {
-        r#""hello from eval""#.to_string()
-    })
-    .await;
+    let base =
+        start_callback_server(state, &["main"], |_js| r#""hello from eval""#.to_string()).await;
     let client = reqwest::Client::new();
 
     let resp = client

@@ -166,9 +166,7 @@ pub fn generate_test(session: &RecordedSession, options: &CodegenOptions) -> Str
         out.push_str("    let log = client.get_ipc_log(None).await.unwrap();\n");
         for cmd in &ipc_commands_seen {
             let escaped = escape_rust_str(cmd);
-            out.push_str(&format!(
-                "    assert_ipc_called(&log, \"{escaped}\");\n"
-            ));
+            out.push_str(&format!("    assert_ipc_called(&log, \"{escaped}\");\n"));
         }
     }
 

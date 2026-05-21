@@ -70,7 +70,9 @@ impl std::fmt::Display for TestError {
             Self::Mcp { code, message } => {
                 let hint = match *code {
                     -32600 => "\n  Hint: invalid request — check your MCP protocol version",
-                    -32601 => "\n  Hint: method not found — the tool may be disabled by privacy profile",
+                    -32601 => {
+                        "\n  Hint: method not found — the tool may be disabled by privacy profile"
+                    }
                     -32602 => "\n  Hint: invalid params — check the tool's expected arguments",
                     -32603 => "\n  Hint: internal error — check the Tauri app's stderr for details",
                     _ => "",

@@ -1466,8 +1466,7 @@ impl VictauriMcpHandler {
     fn parse_args<T: serde::de::DeserializeOwned>(
         args: serde_json::Value,
     ) -> Result<T, rest::ToolCallError> {
-        serde_json::from_value(args)
-            .map_err(|e| rest::ToolCallError::InvalidParams(e.to_string()))
+        serde_json::from_value(args).map_err(|e| rest::ToolCallError::InvalidParams(e.to_string()))
     }
 
     fn redact_result(

@@ -65,7 +65,10 @@ pub fn build_app_full(
     }
 
     let limiter = rate_limiter.unwrap_or_else(auth::default_rate_limiter);
-    router = router.layer(axum::middleware::from_fn_with_state(limiter, auth::rate_limit));
+    router = router.layer(axum::middleware::from_fn_with_state(
+        limiter,
+        auth::rate_limit,
+    ));
 
     router
         .route(
@@ -196,9 +199,13 @@ mod tests {
 
     #[tokio::test]
     async fn plugin_info_via_rest() {
-        let (status, json) =
-            post_json(make_app(None), "/api/tools/get_plugin_info", serde_json::json!({}), None)
-                .await;
+        let (status, json) = post_json(
+            make_app(None),
+            "/api/tools/get_plugin_info",
+            serde_json::json!({}),
+            None,
+        )
+        .await;
         assert_eq!(status, 200);
         assert_eq!(json["result"]["name"], "victauri-browser");
         assert_eq!(json["result"]["tool_count"], 20);
@@ -1034,7 +1041,13 @@ mod tests {
         let token = "secret-token-value";
         let app = make_app(Some(token.to_string()));
 
-        for attempt in ["", "wrong", "secret-token-valu", "secret-token-value!", &"x".repeat(1000)] {
+        for attempt in [
+            "",
+            "wrong",
+            "secret-token-valu",
+            "secret-token-value!",
+            &"x".repeat(1000),
+        ] {
             let req = axum::http::Request::builder()
                 .uri("/info")
                 .header("authorization", format!("Bearer {attempt}"))
@@ -1045,10 +1058,7 @@ mod tests {
             let body = resp.into_body().collect().await.unwrap().to_bytes();
             // Body should not contain the actual token or any hint
             let body_str = String::from_utf8_lossy(&body);
-            assert!(
-                !body_str.contains(token),
-                "response leaked the token"
-            );
+            assert!(!body_str.contains(token), "response leaked the token");
         }
     }
 }

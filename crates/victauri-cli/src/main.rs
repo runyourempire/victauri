@@ -412,7 +412,10 @@ async fn cmd_doctor() -> Result<()> {
         pass_count += 1;
     } else {
         eprintln!("  [FAIL] No Tauri dependency in Cargo.toml");
-        eprintln!("         Add `tauri` to [dependencies] in {}", cargo_path.display());
+        eprintln!(
+            "         Add `tauri` to [dependencies] in {}",
+            cargo_path.display()
+        );
         fail_count += 1;
     }
 
@@ -438,7 +441,10 @@ async fn cmd_doctor() -> Result<()> {
     }
 
     // Check 5: Plugin wiring in source code
-    let src_dir = cargo_path.parent().map(|p| p.join("src")).unwrap_or_default();
+    let src_dir = cargo_path
+        .parent()
+        .map(|p| p.join("src"))
+        .unwrap_or_default();
     let mut plugin_wired = false;
     for filename in ["lib.rs", "main.rs"] {
         let path = src_dir.join(filename);
@@ -926,7 +932,10 @@ fn try_patch_tauri_builder(src_dir: &Path) -> Result<bool> {
             .with_context(|| format!("failed to read {}", path.display()))?;
 
         if content.contains("victauri_plugin") {
-            eprintln!("  [=] {} already references victauri_plugin", path.display());
+            eprintln!(
+                "  [=] {} already references victauri_plugin",
+                path.display()
+            );
             return Ok(true);
         }
 
@@ -970,7 +979,10 @@ fn try_patch_tauri_builder(src_dir: &Path) -> Result<bool> {
 
             std::fs::write(&path, new_content)
                 .with_context(|| format!("failed to write {}", path.display()))?;
-            eprintln!("  [+] Patched {} with .plugin(victauri_plugin::init())", path.display());
+            eprintln!(
+                "  [+] Patched {} with .plugin(victauri_plugin::init())",
+                path.display()
+            );
             return Ok(true);
         }
     }
@@ -1406,10 +1418,12 @@ mod tests {
         let content = generate_mcp_json();
         let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
         assert!(parsed["mcpServers"]["victauri"]["url"].as_str().is_some());
-        assert!(parsed["mcpServers"]["victauri"]["url"]
-            .as_str()
-            .unwrap()
-            .contains("7373"));
+        assert!(
+            parsed["mcpServers"]["victauri"]["url"]
+                .as_str()
+                .unwrap()
+                .contains("7373")
+        );
     }
 
     #[test]
@@ -1417,11 +1431,13 @@ mod tests {
         let content = generate_capability_json();
         let parsed: serde_json::Value = serde_json::from_str(content).unwrap();
         assert_eq!(parsed["identifier"].as_str().unwrap(), "victauri");
-        assert!(parsed["permissions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p.as_str().is_some_and(|s| s.contains("victauri"))));
+        assert!(
+            parsed["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p.as_str().is_some_and(|s| s.contains("victauri")))
+        );
     }
 
     #[test]

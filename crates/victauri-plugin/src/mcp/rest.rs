@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use rmcp::model::{CallToolResult, RawContent};
 use serde::Serialize;
 
@@ -130,9 +130,8 @@ mod tests {
 
     #[test]
     fn text_result_parsed_as_json() {
-        let result = CallToolResult::success(vec![Content::text(
-            r#"{"title":"4DA","version":"1.0"}"#,
-        )]);
+        let result =
+            CallToolResult::success(vec![Content::text(r#"{"title":"4DA","version":"1.0"}"#)]);
         let json = to_rest_json(result);
         assert_eq!(json["result"]["title"], "4DA");
         assert_eq!(json["result"]["version"], "1.0");
