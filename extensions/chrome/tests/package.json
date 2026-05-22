@@ -1,0 +1,13 @@
+{
+  "name": "victauri-chrome-extension-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.1",
+    "jsdom": "^26.1.0"
+  }
+}
