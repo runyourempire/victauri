@@ -263,7 +263,7 @@ jobs:
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, chrome-extension, publish]
+    needs: [build, chrome-extension]
     permissions:
       contents: write
     steps:
