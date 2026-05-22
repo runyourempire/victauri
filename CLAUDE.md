@@ -6,13 +6,14 @@
 
 X-ray vision and hands for AI agents inside Tauri apps. Unlike Playwright (which sees only the browser glass), Victauri gives agents simultaneous access to the webview DOM, the Rust backend, the IPC layer, the database, and native window state — all through a single MCP interface.
 
-**Stack:** Pure Rust workspace (7 crates) | **Target:** Tauri 2.0 applications + any website via Chrome extension
+**Stack:** Pure Rust workspace (7 crates) | **Target:** Tauri 2.0 applications + any website via Chrome/Firefox extension
 
 ## Commands
 
 ```bash
 cargo build --workspace                               # Build all crates
-cargo test --workspace                                # Run all 1748 tests
+cargo test --workspace                                # Run all 1800 Rust tests
+cd extensions/chrome/tests && npx vitest run           # Run 163 JS bridge tests
 cargo bench -p victauri-core                          # Criterion benchmarks (16)
 cargo clippy --workspace --all-targets                # Lint (20 enforced lints)
 cargo fmt --all -- --check                            # Format check
@@ -32,7 +33,10 @@ victauri/
 │   ├── victauri-test/       # Test client + assertion helpers + smoke suite
 │   └── victauri-watchdog/   # Crash-recovery sidecar (monitors plugin health)
 ├── extensions/
-│   └── chrome/              # Chrome/Edge/Brave extension (MV3)
+│   ├── chrome/              # Chrome/Edge/Brave extension (MV3) + 163 vitest tests
+│   ├── firefox/             # Firefox extension (MV3) — browser.* namespace port
+│   └── npm/                 # npm package: @anthropic/victauri-browser (binary installer)
+├── docs/                    # mdbook documentation site (10 pages)
 └── examples/
     └── demo-app/            # Multi-window Tauri app with comprehensive test suite
 ```
@@ -66,7 +70,10 @@ Native messaging host binary + Chrome extension for browser MCP inspection.
 - `tab_state.rs` — Per-tab state tracking (URL, title, bridge ready), active tab resolution
 - `installer.rs` — Cross-platform native host manifest registration (Chrome/Edge/Brave/Arc on Win/Mac/Linux)
 - Chrome extension: MV3 service worker (native messaging + tab lifecycle + CDP + screenshot), ISOLATED world relay, MAIN world JS bridge (1700+ lines — DOM, interactions, a11y, perf, CSS, recording), dark popup UI
-- 47 tests (5 native_messaging + 4 bridge_dispatch + 6 mcp_handler + 6 mcp_server + 12 server integration + 5 tab_state + 4 installer + 3 auth + 2 router)
+- Firefox extension: Full MV3 port using `browser.*` namespace, background scripts (not service workers), no CDP
+- npm package: `@anthropic/victauri-browser` with postinstall binary download from GitHub releases
+- 99 Rust tests (5 native_messaging + 4 bridge_dispatch + 6 mcp_handler + 6 mcp_server + 12 server integration + 5 tab_state + 4 installer + 3 auth + 2 router + 52 E2E pipeline)
+- 163 JS tests (vitest + jsdom): find-elements (28), interactions (20), helpers (16), dom-snapshot (14), logs (13), css-inspect (12), storage (10), eval (10), performance (9), recording (8), service-worker (8), content-isolated (8), waitfor (7)
 
 ### victauri-core
 Shared types used by all other crates. No Tauri dependency.
@@ -174,9 +181,9 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
-## Current State (2026-05-15)
+## Current State (2026-05-22)
 
-**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + ultimate compatibility testing (5 third-party apps, 867/895 pass across 179 tests each = 96.9%). v0.2.1 published. victauri-browser crate + Chrome extension scaffold complete.** All 7 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). 1748 tests pass (1004 core + 47 browser + 697 adversarial/bridge/deep). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS + E2E job (xvfb demo-app integration). Tauri 2.10.3 + rmcp 1.5.0. All 6 original crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/`. Chrome extension in `extensions/chrome/` with MV3, 20 MCP tools, native messaging host on :7474. `invoke_command` surfaces Tauri errors (no longer swallows). `find_elements` accepts `selector` as alias for `css` param.
+**All 8 phases complete + production hardening + adversarial audit + REST API + VS Code extension + ultimate compatibility testing (5 third-party apps, 867/895 pass across 179 tests each = 96.9%). v0.2.1 published. Full browser extension ecosystem (Chrome + Firefox + npm package). CI/CD with release workflow. Documentation site.** 1963 tests pass: 1800 Rust (workspace) + 163 JavaScript (Chrome extension vitest). All 7 crates compile cleanly (`RUSTFLAGS="-Dwarnings" cargo clippy` passes). Zero clippy warnings (`-D warnings`, 20 enforced lints). 26 runnable doc-test examples. 16 Criterion benchmarks. CI green on Linux/Windows/macOS + Chrome extension test job + E2E job. Tauri 2.10.3 + rmcp 1.5.0. All 6 original crates published to crates.io. `cargo install victauri-cli` provides standalone `victauri` binary. Dual-protocol: MCP on `/mcp` + REST on `/api/tools`. VS Code extension in `editors/vscode/`. Chrome extension in `extensions/chrome/` with MV3, 20 MCP tools, native messaging host on :7474. Firefox extension in `extensions/firefox/` (full MV3 port). npm package in `extensions/npm/` with postinstall binary download. mdbook documentation site in `docs/`. GitHub Actions release workflow (cross-platform matrix builds → GitHub Release + crates.io publish + Chrome extension zip). `invoke_command` surfaces Tauri errors (no longer swallows). `find_elements` accepts `selector` as alias for `css` param.
 
 ### Live test results (4DA, 2026-04-26):
 Tested against 4DA (3 windows: main 1200×800, notification 440×160, briefing 560×780; 135 DOM elements; 11 buttons; React/Vite frontend on :4444). **99/99 tests pass — all 23 tools + 3 resources + tool registration checks.**
@@ -350,7 +357,8 @@ Tested against 4 third-party open-source Tauri 2 apps with fully built frontends
 - **victauri-cli**: CLI binary (`victauri`) with 6 commands: `init` (scaffold test directory), `check` (server diagnostics), `test` (built-in smoke suite — 11 checks with pass/fail + JUnit XML), `record` (capture interactions → test file), `watch` (file watcher → re-run tests), `coverage` (IPC command coverage report). `victauri test` auto-discovers the running app, runs all smoke checks, prints a summary, exits 0/1 for CI. Configurable `--max-load-ms` and `--max-heap-mb` thresholds.
 - **victauri-watchdog**: Configurable via env vars (`VICTAURI_PORT`, `VICTAURI_INTERVAL`, `VICTAURI_MAX_FAILURES`, `VICTAURI_ON_FAILURE`). Proper `tracing-subscriber` log output. Executes configurable recovery commands on failure. Fires recovery action once per failure cycle, resets on recovery.
 - **demo-app**: Multi-window Tauri 2 app in `examples/demo-app/` with Victauri wired up. 19 commands (greet, counter CRUD, todo CRUD, settings, contact form with validation, notifications with cross-window events, window management, app state dump) all decorated with `#[inspectable]`. Tab-based navigation with ARIA attributes, `data-testid` on all interactive elements. Notification panel window with event sync. 20 integration tests in `tests/integration.rs` demonstrating every Victauri testing pattern (direct client API, Locator API, IPC verification, cross-boundary state, a11y audit, perf monitoring, time-travel recording, verify builder). Includes `.mcp.json` for immediate Claude Code connection.
-- **CI**: GitHub Actions workflow (`ci.yml`) — clippy + tests + docs on Linux/Windows/macOS, format check on Linux. All crate code passes `cargo fmt --check`.
+- **CI/CD**: GitHub Actions `ci.yml` (clippy + tests + docs on Linux/Windows/macOS, format check, Chrome extension vitest job) + `release.yml` (test gate → 12-matrix cross-platform builds → Chrome extension zip → sequential crates.io publish → GitHub Release with all artifacts). All crate code passes `cargo fmt --check`.
+- **docs/**: mdbook documentation site — 10 pages covering introduction, getting started, architecture, tools reference, Chrome extension, testing, configuration, security, FAQ.
 
 ### Architecture notes:
 - **victauri-browser architecture** — `MCP Client → axum HTTP :7474 → Native Messaging (stdio) → Chrome Extension Service Worker → Content Script (MAIN world)`. The Rust binary serves dual roles: HTTP server for MCP clients AND native messaging host for Chrome. Both run concurrently via tokio tasks. The `BridgeDispatch` sends UUID-tagged commands to stdout (Chrome native messaging), and a spawned reader task receives responses on stdin and resolves oneshot channels. The `mcp_handler.rs` routes all 20 tools: `get_plugin_info` and `tabs.list` are handled locally in the Rust host; everything else is dispatched to the Chrome extension via native messaging → service worker → content script relay → MAIN world bridge. The content script uses CustomEvents (`__victauri_command`/`__victauri_response`) to bridge ISOLATED ↔ MAIN worlds. Navigation uses `chrome.tabs.update()` instead of content script `window.location`, and cookies use `chrome.cookies.getAll()` for httpOnly access.
