@@ -218,44 +218,28 @@ jobs:
 
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
 
-      - name: Publish victauri-core
-        run: cargo publish -p victauri-core
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-macros
-        run: cargo publish -p victauri-macros
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-browser
-        run: cargo publish -p victauri-browser
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-plugin
-        run: cargo publish -p victauri-plugin
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-test
-        run: cargo publish -p victauri-test
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-cli
-        run: cargo publish -p victauri-cli
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish victauri-watchdog
-        run: cargo publish -p victauri-watchdog
+      - name: Publish crates (order: core → macros → browser → plugin → test → cli → watchdog)
+        run: |
+          publish() {
+            echo "Publishing $1..."
+            if cargo publish -p "$1" 2>&1 | tee /tmp/pub.log; then
+              echo "$1 published successfully"
+            elif grep -q "already exists" /tmp/pub.log; then
+              echo "$1 already published, skipping"
+            else
+              echo "Failed to publish $1"
+              cat /tmp/pub.log
+              exit 1
+            fi
+            sleep 30
+          }
+          publish victauri-core
+          publish victauri-macros
+          publish victauri-browser
+          publish victauri-plugin
+          publish victauri-test
+          publish victauri-cli
+          publish victauri-watchdog
 
   # ─────────────────────────────────────────────────────────────────────
   # Create GitHub Release with all artifacts
