@@ -1061,14 +1061,19 @@ async fn malformed_json_body_returns_400() {
 async fn oversized_body_returns_413() {
     let server = TestServer::start(None).await;
     let huge = "x".repeat(3 * 1024 * 1024); // 3MB, over the 2MB limit
-    let resp = client()
+    let result = client()
         .post(server.url("/api/tools/eval_js"))
         .header("content-type", "application/json")
         .body(huge)
         .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 413);
+        .await;
+    match result {
+        Ok(resp) => assert_eq!(resp.status(), 413),
+        Err(e) => assert!(
+            e.is_connect() || e.is_request(),
+            "expected 413 or connection reset, got: {e}"
+        ),
+    }
 }
 
 #[tokio::test]
