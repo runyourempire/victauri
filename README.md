@@ -5,7 +5,7 @@
 <h1 align="center">Victauri</h1>
 
 <p align="center">
-  <strong>Full-stack testing for Tauri apps. Click a button in the frontend, verify the Rust handler ran, confirm the database row was written — from one test.</strong>
+  <strong>Full-stack testing for Tauri apps and MCP inspection for any website. Click a button in the frontend, verify the Rust handler ran, confirm the database row was written — from one test.</strong>
 </p>
 
 <p align="center">
@@ -103,6 +103,23 @@ Add `.mcp.json` to your project root (works with Claude Code, Cursor, Windsurf):
 ```
 
 Your AI agent now has full-stack access to your running Tauri app — DOM inspection, IPC monitoring, command invocation, screenshot capture, and more.
+
+---
+
+## Browser Extension — Any Website
+
+Victauri isn't limited to Tauri apps. The browser extension + native host brings the same MCP inspection to **any website**:
+
+```bash
+cargo install victauri-browser
+victauri-browser-host install    # Registers native messaging host
+```
+
+Load `extensions/chrome/` (or `extensions/firefox/`) as an unpacked extension. Connect any MCP client to `http://127.0.0.1:7474/mcp`.
+
+20 MCP tools available: DOM snapshots, click, fill, type, eval JS, find elements, screenshots, CSS inspection, accessibility audits, performance metrics, wait for conditions, tab management, and more.
+
+Works with Chrome, Edge, Brave, Arc, and Firefox.
 
 ---
 
@@ -945,12 +962,18 @@ External testing tools read state from outside the process through the webview. 
 ```
 victauri/
 ├── crates/
+│   ├── victauri-plugin/     # Tauri plugin + MCP server + JS bridge (the main crate)
+│   ├── victauri-browser/    # Native host: MCP for any website via browser extension
 │   ├── victauri-core/       # Shared types (events, registry, snapshots, verification)
 │   ├── victauri-macros/     # #[inspectable] proc macro for command schemas
-│   ├── victauri-plugin/     # Tauri plugin + MCP server + JS bridge (the main crate)
 │   ├── victauri-test/       # Test client + Locator API + assertion helpers
 │   ├── victauri-cli/        # CLI: init, check, test, record, watch, coverage
 │   └── victauri-watchdog/   # Health-check sidecar for crash recovery
+├── extensions/
+│   ├── chrome/              # Chrome/Edge/Brave extension (MV3) + 163 vitest tests
+│   ├── firefox/             # Firefox extension (MV3)
+│   └── npm/                 # @anthropic/victauri-browser npm package
+├── docs/                    # mdbook documentation site
 └── examples/
     └── demo-app/            # Multi-window Tauri app with 19 instrumented commands
 ```
@@ -958,6 +981,7 @@ victauri/
 | Crate | Purpose | Tauri dependency? |
 |---|---|---|
 | `victauri-plugin` | Embed in your app — MCP server + bridge | Yes |
+| `victauri-browser` | Browser extension native host — any website | No |
 | `victauri-test` | Use in your tests — client + assertions | No |
 | `victauri-cli` | Install globally — scaffold + diagnose | No |
 | `victauri-macros` | Use on commands — `#[inspectable]` | No |
@@ -1106,8 +1130,10 @@ async fn ci_health_check() {
 
 ## Documentation
 
-- [**Testing Tauri Apps**](docs/testing-tauri-apps.md) — comprehensive guide covering every testing approach (unit tests, frontend mocks, WebDriver, Playwright, Victauri)
+- [**Documentation Site**](docs/) — mdbook site covering architecture, tools, configuration, security
+- [**Testing Tauri Apps**](docs/testing-tauri-apps.md) — comprehensive guide covering every testing approach
 - [**Compatibility**](docs/compatibility.md) — CSP requirements, IPC pattern support, multi-window handling, tested apps
+- [**Browser Extension**](crates/victauri-browser/) — native host + Chrome/Firefox extension for any website
 - [**VS Code Extension**](editors/vscode/) — live app inspection, DOM explorer, IPC log, CodeLens test generation
 - [**Agent Session Example**](examples/agent-session.md) — real AI agent session transcript
 - [**Demo App Tests**](examples/demo-app/tests/integration.rs) — 20 integration tests demonstrating every pattern
