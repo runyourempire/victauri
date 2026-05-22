@@ -9,6 +9,10 @@ authors.workspace = true
 rust-version.workspace = true
 keywords = ["browser", "mcp", "chrome", "extension", "inspection"]
 categories = ["development-tools::testing", "web-programming"]
+homepage = "https://github.com/runyourempire/victauri"
+documentation = "https://docs.rs/victauri-browser"
+readme = "README.md"
+exclude = ["tests/"]
 
 [lib]
 name = "victauri_browser"
@@ -19,7 +23,7 @@ name = "victauri-browser-host"
 path = "src/main.rs"
 
 [dependencies]
-victauri-core = { path = "../victauri-core" }
+victauri-core = { workspace = true }
 axum = { workspace = true }
 rmcp = { workspace = true }
 tokio = { workspace = true }

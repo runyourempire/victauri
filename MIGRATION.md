@@ -1,5 +1,24 @@
 # Migration Guide
 
+## v0.2.x → v0.3.0
+
+### New Features
+
+- **Browser extension ecosystem** — `victauri-browser` crate with native messaging host for Chrome/Edge/Brave/Arc/Firefox. MCP inspection for any website, not just Tauri apps.
+- **Firefox extension** — full MV3 port using `browser.*` namespace in `extensions/firefox/`
+- **npm package** — `@anthropic/victauri-browser` with postinstall binary download from GitHub releases
+- **163 JavaScript tests** — vitest + jsdom test suite for the Chrome extension JS bridge
+- **52 E2E Rust tests** — full pipeline integration tests for victauri-browser
+- **mdbook documentation site** — 10-page docs site in `docs/`
+- **Release workflow** — GitHub Actions pipeline: test gate → cross-platform matrix builds → Chrome extension zip → sequential crates.io publish → GitHub Release with all artifacts
+- **CI for JS tests** — Chrome extension vitest job added to CI workflow
+
+### No Breaking Changes
+
+This is a feature-only release. All existing APIs are unchanged.
+
+---
+
 ## v0.1.x → v0.2.0
 
 ### Breaking Changes
