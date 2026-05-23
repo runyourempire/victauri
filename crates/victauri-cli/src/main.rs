@@ -200,7 +200,24 @@ fn cmd_init(root: &Path) -> Result<()> {
         }
     }
 
-    // Step 5: Create test files
+    // Step 5: Scan for Tauri commands and create test files
+    let src_dir_for_scan = cargo_toml_path
+        .parent()
+        .map(|p| p.join("src"))
+        .unwrap_or_default();
+    let discovered_commands = if src_dir_for_scan.exists() {
+        scan_tauri_commands(&src_dir_for_scan)
+    } else {
+        Vec::new()
+    };
+    if !discovered_commands.is_empty() {
+        eprintln!(
+            "  [*] Discovered {} #[tauri::command] functions: {}",
+            discovered_commands.len(),
+            discovered_commands.join(", ")
+        );
+    }
+
     let tests_dir = find_src_tauri(&root).map_or_else(|| root.join("tests"), |p| p.join("tests"));
     std::fs::create_dir_all(&tests_dir)
         .with_context(|| format!("failed to create {}", tests_dir.display()))?;
@@ -218,12 +235,30 @@ fn cmd_init(root: &Path) -> Result<()> {
     if integration_path.exists() {
         eprintln!("  [=] tests/integration.rs already exists");
     } else {
-        std::fs::write(&integration_path, generate_integration_test())
+        let integration_content = if discovered_commands.is_empty() {
+            generate_integration_test().to_string()
+        } else {
+            generate_integration_test_with_commands(&discovered_commands)
+        };
+        std::fs::write(&integration_path, &integration_content)
             .with_context(|| format!("failed to write {}", integration_path.display()))?;
         eprintln!("  [+] Created tests/integration.rs (integration test template)");
     }
 
-    // Step 6: Print summary
+    // Step 6: Generate CI workflow
+    let workflows_dir = root.join(".github").join("workflows");
+    let ci_path = workflows_dir.join("victauri.yml");
+    if ci_path.exists() {
+        eprintln!("  [=] .github/workflows/victauri.yml already exists");
+    } else {
+        std::fs::create_dir_all(&workflows_dir)
+            .with_context(|| format!("failed to create {}", workflows_dir.display()))?;
+        std::fs::write(&ci_path, generate_ci_workflow())
+            .with_context(|| format!("failed to write {}", ci_path.display()))?;
+        eprintln!("  [+] Created .github/workflows/victauri.yml (CI pipeline)");
+    }
+
+    // Step 7: Print summary
     let mut remaining_steps = Vec::new();
     if !patched {
         remaining_steps
@@ -844,23 +879,27 @@ async fn cmd_watch(dir: &Path, filter: Option<&str>) -> Result<()> {
         bail!("watch directory does not exist: {}", watch_dir.display());
     }
 
-    eprintln!("Watching {} for changes...", watch_dir.display());
+    eprintln!("\x1b[36mVictauri Watch\x1b[0m");
+    eprintln!("  Directory: {}", watch_dir.display());
     if let Some(f) = filter {
         eprintln!("  Filter: {f}");
     }
     eprintln!("  Press Ctrl+C to stop.\n");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(8);
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if let Ok(event) = res {
-            let dominated_by_rs = event
+        if let Ok(event) = res
+            && let Some(path) = event
                 .paths
                 .iter()
-                .any(|p| p.extension().is_some_and(|ext| ext == "rs"));
-            if dominated_by_rs {
-                let _ = tx.blocking_send(());
-            }
+                .find(|p| p.extension().is_some_and(|ext| ext == "rs"))
+        {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let _ = tx.blocking_send(name);
         }
     })
     .context("failed to create file watcher")?;
@@ -869,21 +908,28 @@ async fn cmd_watch(dir: &Path, filter: Option<&str>) -> Result<()> {
         .watch(&watch_dir, RecursiveMode::Recursive)
         .with_context(|| format!("failed to watch {}", watch_dir.display()))?;
 
-    run_tests(filter);
+    run_tests_with_output(filter, None);
 
-    while rx.recv().await.is_some() {
-        // Debounce: drain any additional events that arrived during compilation
+    while let Some(changed_file) = rx.recv().await {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         while rx.try_recv().is_ok() {}
 
-        eprintln!("\n--- File changed, re-running tests ---\n");
-        run_tests(filter);
+        run_tests_with_output(filter, Some(&changed_file));
     }
 
     Ok(())
 }
 
-fn run_tests(filter: Option<&str>) {
+fn run_tests_with_output(filter: Option<&str>, changed_file: Option<&str>) {
+    // Clear screen
+    eprint!("\x1b[2J\x1b[H");
+
+    eprintln!("\x1b[36mVictauri Watch\x1b[0m");
+    if let Some(file) = changed_file {
+        eprintln!("  Triggered by: \x1b[33m{file}\x1b[0m");
+    }
+    eprintln!();
+
     let start = std::time::Instant::now();
     let mut cmd = std::process::Command::new("cargo");
     cmd.arg("test");
@@ -898,26 +944,31 @@ fn run_tests(filter: Option<&str>) {
 
     match status {
         Ok(s) if s.success() => {
-            eprintln!("\nAll tests passed ({:.1}s)", elapsed.as_secs_f64());
+            eprintln!(
+                "\n\x1b[32m  PASS\x1b[0m  All tests passed ({:.1}s)",
+                elapsed.as_secs_f64()
+            );
         }
         Ok(s) => {
             eprintln!(
-                "\nTests failed (exit code: {}, {:.1}s)",
+                "\n\x1b[31m  FAIL\x1b[0m  Tests failed (exit {}, {:.1}s)",
                 s.code().unwrap_or(-1),
                 elapsed.as_secs_f64()
             );
         }
         Err(e) => {
-            eprintln!("\nFailed to run cargo test: {e}");
+            eprintln!("\n\x1b[31m  ERROR\x1b[0m  Failed to run cargo test: {e}");
         }
     }
 
     if elapsed.as_secs() > 30 {
         eprintln!(
-            "  Warning: test suite took >{:.0}s — consider splitting slow tests",
+            "  \x1b[33mSlow:\x1b[0m test suite took {:.0}s — consider splitting slow tests",
             elapsed.as_secs_f64()
         );
     }
+
+    eprintln!("\n\x1b[90mWaiting for changes...\x1b[0m");
 }
 
 fn try_patch_tauri_builder(src_dir: &Path) -> Result<bool> {
@@ -1247,6 +1298,205 @@ async fn ipc_integrity_passes() {
 "#
 }
 
+fn scan_tauri_commands(src_dir: &Path) -> Vec<String> {
+    let mut commands = Vec::new();
+    let mut dirs = vec![src_dir.to_path_buf()];
+    let mut rs_files = Vec::new();
+    while let Some(dir) = dirs.pop() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    rs_files.push(path);
+                }
+            }
+        }
+    }
+
+    for path in rs_files {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let mut in_command_attr = false;
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.contains("#[tauri::command")
+                    || trimmed.contains("#[command")
+                    || trimmed.contains("#[inspectable")
+                {
+                    in_command_attr = true;
+                    continue;
+                }
+                if in_command_attr {
+                    if let Some(name) = extract_fn_name(trimmed) {
+                        commands.push(name);
+                        in_command_attr = false;
+                        continue;
+                    }
+                    if trimmed.starts_with("pub")
+                        || trimmed.starts_with("fn ")
+                        || trimmed.starts_with("async")
+                    {
+                        if let Some(name) = extract_fn_name(trimmed) {
+                            commands.push(name);
+                        }
+                        in_command_attr = false;
+                    }
+                }
+            }
+        }
+    }
+    commands.sort();
+    commands.dedup();
+    commands
+}
+
+fn extract_fn_name(line: &str) -> Option<String> {
+    let rest = if let Some(i) = line.find("fn ") {
+        &line[i + 3..]
+    } else {
+        return None;
+    };
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+fn generate_integration_test_with_commands(commands: &[String]) -> String {
+    let mut out = String::from(
+        r#"//! Integration tests — auto-generated from discovered #[tauri::command] functions.
+//!
+//! Run with: VICTAURI_E2E=1 cargo test --test integration
+
+use serde_json::json;
+use victauri_test::{e2e_test, VictauriClient};
+
+fn skip_unless_e2e() -> bool {
+    if !victauri_test::is_e2e() {
+        eprintln!("Skipping: set VICTAURI_E2E=1 with your Tauri dev server running");
+        return true;
+    }
+    false
+}
+
+// ── Health check ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn full_stack_health_check() {
+    if skip_unless_e2e() { return; }
+    let mut client = VictauriClient::discover().await
+        .expect("Failed to connect — is your Tauri dev server running?");
+
+    let report = client.verify()
+        .ipc_healthy()
+        .no_console_errors()
+        .run()
+        .await
+        .unwrap();
+
+    report.assert_all_passed();
+}
+
+// ── Command tests ────────────────────────────────────────────────────────
+// Generated from discovered #[tauri::command] functions.
+// Adapt each test to match your command's expected arguments and behavior.
+
+"#,
+    );
+
+    for cmd in commands {
+        out.push_str(&format!(
+            r#"#[tokio::test]
+async fn command_{cmd}() {{
+    if skip_unless_e2e() {{ return; }}
+    let mut client = VictauriClient::discover().await.unwrap();
+
+    let result = client.invoke_command("{cmd}", None).await;
+    assert!(
+        result.is_ok(),
+        "{cmd} should respond without error: {{:?}}",
+        result.err()
+    );
+}}
+
+"#,
+        ));
+    }
+
+    out
+}
+
+fn generate_ci_workflow() -> &'static str {
+    r#"# Victauri E2E tests — runs smoke + integration tests against your Tauri app.
+# Generated by `victauri init`. Customize as needed.
+
+name: Victauri E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-dev xvfb
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install victauri-cli
+        run: cargo install victauri-cli
+
+      - name: Build app
+        run: cargo build
+
+      - name: Start app under xvfb
+        run: |
+          xvfb-run -a ./target/debug/$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name') &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for Victauri server
+        run: |
+          timeout=30
+          elapsed=0
+          until curl -sf http://127.0.0.1:7373/health > /dev/null 2>&1; do
+            if [ "$elapsed" -ge "$timeout" ]; then
+              echo "ERROR: Victauri server not ready within ${timeout}s"
+              exit 1
+            fi
+            sleep 1
+            elapsed=$((elapsed + 1))
+          done
+          echo "Server ready after ${elapsed}s"
+
+      - name: Run smoke tests
+        run: victauri test
+
+      - name: Run integration tests
+        run: cargo test --test integration -- --test-threads=1
+        env:
+          VICTAURI_E2E: "1"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -n "$APP_PID" ]; then
+            kill "$APP_PID" 2>/dev/null || true
+          fi
+"#
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1445,5 +1695,57 @@ mod tests {
         assert!(content.contains("Locator"));
         assert!(content.contains("VisualOptions"));
         assert!(content.contains("verify()"));
+    }
+
+    #[test]
+    fn scan_tauri_commands_finds_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("commands.rs"),
+            "#[tauri::command]\nasync fn greet(name: String) -> String { name }\n\n#[tauri::command]\nfn get_count() -> i32 { 0 }\n",
+        )
+        .unwrap();
+
+        let commands = scan_tauri_commands(dir.path());
+        assert!(commands.contains(&"greet".to_string()));
+        assert!(commands.contains(&"get_count".to_string()));
+    }
+
+    #[test]
+    fn scan_tauri_commands_handles_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let commands = scan_tauri_commands(dir.path());
+        assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn generate_integration_with_commands_includes_stubs() {
+        let commands = vec!["greet".to_string(), "increment".to_string()];
+        let content = generate_integration_test_with_commands(&commands);
+        assert!(content.contains("command_greet"));
+        assert!(content.contains("command_increment"));
+        assert!(content.contains("invoke_command(\"greet\""));
+        assert!(content.contains("invoke_command(\"increment\""));
+    }
+
+    #[test]
+    fn ci_workflow_is_valid_yaml() {
+        let content = generate_ci_workflow();
+        assert!(content.contains("victauri test"));
+        assert!(content.contains("xvfb"));
+        assert!(content.contains("VICTAURI_E2E"));
+    }
+
+    #[test]
+    fn extract_fn_name_works() {
+        assert_eq!(
+            extract_fn_name("fn greet(name: String)"),
+            Some("greet".to_string())
+        );
+        assert_eq!(
+            extract_fn_name("pub async fn get_count() -> i32"),
+            Some("get_count".to_string())
+        );
+        assert_eq!(extract_fn_name("let x = 1;"), None);
     }
 }

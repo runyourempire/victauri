@@ -86,7 +86,7 @@ victauri check                                   # server health + IPC diagnosti
 
 ### Connect an AI agent
 
-Add `.mcp.json` to your project root (works with Claude Code, Cursor, Windsurf):
+Add `.mcp.json` to your project root (created automatically by `victauri init`):
 
 ```json
 {
@@ -98,7 +98,14 @@ Add `.mcp.json` to your project root (works with Claude Code, Cursor, Windsurf):
 }
 ```
 
-Your AI agent now has full-stack access to your running Tauri app — DOM inspection, IPC monitoring, command invocation, screenshot capture, and more.
+Works with **Claude Code**, **Cursor**, **Windsurf**, and any MCP client. Your agent gets full-stack access: DOM snapshots, IPC monitoring, command invocation, screenshot capture, accessibility auditing, and more.
+
+**With Claude Code**, start your app and Claude can immediately:
+- Inspect the DOM tree and click/type/fill any element
+- Invoke any `#[tauri::command]` and verify the response
+- Read app config, list files, query SQLite databases
+- Take screenshots and audit accessibility
+- Record interactions and replay them as tests
 
 ---
 
@@ -361,6 +368,47 @@ Victauri is designed for development, not production:
 - **Output redaction**: auto-scrub API keys, tokens, emails from tool responses
 
 See the [Security Guide](docs/src/security.md) for threat model, privacy configuration, and command filtering.
+
+---
+
+## CI Integration
+
+### GitHub Actions
+
+Use the built-in composite action to run Victauri smoke tests in CI:
+
+```yaml
+- name: Build my app
+  run: cargo build -p my-app
+
+- name: Start app under xvfb
+  run: |
+    xvfb-run -a ./target/debug/my-app &
+    sleep 3
+
+- uses: runyourempire/victauri/.github/actions/victauri-test@main
+  with:
+    max-load-ms: 10000
+    max-heap-mb: 512
+```
+
+The action installs `victauri-cli`, waits for the server to become healthy, and runs all 11 smoke checks. Available inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `port` | `7373` | Victauri server port |
+| `max-load-ms` | `10000` | Maximum DOM complete time (ms) |
+| `max-heap-mb` | `512` | Maximum JS heap usage (MB) |
+| `junit-path` | | Path to write JUnit XML report |
+| `coverage` | `false` | Run IPC coverage report after tests |
+| `coverage-threshold` | | Minimum coverage % (fails if below) |
+| `health-timeout` | `30` | Seconds to wait for server health |
+
+Or use `victauri init` to generate a complete CI workflow file for your project:
+
+```bash
+victauri init    # generates .github/workflows/victauri.yml
+```
 
 ---
 
