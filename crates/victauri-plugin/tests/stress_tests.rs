@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use victauri_core::{CommandRegistry, EventLog, EventRecorder};
 use victauri_plugin::VictauriState;
 use victauri_plugin::bridge::WebviewBridge;
-use victauri_plugin::mcp::{build_app, build_app_with_options};
+use victauri_plugin::mcp::{build_app, build_app_full, build_app_with_options};
 use victauri_plugin::privacy::PrivacyConfig;
 
 use common::SimpleMockBridge;
@@ -795,7 +795,8 @@ async fn strict_privacy_blocks_dangerous_tools() {
 async fn rate_limiter_eventually_rejects() {
     let state = test_state();
     let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
-    let app = build_app(state, bridge);
+    let limiter = Arc::new(victauri_plugin::auth::RateLimiterState::new(50));
+    let app = build_app_full(state, bridge, None, Some(limiter));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -807,7 +808,7 @@ async fn rate_limiter_eventually_rejects() {
     let client = reqwest::Client::new();
     let mut got_429 = false;
     let mut tasks = tokio::task::JoinSet::new();
-    for _ in 0..2000 {
+    for _ in 0..500 {
         let c = client.clone();
         let u = format!("{base}/info");
         tasks.spawn(async move { c.get(&u).send().await.unwrap().status() });
