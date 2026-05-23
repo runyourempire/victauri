@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a0a"/>
+      <stop offset="100%" style="stop-color:#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Accent line at top -->
+  <rect x="0" y="0" width="1280" height="4" fill="url(#accent)"/>
+
+  <!-- Title -->
+  <text x="640" y="220" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="80" font-weight="700" fill="#ffffff">Victauri</text>
+
+  <!-- Tagline -->
+  <text x="640" y="300" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#a1a1aa">Full-stack testing for Tauri apps</text>
+
+  <!-- Feature pills -->
+  <g transform="translate(640, 380)" text-anchor="middle" font-family="ui-monospace, monospace" font-size="16" fill="#d4d4d8">
+    <!-- DOM -->
+    <rect x="-520" y="-18" width="120" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="-460" y="6">DOM</text>
+    <!-- IPC -->
+    <rect x="-370" y="-18" width="110" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="-315" y="6">IPC</text>
+    <!-- Backend -->
+    <rect x="-230" y="-18" width="140" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="-160" y="6">Backend</text>
+    <!-- Database -->
+    <rect x="-60" y="-18" width="150" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="15" y="6">Database</text>
+    <!-- Windows -->
+    <rect x="120" y="-18" width="150" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="195" y="6">Windows</text>
+    <!-- MCP -->
+    <rect x="300" y="-18" width="220" height="36" rx="18" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+    <text x="410" y="6">MCP Protocol</text>
+  </g>
+
+  <!-- Subtitle -->
+  <text x="640" y="460" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#71717a">One plugin. One test. Complete visibility.</text>
+
+  <!-- Bottom bar -->
+  <g transform="translate(640, 560)" text-anchor="middle" font-family="ui-monospace, monospace" font-size="15" fill="#52525b">
+    <text x="-200" y="0">28 MCP tools</text>
+    <text x="-60" y="0" fill="#3f3f46">|</text>
+    <text x="30" y="0">Rust + TypeScript</text>
+    <text x="140" y="0" fill="#3f3f46">|</text>
+    <text x="250" y="0">Apache-2.0</text>
+  </g>
+</svg>

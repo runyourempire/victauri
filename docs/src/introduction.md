@@ -53,11 +53,15 @@ victauri/
 │   ├── victauri-test/       # Test client + assertion helpers
 │   └── victauri-watchdog/   # Crash-recovery health monitor
 ├── extensions/
-│   └── chrome/              # Chrome/Edge/Brave extension (MV3)
+│   ├── chrome/              # Chrome/Edge/Brave extension (MV3)
+│   ├── firefox/             # Firefox extension (MV3)
+│   └── npm/                 # victauri-browser npm package
+├── editors/
+│   └── vscode/              # VS Code extension
 └── examples/
     └── demo-app/            # Reference Tauri app with full test suite
 ```
 
 ## Current Status
 
-All 7 crates are published and production-ready. 1748 tests pass. Tested against 5 real-world open-source Tauri apps (96.9% pass rate across 895 tests) with zero Victauri bugs found. Supports Tauri 2.0+ with rmcp 1.5.0.
+All 7 crates are published to crates.io. 1976 tests pass (1813 Rust + 163 JavaScript). Tested against 5 real-world open-source Tauri apps (96.9% pass rate across 895 tests) with zero Victauri bugs found. Supports Tauri 2.0+ with rmcp 1.5.0.
