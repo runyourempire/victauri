@@ -765,11 +765,13 @@ fn recorder_events_between_timestamps() {
     let rec = EventRecorder::new(100);
     rec.start("s".to_string()).unwrap();
     let t1 = Utc::now();
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(50));
     rec.record_event(ipc("1", "cmd_a"));
+    std::thread::sleep(std::time::Duration::from_millis(50));
     let t2 = Utc::now();
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(50));
     rec.record_event(ipc("2", "cmd_b"));
+    std::thread::sleep(std::time::Duration::from_millis(50));
     let t3 = Utc::now();
     let between = rec.events_between(t1, t3);
     assert_eq!(between.len(), 2);
