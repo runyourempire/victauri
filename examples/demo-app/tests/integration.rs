@@ -51,11 +51,14 @@ e2e_test!(counter_increment, |client| async move {
 });
 
 e2e_test!(counter_decrement_below_zero, |client| async move {
+    client.invoke_command("reset_counter", None).await.unwrap();
+
     let v1: i64 =
         serde_json::from_value(client.invoke_command("decrement", None).await.unwrap()).unwrap();
+    assert_eq!(v1, -1, "first decrement from zero should be -1");
     let v2: i64 =
         serde_json::from_value(client.invoke_command("decrement", None).await.unwrap()).unwrap();
-    assert_eq!(v2, v1 - 1, "second decrement should be one less than first");
+    assert_eq!(v2, -2, "second decrement should be -2");
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -84,8 +87,7 @@ e2e_test!(locator_greet_by_test_id, |client| async move {
 });
 
 e2e_test!(locator_counter_buttons, |client| async move {
-    let before: i64 =
-        serde_json::from_value(client.invoke_command("get_counter", None).await.unwrap()).unwrap();
+    client.invoke_command("reset_counter", None).await.unwrap();
 
     Locator::text("+").click(&mut client).await.unwrap();
 
@@ -93,7 +95,7 @@ e2e_test!(locator_counter_buttons, |client| async move {
 
     let after: i64 =
         serde_json::from_value(client.invoke_command("get_counter", None).await.unwrap()).unwrap();
-    assert!(after > before, "counter should increase via + button");
+    assert!(after > 0, "counter should be positive after clicking +");
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -180,11 +182,15 @@ e2e_test!(contact_form_success, |client| async move {
 // ────────────────────────────────────────────────────────────────────────────
 
 e2e_test!(cross_boundary_counter_state, |client| async move {
+    client.invoke_command("reset_counter", None).await.unwrap();
+
     let v1: i64 =
-        serde_json::from_value(client.invoke_command("get_counter", None).await.unwrap()).unwrap();
-    let v2: i64 =
         serde_json::from_value(client.invoke_command("increment", None).await.unwrap()).unwrap();
-    assert_eq!(v2, v1 + 1, "increment should return one more than before");
+    assert_eq!(v1, 1, "increment from zero should return 1");
+
+    let v2: i64 =
+        serde_json::from_value(client.invoke_command("get_counter", None).await.unwrap()).unwrap();
+    assert_eq!(v2, 1, "get_counter should match after increment");
 
     let report = client.verify().no_console_errors().run().await.unwrap();
 
@@ -197,23 +203,25 @@ e2e_test!(settings_cross_boundary, |client| async move {
         .await
         .unwrap();
 
-    let report = client
-        .verify()
-        .ipc_was_called("update_settings")
-        .run()
-        .await
-        .unwrap();
-    report.assert_all_passed();
-
-    // Verify via get_app_state
+    // Verify the backend state was updated (invoke_command goes through MCP,
+    // not the webview fetch interceptor, so it won't appear in the IPC log)
     let state: serde_json::Value = client.invoke_command("get_app_state", None).await.unwrap();
-    assert_eq!(state["settings"]["theme"], "light");
+    assert_eq!(
+        state["settings"]["theme"], "light",
+        "backend state should reflect updated settings"
+    );
 
     // Restore
     client
         .invoke_command("update_settings", Some(json!({"theme": "dark"})))
         .await
         .unwrap();
+
+    let restored: serde_json::Value = client.invoke_command("get_app_state", None).await.unwrap();
+    assert_eq!(
+        restored["settings"]["theme"], "dark",
+        "settings should be restored"
+    );
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -320,6 +328,7 @@ e2e_test!(window_state_check, |client| async move {
 // ────────────────────────────────────────────────────────────────────────────
 
 e2e_test!(recording_lifecycle, |client| async move {
+    let _ = client.stop_recording().await;
     let start = client.start_recording(None).await.unwrap();
     assert!(start["started"].as_bool().unwrap());
 

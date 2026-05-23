@@ -386,6 +386,7 @@ impl VictauriClient {
     ///
     /// Returns [`TestError::Assertion`] if recording captures zero events.
     pub async fn assert_recording_lifecycle(&mut self) -> Result<(), TestError> {
+        let _ = self.stop_recording().await;
         self.start_recording(None).await?;
         self.eval_js("console.log('victauri-smoke-test')").await?;
         self.eval_js("document.title").await?;
