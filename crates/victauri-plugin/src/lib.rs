@@ -371,6 +371,28 @@ impl VictauriBuilder {
         self
     }
 
+    /// Register command names without full schemas.
+    ///
+    /// Use this when your commands are decorated with `#[tauri::command]` but not
+    /// `#[inspectable]`. Ghost detection will recognize these commands as registered,
+    /// eliminating false positives.
+    ///
+    /// ```rust,ignore
+    /// VictauriBuilder::new()
+    ///     .register_command_names(&[
+    ///         "get_settings",
+    ///         "save_settings",
+    ///         "run_analysis",
+    ///     ])
+    ///     .build()
+    /// ```
+    #[must_use]
+    pub fn register_command_names(mut self, names: &[&str]) -> Self {
+        self.commands
+            .extend(names.iter().map(|n| victauri_core::CommandInfo::new(*n)));
+        self
+    }
+
     /// Auto-discover all `#[inspectable]` commands in the binary.
     ///
     /// Uses `inventory` to collect every command marked with `#[inspectable]`

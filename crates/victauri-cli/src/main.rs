@@ -70,6 +70,17 @@ enum Commands {
         #[arg(short, long)]
         filter: Option<String>,
     },
+    /// Invoke a Tauri IPC command on a running app and print the result
+    Invoke {
+        /// The command name to invoke (e.g. "get_source_health")
+        command: String,
+        /// JSON arguments to pass to the command (e.g. '{"limit": 10}')
+        #[arg(short, long)]
+        args: Option<String>,
+        /// Print raw JSON output (no formatting)
+        #[arg(long)]
+        raw: bool,
+    },
     /// Report IPC command coverage from a running Tauri app
     Coverage {
         /// Minimum coverage percentage — exit with code 1 if below this value
@@ -116,6 +127,9 @@ async fn main() -> Result<()> {
         }
         Commands::Watch { dir, filter } => {
             cmd_watch(&dir, filter.as_deref()).await?;
+        }
+        Commands::Invoke { command, args, raw } => {
+            cmd_invoke(&command, args.as_deref(), raw).await?;
         }
         Commands::Coverage {
             threshold,
@@ -701,6 +715,46 @@ async fn cmd_test(max_load_ms: u64, max_heap_mb: f64, junit_path: Option<&Path>)
     }
 
     eprintln!("\nAll smoke checks passed.");
+    Ok(())
+}
+
+async fn cmd_invoke(command: &str, args_json: Option<&str>, raw: bool) -> Result<()> {
+    if !raw {
+        eprintln!("Connecting to running Victauri server...\n");
+    }
+
+    let mut client = match victauri_test::VictauriClient::discover().await {
+        Ok(c) => c,
+        Err(e) => {
+            bail!(
+                "Could not connect to Victauri server: {e}\n\n\
+                 Is your Tauri app running? Try:  pnpm run tauri dev\n\
+                 The app must have victauri-plugin wired into its builder."
+            );
+        }
+    };
+
+    let args: Option<serde_json::Value> = match args_json {
+        Some(s) => Some(serde_json::from_str(s).context("invalid JSON in --args")?),
+        None => None,
+    };
+
+    let result = client
+        .invoke_command(command, args)
+        .await
+        .with_context(|| format!("failed to invoke command '{command}'"))?;
+
+    if raw {
+        println!("{}", serde_json::to_string(&result)?);
+    } else {
+        eprintln!("  Command: {command}");
+        if let Some(a) = args_json {
+            eprintln!("  Args:    {a}");
+        }
+        eprintln!();
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    }
+
     Ok(())
 }
 
