@@ -764,7 +764,7 @@ async fn rest_get_diagnostics() {
     // Diagnostics internally calls eval to check the bridge, so we need a callback bridge
     let base = start_callback_server(state, &["main"], |script| {
         if script.contains("version") {
-            "\"0.3.0\"".to_string()
+            "\"0.4.0\"".to_string()
         } else {
             "null".to_string()
         }

@@ -1,5 +1,41 @@
 # Migration Guide
 
+## v0.3.x → v0.4.0
+
+### Breaking Change: Auth Disabled by Default
+
+Authentication is now **disabled by default**. Previously, the plugin auto-generated a UUID Bearer token on startup. This caused silent MCP connection failures when the token wasn't configured in `.mcp.json`.
+
+**If you were relying on auto-generated auth**, opt in explicitly:
+
+```rust
+VictauriBuilder::new()
+    .auth_enabled()  // auto-generates UUID token, printed to console
+    .build()
+```
+
+**If you were calling `.auth_disabled()`**, you can remove it — auth is already off by default. The method still exists as a no-op for backwards compatibility.
+
+**If you were using `VICTAURI_AUTH_TOKEN` env var or `.auth_token("...")`**, no change needed — those still enable auth.
+
+### New: `register_command_names` Builder API
+
+Lightweight alternative to `#[inspectable]` proc macros:
+
+```rust
+VictauriBuilder::new()
+    .register_command_names(&["get_settings", "save_settings", "search"])
+    .build()
+```
+
+### New CLI Commands
+
+- `victauri invoke <command>` — call any Tauri IPC command from terminal
+- `victauri doctor` — full setup diagnosis
+- `victauri init` now scaffolds CLAUDE.md with agent instructions
+
+---
+
 ## v0.2.x → v0.3.0
 
 ### New Features

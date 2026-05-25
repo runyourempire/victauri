@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-26
+
+### Changed
+
+- **BREAKING:** **victauri-plugin**: Authentication **disabled by default** — the MCP server binds to `127.0.0.1` only and the plugin is `#[cfg(debug_assertions)]`-gated, so auth adds friction without meaningful security for local dev. Use `auth_enabled()`, `auth_token("...")`, or `VICTAURI_AUTH_TOKEN` env var to opt in.
+- **victauri-plugin**: `auth_disabled()` is now a backwards-compatible no-op (auth is already off by default)
+- **victauri-plugin**: `generate_auth_token()` now delegates to `auth_enabled()` logic
+
+### Added
+
+- **victauri-plugin**: `VictauriBuilder::auth_enabled()` — opt-in auth with auto-generated UUID token
+- **victauri-plugin**: `VictauriBuilder::register_command_names(&["cmd1", "cmd2"])` — lightweight command registration without proc macros
+- **victauri-plugin**: `VictauriBuilder::commands(&[CommandInfo])` — register full command schemas
+- **victauri-cli**: `victauri invoke <command> [--args '{}']` — call any Tauri IPC command from terminal
+- **victauri-cli**: `victauri doctor` — full setup diagnosis
+- **victauri-cli**: `victauri init` now scaffolds CLAUDE.md with agent instructions that make AI agents prefer Victauri over CDP/Playwright
+- **ci**: Production-ready GitHub Action at `.github/actions/victauri-test/` with branding, diagnostics, and coverage support
+
 ## [0.3.0] - 2026-05-24
 
 ### Changed
