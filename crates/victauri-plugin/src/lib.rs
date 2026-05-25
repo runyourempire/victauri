@@ -55,6 +55,8 @@ mod tools;
 
 /// Bearer-token authentication, rate limiting, and security middlewares.
 pub mod auth;
+/// Backend introspection and chaos engineering (profiling, fault injection, contracts).
+pub mod introspection;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -138,6 +140,14 @@ pub struct VictauriState {
     /// Defaults to `false` — only `http` and `https` are permitted unless opted in
     /// via [`VictauriBuilder::allow_file_navigation`].
     pub allow_file_navigation: bool,
+    /// Per-command execution timing for Rust-side profiling.
+    pub command_timings: introspection::CommandTimings,
+    /// Active fault injection rules for chaos engineering.
+    pub fault_registry: introspection::FaultRegistry,
+    /// Recorded IPC contract baselines for schema drift detection.
+    pub contract_store: introspection::ContractStore,
+    /// Plugin startup phase timestamps for performance analysis.
+    pub startup_timeline: introspection::StartupTimeline,
 }
 
 /// Builder for configuring the Victauri plugin before adding it to a Tauri app.
@@ -572,8 +582,11 @@ impl VictauriBuilder {
 
             Ok(Builder::new("victauri")
                 .setup(move |app, _api| {
+                    let startup_timeline = introspection::StartupTimeline::new();
                     let event_log = EventLog::new(event_capacity);
+                    startup_timeline.mark("event_log_created");
                     let registry = CommandRegistry::new();
+                    startup_timeline.mark("registry_created");
                     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
                     let state = Arc::new(VictauriState {
@@ -588,13 +601,19 @@ impl VictauriBuilder {
                         started_at: std::time::Instant::now(),
                         tool_invocations: AtomicU64::new(0),
                         allow_file_navigation,
+                        command_timings: introspection::CommandTimings::new(),
+                        fault_registry: introspection::FaultRegistry::new(),
+                        contract_store: introspection::ContractStore::new(),
+                        startup_timeline,
                     });
+                    state.startup_timeline.mark("state_created");
 
                     app.manage(state.clone());
 
                     for cmd in commands {
                         state.registry.register(cmd);
                     }
+                    state.startup_timeline.mark("commands_registered");
 
                     if let Some(ref token) = auth_token {
                         tracing::info!(
@@ -608,6 +627,7 @@ impl VictauriBuilder {
                         );
                     }
 
+                    state.startup_timeline.mark("server_spawning");
                     let app_handle = app.clone();
                     let ready_state = state.clone();
                     tauri::async_runtime::spawn(async move {

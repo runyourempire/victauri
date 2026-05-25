@@ -1,6 +1,6 @@
 # Tools Reference
 
-Victauri exposes 28 MCP tools organized into standalone tools (one action per call) and compound tools (multiple actions via an `action` parameter).
+Victauri exposes 30 MCP tools organized into standalone tools (one action per call) and compound tools (multiple actions via an `action` parameter).
 
 All tools are accessible via MCP at `/mcp` or REST at `POST /api/tools/{tool_name}`.
 
@@ -76,14 +76,14 @@ Evaluate JavaScript in the webview and return the result.
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `expression` | string | yes | JavaScript expression or statements to evaluate |
+| `code` | string | yes | JavaScript code to evaluate (expressions, statements, or async/await) |
 | `webview_label` | string | no | Target webview (defaults to "main" or first visible) |
 
 **Examples:**
 ```json
-{"expression": "document.title"}
-{"expression": "document.querySelectorAll('button').length"}
-{"expression": "await fetch('/api/data').then(r => r.json())"}
+{"code": "document.title"}
+{"code": "document.querySelectorAll('button').length"}
+{"code": "await fetch('/api/data').then(r => r.json())"}
 ```
 
 Bare expressions are auto-wrapped with `return`. Multi-statement code and async/await are supported.
@@ -475,4 +475,61 @@ Access all captured logs from the application.
 {"action": "console", "level": "error"}
 {"action": "network"}
 {"action": "slow_ipc", "threshold_ms": 100}
+```
+
+---
+
+## Backend Introspection (Victauri-Exclusive)
+
+These tools exploit Victauri's position inside the Rust process to provide insights and control that browser-external tools like CDP cannot access.
+
+### introspect
+
+Deep backend introspection — command performance profiling, IPC contract testing, coverage analysis, startup timing, capability auditing, and database diagnostics.
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `command_timings` | `slow_threshold_ms` | Per-command execution timing stats (min/max/avg/p95) |
+| `coverage` | — | Which registered commands have been called this session |
+| `contract_record` | `command`, `args` | Record a command's response shape as baseline |
+| `contract_check` | — | Check all recorded contracts for schema drift |
+| `contract_list` | — | List all recorded contract baselines |
+| `contract_clear` | — | Clear all recorded contract baselines |
+| `startup_timing` | — | Plugin initialization phase-by-phase timing breakdown |
+| `capabilities` | — | Audit Tauri v2 permissions and capabilities |
+| `db_health` | `db_path` | `SQLite` database diagnostics (journal mode, WAL, page stats) |
+
+**Examples:**
+```json
+{"action": "command_timings", "slow_threshold_ms": 100}
+{"action": "coverage"}
+{"action": "contract_record", "command": "get_settings"}
+{"action": "contract_check"}
+{"action": "startup_timing"}
+{"action": "capabilities"}
+{"action": "db_health"}
+```
+
+---
+
+### fault
+
+Inject faults into Tauri IPC commands at the Rust layer for chaos engineering. CDP cannot inject failures at the backend.
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `inject` | `command`, `fault_type`, `delay_ms`, `error_message`, `max_triggers` | Add a fault rule |
+| `list` | — | List all active fault injection rules |
+| `clear` | `command` | Remove a specific fault rule |
+| `clear_all` | — | Remove all fault rules |
+
+**Fault types:** `delay` (add latency), `error` (return error), `drop` (empty response), `corrupt` (mangle response).
+
+**Examples:**
+```json
+{"action": "inject", "command": "get_settings", "fault_type": "delay", "delay_ms": 2000}
+{"action": "inject", "command": "save_data", "fault_type": "error", "error_message": "disk full"}
+{"action": "inject", "command": "fetch_feed", "fault_type": "drop", "max_triggers": 3}
+{"action": "list"}
+{"action": "clear_all"}
 ```

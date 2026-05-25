@@ -1,6 +1,7 @@
 mod backend_params;
 mod compound_params;
 mod helpers;
+mod introspection_params;
 mod other_params;
 mod rest;
 mod server;
@@ -34,6 +35,7 @@ use helpers::{
 
 pub use backend_params::*;
 pub use compound_params::*;
+pub use introspection_params::*;
 pub use other_params::{
     DiagnosticsParams, FindElementsParams, ResolveCommandParams, SemanticAssertParams,
     WaitCondition, WaitForParams,
@@ -48,6 +50,10 @@ pub use window_params::*;
 /// Maximum number of in-flight JavaScript eval requests. Prevents unbounded
 /// growth of the `pending_evals` map if callbacks are never resolved.
 pub(crate) const MAX_PENDING_EVALS: usize = 100;
+
+fn chrono_now() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
 
 /// Maximum length of JavaScript code accepted by the `eval_js` tool (1 MB).
 const MAX_EVAL_CODE_LEN: usize = 1_000_000;
@@ -237,16 +243,81 @@ impl VictauriMcpHandler {
                 params.command
             ));
         }
+
+        // ── Fault injection check ──
+        if let Some(fault) = self.state.fault_registry.check_and_trigger(&params.command) {
+            match fault {
+                crate::introspection::FaultType::Delay { delay_ms } => {
+                    tracing::info!(
+                        command = %params.command,
+                        delay_ms = delay_ms,
+                        "fault injection: delaying command"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    // After delay, continue with normal execution below
+                }
+                crate::introspection::FaultType::Error { ref message } => {
+                    tracing::info!(
+                        command = %params.command,
+                        "fault injection: returning error"
+                    );
+                    return tool_error(format!(
+                        "[FAULT INJECTED] command '{}': {message}",
+                        params.command
+                    ));
+                }
+                crate::introspection::FaultType::Drop => {
+                    tracing::info!(
+                        command = %params.command,
+                        "fault injection: dropping response"
+                    );
+                    return CallToolResult::success(vec![Content::text("{}")]);
+                }
+                crate::introspection::FaultType::Corrupt => {
+                    tracing::info!(
+                        command = %params.command,
+                        "fault injection: corrupting response"
+                    );
+                    // Execute normally but mangle the response
+                    let args_json = params.args.unwrap_or(serde_json::json!({}));
+                    let args_str =
+                        serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
+                    let code = format!(
+                        "return window.__TAURI_INTERNALS__.invoke({}, {args_str})",
+                        js_string(&params.command)
+                    );
+                    if let Ok(result) = self
+                        .eval_with_return(&code, params.webview_label.as_deref())
+                        .await
+                    {
+                        let corrupted = format!(
+                            "{{\"__corrupted\":true,\"original_length\":{},\"fault\":\"corrupt\"}}",
+                            result.len()
+                        );
+                        return CallToolResult::success(vec![Content::text(corrupted)]);
+                    }
+                    return CallToolResult::success(vec![Content::text(
+                        "{\"__corrupted\":true,\"fault\":\"corrupt\",\"note\":\"original invocation also failed\"}",
+                    )]);
+                }
+            }
+        }
+
+        // ── Normal execution with timing ──
+        let start = std::time::Instant::now();
         let args_json = params.args.unwrap_or(serde_json::json!({}));
         let args_str = serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
         let code = format!(
             "return window.__TAURI_INTERNALS__.invoke({}, {args_str})",
             js_string(&params.command)
         );
-        match self
+        let result = self
             .eval_with_return(&code, params.webview_label.as_deref())
-            .await
-        {
+            .await;
+        let elapsed = start.elapsed();
+        self.state.command_timings.record(&params.command, elapsed);
+
+        match result {
             Ok(result) => {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result)
                     && let Some(err) = parsed.get("__error").and_then(|e| e.as_str())
@@ -1665,6 +1736,352 @@ impl VictauriMcpHandler {
             }
         }
     }
+
+    // ── Backend Introspection ────────────────────────────────────────────────
+
+    #[tool(
+        description = "Deep backend introspection — command performance profiling, IPC contract testing, \
+            coverage analysis, startup timing, capability auditing, and database diagnostics. \
+            These features exploit Victauri's position inside the Rust process to provide insights \
+            that browser-external tools like CDP cannot access.\n\n\
+            Actions:\n\
+            - `command_timings`: Per-command execution timing stats (min/max/avg/p95). Set `slow_threshold_ms` to filter.\n\
+            - `coverage`: Which registered commands have been called during this session.\n\
+            - `contract_record`: Record a command's response shape as a baseline (requires `command`).\n\
+            - `contract_check`: Check all recorded contracts for schema drift.\n\
+            - `contract_list`: List all recorded contract baselines.\n\
+            - `contract_clear`: Clear all recorded contract baselines.\n\
+            - `startup_timing`: Plugin initialization phase-by-phase timing breakdown.\n\
+            - `capabilities`: Audit Tauri v2 permissions and capabilities granted to this app.\n\
+            - `db_health`: SQLite database diagnostics (journal mode, WAL status, page stats).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn introspect(&self, Parameters(params): Parameters<IntrospectParams>) -> CallToolResult {
+        self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("introspect") {
+            return tool_disabled("introspect");
+        }
+
+        match params.action {
+            IntrospectAction::CommandTimings => {
+                let mut stats = self.state.command_timings.all_stats();
+                if let Some(threshold) = params.slow_threshold_ms {
+                    stats.retain(|s| s.avg_ms >= threshold);
+                }
+                let result = serde_json::json!({
+                    "commands": stats,
+                    "total_commands_profiled": self.state.command_timings.all_stats().len(),
+                    "slow_threshold_ms": params.slow_threshold_ms,
+                });
+                json_result(&result)
+            }
+            IntrospectAction::Coverage => {
+                let registered: Vec<String> = self
+                    .state
+                    .registry
+                    .list()
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect();
+
+                let code = "return window.__VICTAURI__?.getIpcLog()";
+                let invoked: std::collections::HashSet<String> = match self
+                    .eval_with_return(code, params.webview_label.as_deref())
+                    .await
+                {
+                    Ok(json_str) => {
+                        if let Ok(entries) =
+                            serde_json::from_str::<Vec<serde_json::Value>>(&json_str)
+                        {
+                            entries
+                                .iter()
+                                .filter_map(|e| e.get("command").and_then(|c| c.as_str()))
+                                .map(String::from)
+                                .collect()
+                        } else {
+                            std::collections::HashSet::new()
+                        }
+                    }
+                    Err(_) => std::collections::HashSet::new(),
+                };
+
+                let uncovered: Vec<&String> = registered
+                    .iter()
+                    .filter(|cmd| !invoked.contains(cmd.as_str()))
+                    .collect();
+
+                let coverage_pct = if registered.is_empty() {
+                    100.0
+                } else {
+                    let covered = registered.len() - uncovered.len();
+                    (covered as f64 / registered.len() as f64) * 100.0
+                };
+
+                let result = serde_json::json!({
+                    "registered_commands": registered.len(),
+                    "invoked_commands": invoked.len(),
+                    "coverage_pct": (coverage_pct * 10.0).round() / 10.0,
+                    "uncovered": uncovered,
+                    "invoked_not_registered": invoked.iter()
+                        .filter(|cmd| !registered.contains(cmd))
+                        .collect::<Vec<_>>(),
+                });
+                json_result(&result)
+            }
+            IntrospectAction::ContractRecord => {
+                let Some(command) = params.command else {
+                    return missing_param("command", "contract_record");
+                };
+                let args_json = params.args.unwrap_or(serde_json::json!({}));
+                let args_str =
+                    serde_json::to_string(&args_json).unwrap_or_else(|_| "{}".to_string());
+                let code = format!(
+                    "return window.__TAURI_INTERNALS__.invoke({}, {args_str})",
+                    js_string(&command)
+                );
+                match self
+                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .await
+                {
+                    Ok(result_str) => {
+                        let value: serde_json::Value = serde_json::from_str(&result_str)
+                            .unwrap_or(serde_json::Value::String(result_str.clone()));
+                        let shape = crate::introspection::JsonShape::from_value(&value);
+                        let sample = if result_str.len() > 4096 {
+                            format!("{}...(truncated)", &result_str[..4096])
+                        } else {
+                            result_str
+                        };
+                        let baseline = crate::introspection::ContractBaseline {
+                            command: command.clone(),
+                            args: args_json,
+                            shape: shape.clone(),
+                            sample,
+                            recorded_at: chrono_now(),
+                        };
+                        self.state.contract_store.record(baseline);
+                        let result = serde_json::json!({
+                            "recorded": true,
+                            "command": command,
+                            "shape_type": shape.type_name(),
+                        });
+                        json_result(&result)
+                    }
+                    Err(e) => tool_error(format!(
+                        "failed to invoke '{command}' for contract recording: {e}"
+                    )),
+                }
+            }
+            IntrospectAction::ContractCheck => {
+                let baselines = self.state.contract_store.all();
+                if baselines.is_empty() {
+                    return json_result(&serde_json::json!({
+                        "checked": 0,
+                        "message": "no contract baselines recorded — use contract_record first",
+                    }));
+                }
+                let mut results = Vec::new();
+                for baseline in &baselines {
+                    let args_str =
+                        serde_json::to_string(&baseline.args).unwrap_or_else(|_| "{}".to_string());
+                    let code = format!(
+                        "return window.__TAURI_INTERNALS__.invoke({}, {args_str})",
+                        js_string(&baseline.command)
+                    );
+                    match self
+                        .eval_with_return(&code, params.webview_label.as_deref())
+                        .await
+                    {
+                        Ok(result_str) => {
+                            let value: serde_json::Value = serde_json::from_str(&result_str)
+                                .unwrap_or(serde_json::Value::String(result_str));
+                            let current_shape = crate::introspection::JsonShape::from_value(&value);
+                            let drift = crate::introspection::diff_shapes(
+                                &baseline.shape,
+                                &current_shape,
+                                &baseline.command,
+                            );
+                            results.push(drift);
+                        }
+                        Err(e) => {
+                            results.push(crate::introspection::ContractDrift {
+                                command: baseline.command.clone(),
+                                new_fields: Vec::new(),
+                                removed_fields: Vec::new(),
+                                type_changes: Vec::new(),
+                                shape_matches: false,
+                            });
+                            tracing::warn!(
+                                command = %baseline.command,
+                                error = %e,
+                                "contract check invocation failed"
+                            );
+                        }
+                    }
+                }
+                let passing = results.iter().filter(|r| r.shape_matches).count();
+                let result = serde_json::json!({
+                    "checked": results.len(),
+                    "passing": passing,
+                    "failing": results.len() - passing,
+                    "contracts": results,
+                });
+                json_result(&result)
+            }
+            IntrospectAction::ContractList => {
+                let baselines = self.state.contract_store.all();
+                let result = serde_json::json!({
+                    "count": baselines.len(),
+                    "baselines": baselines.iter().map(|b| serde_json::json!({
+                        "command": b.command,
+                        "shape_type": b.shape.type_name(),
+                        "recorded_at": b.recorded_at,
+                    })).collect::<Vec<_>>(),
+                });
+                json_result(&result)
+            }
+            IntrospectAction::ContractClear => {
+                let cleared = self.state.contract_store.clear();
+                json_result(&serde_json::json!({
+                    "cleared": cleared,
+                }))
+            }
+            IntrospectAction::StartupTiming => {
+                let phases = self.state.startup_timeline.report();
+                let result = serde_json::json!({
+                    "phases": phases,
+                    "total_ms": self.state.startup_timeline.total_ms(),
+                    "uptime_secs": self.state.started_at.elapsed().as_secs(),
+                });
+                json_result(&result)
+            }
+            IntrospectAction::Capabilities => {
+                let config = self.bridge.tauri_config();
+                let result = serde_json::json!({
+                    "tauri_config": config,
+                    "windows": self.bridge.list_window_labels(),
+                    "registered_commands": self.state.registry.list().len(),
+                    "auth_enabled": self.state.privacy.is_tool_enabled("introspect"),
+                    "tools_enabled": self.state.privacy.is_tool_enabled("eval_js"),
+                });
+                json_result(&result)
+            }
+            #[allow(unused_variables)]
+            IntrospectAction::DbHealth => {
+                #[cfg(feature = "sqlite")]
+                {
+                    let db_path = params.db_path.clone();
+                    match self.run_db_health(db_path.as_deref()).await {
+                        Ok(health) => json_result(&health),
+                        Err(e) => tool_error(format!("db_health failed: {e}")),
+                    }
+                }
+                #[cfg(not(feature = "sqlite"))]
+                {
+                    tool_error("SQLite support not compiled in — enable the `sqlite` feature")
+                }
+            }
+        }
+    }
+
+    // ── Fault Injection / Chaos Engineering ──────────────────────────────────
+
+    #[tool(
+        description = "Inject faults into Tauri IPC commands at the Rust layer for chaos engineering. \
+            Simulate slow commands, backend errors, dropped responses, and corrupted data. \
+            CDP cannot inject failures at the backend — it can only observe the frontend.\n\n\
+            Actions:\n\
+            - `inject`: Add a fault rule (requires `command`, `fault_type`). Optional: `delay_ms`, `error_message`, `max_triggers`.\n\
+            - `list`: List all active fault injection rules.\n\
+            - `clear`: Remove a specific fault rule (requires `command`).\n\
+            - `clear_all`: Remove all fault rules.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn fault(&self, Parameters(params): Parameters<FaultParams>) -> CallToolResult {
+        self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("fault") {
+            return tool_disabled("fault");
+        }
+
+        match params.action {
+            FaultAction::Inject => {
+                let Some(command) = params.command else {
+                    return missing_param("command", "inject");
+                };
+                let Some(fault_kind) = params.fault_type else {
+                    return missing_param("fault_type", "inject");
+                };
+                let fault_type = match fault_kind {
+                    FaultKind::Delay => {
+                        let delay_ms = params.delay_ms.unwrap_or(1000);
+                        crate::introspection::FaultType::Delay { delay_ms }
+                    }
+                    FaultKind::Error => {
+                        let message = params
+                            .error_message
+                            .unwrap_or_else(|| "injected fault".to_string());
+                        crate::introspection::FaultType::Error { message }
+                    }
+                    FaultKind::Drop => crate::introspection::FaultType::Drop,
+                    FaultKind::Corrupt => crate::introspection::FaultType::Corrupt,
+                };
+                let config = crate::introspection::FaultConfig {
+                    command: command.clone(),
+                    fault_type: fault_type.clone(),
+                    trigger_count: 0,
+                    max_triggers: params.max_triggers.unwrap_or(0),
+                    created_at: std::time::Instant::now(),
+                };
+                self.state.fault_registry.inject(config);
+                let result = serde_json::json!({
+                    "injected": true,
+                    "command": command,
+                    "fault_type": fault_type,
+                    "max_triggers": params.max_triggers.unwrap_or(0),
+                });
+                json_result(&result)
+            }
+            FaultAction::List => {
+                let faults = self.state.fault_registry.list();
+                let result = serde_json::json!({
+                    "count": faults.len(),
+                    "faults": faults.iter().map(|f| serde_json::json!({
+                        "command": f.command,
+                        "fault_type": f.fault_type,
+                        "trigger_count": f.trigger_count,
+                        "max_triggers": f.max_triggers,
+                    })).collect::<Vec<_>>(),
+                });
+                json_result(&result)
+            }
+            FaultAction::Clear => {
+                let Some(command) = params.command else {
+                    return missing_param("command", "clear");
+                };
+                let removed = self.state.fault_registry.clear(&command);
+                json_result(&serde_json::json!({
+                    "removed": removed,
+                    "command": command,
+                }))
+            }
+            FaultAction::ClearAll => {
+                let removed = self.state.fault_registry.clear_all();
+                json_result(&serde_json::json!({
+                    "removed": removed,
+                }))
+            }
+        }
+    }
 }
 
 impl VictauriMcpHandler {
@@ -1798,6 +2215,14 @@ impl VictauriMcpHandler {
             "logs" => {
                 let p: LogsParams = Self::parse_args(args)?;
                 self.logs(Parameters(p)).await
+            }
+            "introspect" => {
+                let p: IntrospectParams = Self::parse_args(args)?;
+                self.introspect(Parameters(p)).await
+            }
+            "fault" => {
+                let p: FaultParams = Self::parse_args(args)?;
+                self.fault(Parameters(p)).await
             }
             _ => return Err(rest::ToolCallError::UnknownTool(name.to_string())),
         };
@@ -2022,6 +2447,109 @@ impl VictauriMcpHandler {
         }
     }
 
+    #[cfg(feature = "sqlite")]
+    async fn run_db_health(&self, db_path: Option<&str>) -> Result<serde_json::Value, String> {
+        let data_dir = self.bridge.app_data_dir()?;
+        let path = if let Some(p) = db_path {
+            data_dir.join(p)
+        } else {
+            let mut found = None;
+            if let Ok(entries) = std::fs::read_dir(&data_dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension()
+                        .is_some_and(|ext| ext == "db" || ext == "sqlite" || ext == "sqlite3")
+                    {
+                        found = Some(p);
+                        break;
+                    }
+                }
+            }
+            found.ok_or_else(|| "no database found in app data directory".to_string())?
+        };
+        Self::safe_within(&data_dir, &path)?;
+
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| "invalid path encoding".to_string())?
+            .to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = rusqlite::Connection::open_with_flags(
+                &path_str,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|e| format!("cannot open database: {e}"))?;
+
+            let journal_mode: String = conn
+                .pragma_query_value(None, "journal_mode", |r| r.get(0))
+                .unwrap_or_else(|_| "unknown".to_string());
+
+            let page_count: i64 = conn
+                .pragma_query_value(None, "page_count", |r| r.get(0))
+                .unwrap_or(0);
+
+            let page_size: i64 = conn
+                .pragma_query_value(None, "page_size", |r| r.get(0))
+                .unwrap_or(0);
+
+            let freelist_count: i64 = conn
+                .pragma_query_value(None, "freelist_count", |r| r.get(0))
+                .unwrap_or(0);
+
+            let wal_checkpoint: String = if journal_mode == "wal" {
+                let mut info = String::from("n/a");
+                let _ = conn.pragma_query(None, "wal_checkpoint", |r| {
+                    let busy: i64 = r.get(0)?;
+                    let checkpointed: i64 = r.get(1)?;
+                    let total: i64 = r.get(2)?;
+                    info = format!("busy={busy}, checkpointed={checkpointed}, total={total}");
+                    Ok(())
+                });
+                info
+            } else {
+                "n/a (not WAL mode)".to_string()
+            };
+
+            let integrity: String = conn
+                .pragma_query_value(None, "quick_check", |r| r.get(0))
+                .unwrap_or_else(|_| "failed".to_string());
+
+            let db_size_bytes = page_count * page_size;
+            let db_size_mb = db_size_bytes as f64 / (1024.0 * 1024.0);
+
+            let mut tables = Vec::new();
+            if let Ok(mut stmt) =
+                conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                && let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0))
+            {
+                for name in rows.flatten() {
+                    let count: i64 = conn
+                        .query_row(&format!("SELECT count(*) FROM [{name}]"), [], |r| r.get(0))
+                        .unwrap_or(0);
+                    tables.push(serde_json::json!({
+                        "name": name,
+                        "row_count": count,
+                    }));
+                }
+            }
+
+            Ok(serde_json::json!({
+                "database": path_str,
+                "journal_mode": journal_mode,
+                "page_count": page_count,
+                "page_size": page_size,
+                "db_size_mb": (db_size_mb * 100.0).round() / 100.0,
+                "freelist_count": freelist_count,
+                "wal_checkpoint": wal_checkpoint,
+                "integrity_check": integrity,
+                "tables": tables,
+            }))
+        })
+        .await
+        .map_err(|e| format!("db health task failed: {e}"))?
+    }
+
     fn check_bridge_version_once(&self) {
         if self.bridge_checked.swap(true, Ordering::Relaxed) {
             return;
@@ -2052,7 +2580,7 @@ impl VictauriMcpHandler {
     }
 }
 
-const SERVER_INSTRUCTIONS: &str = "Victauri is a FULL-STACK inspection tool for Tauri applications. \
+const SERVER_INSTRUCTIONS: &str = "Victauri is a FULL-STACK inspection AND INTERVENTION tool for Tauri applications. \
 It provides simultaneous access to three layers: (1) the WEBVIEW (DOM, interactions, JS eval), \
 (2) the IPC LAYER (command registry, invoke commands, intercept traffic), and \
 (3) the RUST BACKEND (app config, file system, SQLite databases, process memory). \
@@ -2061,6 +2589,12 @@ It provides simultaneous access to three layers: (1) the WEBVIEW (DOM, interacti
 'list_app_dir' (browse app data/config/log directories), \
 'read_app_file' (read files from app directories), \
 'query_db' (read-only SQLite queries with auto-discovery). \
+\n\nBACKEND INTROSPECTION (CDP cannot do this — Victauri-exclusive): \
+'introspect' (command_timings, coverage, contract_record, contract_check, startup_timing, \
+capabilities, db_health) — Rust-side performance profiling, IPC contract testing, \
+command coverage analysis, startup timing, permission auditing, database diagnostics. \
+'fault' (inject, list, clear, clear_all) — chaos engineering: inject delays, errors, \
+drops, and response corruption into Tauri commands at the Rust layer. \
 \n\nWEBVIEW tools: \
 'interact' (click, hover, focus, scroll, select), 'input' (fill, type_text, press_key), \
 'inspect' (get_styles, get_bounding_boxes, highlight, audit_accessibility, get_performance), \

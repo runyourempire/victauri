@@ -133,6 +133,10 @@ fn make_state_with_privacy(privacy: PrivacyConfig) -> Arc<VictauriState> {
         started_at: std::time::Instant::now(),
         tool_invocations: std::sync::atomic::AtomicU64::new(0),
         allow_file_navigation: false,
+        command_timings: victauri_plugin::introspection::CommandTimings::new(),
+        fault_registry: victauri_plugin::introspection::FaultRegistry::new(),
+        contract_store: victauri_plugin::introspection::ContractStore::new(),
+        startup_timeline: victauri_plugin::introspection::StartupTimeline::new(),
     })
 }
 
@@ -345,6 +349,8 @@ async fn rest_list_tools_returns_all_24() {
         "inspect",
         "css",
         "logs",
+        "introspect",
+        "fault",
     ];
     for tool in &expected_tools {
         assert!(
