@@ -72,7 +72,7 @@ enum Commands {
     },
     /// Invoke a Tauri IPC command on a running app and print the result
     Invoke {
-        /// The command name to invoke (e.g. "get_source_health")
+        /// The command name to invoke (e.g. "`get_source_health`")
         command: String,
         /// JSON arguments to pass to the command (e.g. '{"limit": 10}')
         #[arg(short, long)]
@@ -1125,7 +1125,7 @@ fn generate_mcp_json() -> &'static str {
 }
 
 fn generate_claude_md_section() -> &'static str {
-    r#"
+    r"
 ## Victauri (App Inspection & Testing)
 
 This app has **Victauri** integrated — an MCP server embedded inside the Tauri process
@@ -1149,7 +1149,7 @@ Connection: `http://127.0.0.1:7373/mcp` (configured in `.mcp.json`)
 
 Do NOT use Playwright or CDP for tasks that Victauri handles. Only fall back to
 Playwright for browser-only work unrelated to the Tauri app.
-"#
+"
 }
 
 fn generate_capability_json() -> &'static str {
