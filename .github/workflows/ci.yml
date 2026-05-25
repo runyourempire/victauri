@@ -239,19 +239,10 @@ jobs:
           xvfb-run -a ./target/debug/demo-app &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
 
-      - name: Wait for MCP server
-        run: |
-          timeout=30
-          elapsed=0
-          until curl -sf http://127.0.0.1:7373/health > /dev/null 2>&1; do
-            if [ "$elapsed" -ge "$timeout" ]; then
-              echo "ERROR: MCP server did not become ready within ${timeout}s"
-              exit 1
-            fi
-            sleep 1
-            elapsed=$((elapsed + 1))
-          done
-          echo "MCP server ready after ${elapsed}s"
+      - name: Victauri smoke tests
+        uses: ./.github/actions/victauri-test
+        with:
+          check: "true"
 
       - name: Run E2E tests
         run: cargo test -p demo-app --test integration -- --test-threads=1

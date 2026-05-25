@@ -1,5 +1,10 @@
 name: Victauri Test
-description: Run Victauri smoke tests and coverage against a running Tauri app
+description: Run Victauri smoke tests and IPC coverage against a running Tauri app
+author: 4DA Systems Pty Ltd
+
+branding:
+  icon: check-circle
+  color: purple
 
 inputs:
   port:
@@ -15,7 +20,7 @@ inputs:
     required: false
     default: "512"
   junit-path:
-    description: Path to write JUnit XML report
+    description: Path to write JUnit XML report (enables test result upload)
     required: false
     default: ""
   coverage:
@@ -34,6 +39,10 @@ inputs:
     description: Seconds to wait for the Victauri server to become healthy
     required: false
     default: "30"
+  check:
+    description: Run victauri check (diagnostics report) before tests
+    required: false
+    default: "false"
 
 outputs:
   test-result:
@@ -42,6 +51,9 @@ outputs:
   junit-report:
     description: Path to JUnit XML report (if generated)
     value: ${{ steps.test.outputs.junit-path }}
+  server-port:
+    description: Actual port the Victauri server is running on
+    value: ${{ steps.health.outputs.port }}
 
 runs:
   using: composite
@@ -56,22 +68,30 @@ runs:
         fi
 
     - name: Wait for Victauri server
+      id: health
       shell: bash
-      env:
-        VICTAURI_PORT: ${{ inputs.port }}
       run: |
-        echo "Waiting for Victauri server on port $VICTAURI_PORT..."
+        port="${{ inputs.port }}"
         timeout=${{ inputs.health-timeout }}
         elapsed=0
-        until curl -sf "http://127.0.0.1:${VICTAURI_PORT}/health" > /dev/null 2>&1; do
+        echo "Waiting for Victauri server on port ${port}..."
+        until curl -sf "http://127.0.0.1:${port}/health" > /dev/null 2>&1; do
           if [ "$elapsed" -ge "$timeout" ]; then
-            echo "::error::Victauri server did not become healthy within ${timeout}s on port ${VICTAURI_PORT}"
+            echo "::error::Victauri server did not become healthy within ${timeout}s on port ${port}"
             exit 1
           fi
           sleep 1
           elapsed=$((elapsed + 1))
         done
         echo "Server healthy after ${elapsed}s"
+        echo "port=${port}" >> "$GITHUB_OUTPUT"
+
+    - name: Run diagnostics
+      if: inputs.check == 'true'
+      shell: bash
+      env:
+        VICTAURI_PORT: ${{ inputs.port }}
+      run: victauri check
 
     - name: Run Victauri tests
       id: test

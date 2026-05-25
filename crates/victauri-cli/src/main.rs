@@ -1558,9 +1558,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install victauri-cli
-        run: cargo install victauri-cli
-
       - name: Build app
         run: cargo build
 
@@ -1569,22 +1566,10 @@ jobs:
           xvfb-run -a ./target/debug/$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name') &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
 
-      - name: Wait for Victauri server
-        run: |
-          timeout=30
-          elapsed=0
-          until curl -sf http://127.0.0.1:7373/health > /dev/null 2>&1; do
-            if [ "$elapsed" -ge "$timeout" ]; then
-              echo "ERROR: Victauri server not ready within ${timeout}s"
-              exit 1
-            fi
-            sleep 1
-            elapsed=$((elapsed + 1))
-          done
-          echo "Server ready after ${elapsed}s"
-
-      - name: Run smoke tests
-        run: victauri test
+      - name: Victauri smoke tests
+        uses: runyourempire/victauri/.github/actions/victauri-test@main
+        with:
+          check: "true"
 
       - name: Run integration tests
         run: cargo test --test integration -- --test-threads=1
@@ -1834,7 +1819,7 @@ mod tests {
     #[test]
     fn ci_workflow_is_valid_yaml() {
         let content = generate_ci_workflow();
-        assert!(content.contains("victauri test"));
+        assert!(content.contains("victauri-test@main"));
         assert!(content.contains("xvfb"));
         assert!(content.contains("VICTAURI_E2E"));
     }
