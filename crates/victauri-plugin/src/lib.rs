@@ -19,8 +19,9 @@
 //!
 //! # Configuration
 //!
-//! Authentication is enabled by default with an auto-generated token (printed to logs).
-//! Use `.auth_disabled()` to opt out, or `.auth_token("...")` to set a specific token.
+//! Authentication is disabled by default for zero-friction setup. The MCP server
+//! listens on `127.0.0.1` only and is gated behind `#[cfg(debug_assertions)]`.
+//! Use `.auth_token("...")` or `.auth_enabled()` to require a Bearer token.
 //!
 //! ```ignore
 //! tauri::Builder::default()
@@ -145,17 +146,18 @@ pub struct VictauriState {
 /// and capacity tuning. All settings have sensible defaults and can be overridden
 /// via environment variables.
 ///
-/// **Authentication is enabled by default.** If no explicit token is set and no
-/// `VICTAURI_AUTH_TOKEN` env var exists, a random `UUID` token is auto-generated
-/// and printed to the log. Call [`auth_disabled()`](VictauriBuilder::auth_disabled)
-/// to explicitly opt out of authentication.
+/// **Authentication is disabled by default** for zero-friction local development.
+/// The server binds to `127.0.0.1` only and the entire plugin is `#[cfg(debug_assertions)]`.
+/// Call [`auth_token()`](VictauriBuilder::auth_token) to set an explicit token,
+/// [`auth_enabled()`](VictauriBuilder::auth_enabled) to auto-generate one, or set
+/// the `VICTAURI_AUTH_TOKEN` environment variable.
 pub struct VictauriBuilder {
     port: Option<u16>,
     event_capacity: usize,
     recorder_capacity: usize,
     eval_timeout: std::time::Duration,
     auth_token: Option<String>,
-    auth_explicitly_disabled: bool,
+    auth_explicitly_enabled: bool,
     disabled_tools: Vec<String>,
     command_allowlist: Option<Vec<String>>,
     command_blocklist: Vec<String>,
@@ -177,7 +179,7 @@ impl Default for VictauriBuilder {
             recorder_capacity: DEFAULT_RECORDER_CAPACITY,
             eval_timeout: DEFAULT_EVAL_TIMEOUT,
             auth_token: None,
-            auth_explicitly_disabled: false,
+            auth_explicitly_enabled: false,
             disabled_tools: Vec::new(),
             command_allowlist: None,
             command_blocklist: Vec::new(),
@@ -229,28 +231,44 @@ impl VictauriBuilder {
     }
 
     /// Set an explicit auth token for the MCP server (env: `VICTAURI_AUTH_TOKEN`).
+    ///
+    /// Setting a token implicitly enables authentication.
     #[must_use]
     pub fn auth_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
         self
     }
 
-    /// Generate a random `UUID` v4 auth token.
+    /// Enable authentication with an auto-generated `UUID` v4 token.
+    ///
+    /// The token is printed to the log on startup and written to the discovery
+    /// directory (`<temp>/victauri/<pid>/token`) for client auto-discovery.
+    ///
+    /// Authentication is disabled by default because the MCP server binds to
+    /// `127.0.0.1` only and the plugin is `#[cfg(debug_assertions)]`-gated.
+    /// Enable auth for shared machines or CI environments where multiple
+    /// users may access the same host.
     #[must_use]
-    pub fn generate_auth_token(mut self) -> Self {
-        self.auth_token = Some(auth::generate_token());
+    pub fn auth_enabled(mut self) -> Self {
+        self.auth_explicitly_enabled = true;
         self
     }
 
-    /// Explicitly disable authentication. By default, Victauri auto-generates a
-    /// token if none is provided. Call this method to opt out of auth entirely.
-    ///
-    /// **Warning:** Without authentication, any process on localhost can access
-    /// the MCP server. Only use this in trusted environments.
+    /// Generate a random `UUID` v4 auth token (alias for [`auth_enabled`](Self::auth_enabled)).
     #[must_use]
-    pub fn auth_disabled(mut self) -> Self {
-        self.auth_explicitly_disabled = true;
-        self.auth_token = None;
+    pub fn generate_auth_token(mut self) -> Self {
+        self.auth_explicitly_enabled = true;
+        self
+    }
+
+    /// No-op — authentication is already disabled by default since v0.4.0.
+    ///
+    /// Kept for backwards compatibility. Previously, auth was enabled by default
+    /// and this method was needed to opt out. Now auth is off by default and
+    /// [`auth_enabled()`](Self::auth_enabled) or [`auth_token()`](Self::auth_token)
+    /// turn it on.
+    #[must_use]
+    pub fn auth_disabled(self) -> Self {
         self
     }
 
@@ -444,13 +462,16 @@ impl VictauriBuilder {
     }
 
     fn resolve_auth_token(&self) -> Option<String> {
-        if self.auth_explicitly_disabled {
-            return None;
+        if let Some(ref token) = self.auth_token {
+            return Some(token.clone());
         }
-        self.auth_token
-            .clone()
-            .or_else(|| std::env::var("VICTAURI_AUTH_TOKEN").ok())
-            .or_else(|| Some(auth::generate_token()))
+        if let Ok(token) = std::env::var("VICTAURI_AUTH_TOKEN") {
+            return Some(token);
+        }
+        if self.auth_explicitly_enabled {
+            return Some(auth::generate_token());
+        }
+        None
     }
 
     fn resolve_eval_timeout(&self) -> std::time::Duration {
@@ -582,8 +603,8 @@ impl VictauriBuilder {
                             &token[token.len().saturating_sub(4)..]
                         );
                     } else {
-                        tracing::warn!(
-                            "Victauri MCP server auth DISABLED — any localhost process can access the MCP server"
+                        tracing::info!(
+                            "Victauri MCP server running without auth (localhost-only, debug build)"
                         );
                     }
 
@@ -591,7 +612,11 @@ impl VictauriBuilder {
                     let ready_state = state.clone();
                     tauri::async_runtime::spawn(async move {
                         match mcp::start_server_with_options(
-                            app_handle, state, port, auth_token, shutdown_rx,
+                            app_handle,
+                            state,
+                            port,
+                            auth_token,
+                            shutdown_rx,
                         )
                         .await
                         {
@@ -608,7 +633,8 @@ impl VictauriBuilder {
                         tauri::async_runtime::spawn(async move {
                             for _ in 0..50 {
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                                let actual_port = ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
+                                let actual_port =
+                                    ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
                                 if tokio::net::TcpStream::connect(format!(
                                     "127.0.0.1:{actual_port}"
                                 ))
@@ -619,8 +645,11 @@ impl VictauriBuilder {
                                     return;
                                 }
                             }
-                            let actual_port = ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
-                            tracing::warn!("Victauri on_ready: server did not become ready within 5s");
+                            let actual_port =
+                                ready_state.port.load(std::sync::atomic::Ordering::Relaxed);
+                            tracing::warn!(
+                                "Victauri on_ready: server did not become ready within 5s"
+                            );
                             cb(actual_port);
                         });
                     }
@@ -700,16 +729,10 @@ mod tests {
         let builder = VictauriBuilder::new();
         assert_eq!(builder.event_capacity, DEFAULT_EVENT_CAPACITY);
         assert_eq!(builder.recorder_capacity, DEFAULT_RECORDER_CAPACITY);
-        // Raw field is None, but resolve_auth_token() auto-generates a token
         assert!(builder.auth_token.is_none());
-        assert!(!builder.auth_explicitly_disabled);
+        assert!(!builder.auth_explicitly_enabled);
         let resolved = builder.resolve_auth_token();
-        assert!(resolved.is_some(), "auth should be enabled by default");
-        assert_eq!(
-            resolved.unwrap().len(),
-            36,
-            "auto-generated token should be a UUID"
-        );
+        assert!(resolved.is_none(), "auth should be disabled by default");
         assert!(builder.disabled_tools.is_empty());
         assert!(builder.command_allowlist.is_none());
         assert!(builder.command_blocklist.is_empty());
@@ -739,30 +762,38 @@ mod tests {
     }
 
     #[test]
-    fn builder_auth_token_generated() {
+    fn builder_auth_enabled() {
+        let builder = VictauriBuilder::new().auth_enabled();
+        assert!(builder.auth_explicitly_enabled);
+        let token = builder.resolve_auth_token().unwrap();
+        assert_eq!(token.len(), 36, "auto-generated token should be a UUID");
+    }
+
+    #[test]
+    fn builder_auth_generate_token() {
         let builder = VictauriBuilder::new().generate_auth_token();
         let token = builder.resolve_auth_token().unwrap();
         assert_eq!(token.len(), 36);
     }
 
     #[test]
-    fn builder_auth_disabled() {
+    fn builder_auth_disabled_is_noop() {
         let builder = VictauriBuilder::new().auth_disabled();
-        assert!(builder.auth_explicitly_disabled);
         assert!(
             builder.resolve_auth_token().is_none(),
-            "auth_disabled should opt out of auto-generated token"
+            "auth_disabled is a no-op, auth stays off by default"
         );
     }
 
     #[test]
-    fn builder_auth_disabled_overrides_explicit_token() {
+    fn builder_auth_disabled_does_not_override_explicit_token() {
         let builder = VictauriBuilder::new()
             .auth_token("my-secret")
             .auth_disabled();
-        assert!(
-            builder.resolve_auth_token().is_none(),
-            "auth_disabled should override explicit token"
+        assert_eq!(
+            builder.resolve_auth_token(),
+            Some("my-secret".to_string()),
+            "auth_disabled is a no-op, explicit token should remain"
         );
     }
 

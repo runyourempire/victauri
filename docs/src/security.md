@@ -27,19 +27,23 @@ You cannot accidentally ship Victauri to users.
 
 ## Bearer Token Authentication
 
-Authentication is **enabled by default**. Every request to the MCP server (except `/health`) must include a valid Bearer token.
+Authentication is **disabled by default**. The MCP server binds to `127.0.0.1` only
+and the plugin is `#[cfg(debug_assertions)]`-gated, so localhost-only access in debug
+builds is the baseline security model.
+
+When enabled, every request (except `/health`) must include a valid Bearer token.
 
 ### How It Works
 
-1. On startup, if no explicit token is configured, Victauri generates a random UUID v4 token
-2. The token is printed to the application log
+1. Call `.auth_enabled()` or `.auth_token("...")` on the builder
+2. The token is printed to the application log and written to the discovery directory
 3. Clients must include `Authorization: Bearer <token>` in every request
 4. Token comparison uses constant-time equality to prevent timing attacks
 
 ### Configuration
 
 ```rust
-// Auto-generated token (logged on startup)
+// No auth (default — localhost-only, debug build)
 VictauriBuilder::new().build()
 
 // Fixed token
@@ -47,13 +51,13 @@ VictauriBuilder::new()
     .auth_token("my-secret-token")
     .build()
 
-// Environment variable (takes priority)
-// VICTAURI_AUTH_TOKEN=my-token
-
-// Disable auth (only for fully trusted environments)
+// Auto-generated UUID token
 VictauriBuilder::new()
-    .auth_disabled()
+    .auth_enabled()
     .build()
+
+// Environment variable (enables auth with the given token)
+// VICTAURI_AUTH_TOKEN=my-token
 ```
 
 ### What Is Protected
@@ -195,7 +199,7 @@ All HTTP responses include security headers:
 | Threat | Mitigation |
 |--------|-----------|
 | Production exposure | `#[cfg(debug_assertions)]` gate |
-| Unauthorized local access | Bearer token auth (enabled by default) |
+| Unauthorized local access | Bearer token auth (opt-in) + localhost-only binding |
 | Timing attacks on auth | Constant-time comparison |
 | Request flooding | Token-bucket rate limiter |
 | Remote network access | Localhost-only binding |
@@ -210,9 +214,8 @@ All HTTP responses include security headers:
 
 ## Recommendations
 
-For typical development:
+For typical development (default — no auth needed):
 ```rust
-// Default: auto-generated token, printed to console
 VictauriBuilder::new().build()
 ```
 
@@ -226,16 +229,10 @@ VictauriBuilder::new()
 
 For shared development environments:
 ```rust
-// Restrictive: read-only with redaction
+// Auth + restrictive privacy
 VictauriBuilder::new()
+    .auth_enabled()
     .privacy_profile(PrivacyProfile::Observe)
     .command_blocklist(&["dangerous_admin_command"])
-    .build()
-```
-
-For quick local prototyping (trusted machine, single user):
-```rust
-VictauriBuilder::new()
-    .auth_disabled()
     .build()
 ```

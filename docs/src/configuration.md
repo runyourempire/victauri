@@ -7,8 +7,8 @@ Victauri is configured via the `VictauriBuilder` API in Rust code and/or environ
 | Setting | Builder Method | Environment Variable | Default |
 |---------|---------------|---------------------|---------|
 | Port | `.port(7373)` | `VICTAURI_PORT` | 7373 |
-| Auth token | `.auth_token("...")` | `VICTAURI_AUTH_TOKEN` | Auto-generated UUID |
-| Disable auth | `.auth_disabled()` | — | Auth enabled |
+| Auth token | `.auth_token("...")` | `VICTAURI_AUTH_TOKEN` | None (auth off) |
+| Enable auth | `.auth_enabled()` | — | Auth disabled |
 | Eval timeout | `.eval_timeout(Duration)` | `VICTAURI_EVAL_TIMEOUT` | 30s |
 | Event capacity | `.event_capacity(10000)` | — | 10,000 |
 | Recorder capacity | `.recorder_capacity(50000)` | — | 50,000 |
@@ -50,10 +50,11 @@ If the preferred port is busy, Victauri tries the next 10 ports (9001-9010). The
 
 ### Authentication
 
-Authentication is **enabled by default**. Three modes:
+Authentication is **disabled by default** for zero-friction local development. The
+MCP server binds to `127.0.0.1` only and the plugin is `#[cfg(debug_assertions)]`-gated.
 
 ```rust
-// 1. Auto-generated token (default — token printed to console)
+// 1. No auth (default — zero-friction local dev)
 VictauriBuilder::new().build()
 
 // 2. Fixed token
@@ -61,18 +62,13 @@ VictauriBuilder::new()
     .auth_token("my-secret-token")
     .build()
 
-// 3. Random UUID token (explicit)
+// 3. Auto-generated UUID token (printed to console + written to discovery dir)
 VictauriBuilder::new()
-    .generate_auth_token()
-    .build()
-
-// 4. No authentication (use only in trusted environments)
-VictauriBuilder::new()
-    .auth_disabled()
+    .auth_enabled()
     .build()
 ```
 
-The `VICTAURI_AUTH_TOKEN` environment variable overrides any programmatic token.
+The `VICTAURI_AUTH_TOKEN` environment variable enables auth with the given token.
 
 ### Privacy Controls
 
@@ -210,7 +206,7 @@ VictauriBuilder::new()
 | Variable | Description |
 |----------|-------------|
 | `VICTAURI_PORT` | Override the MCP server port |
-| `VICTAURI_AUTH_TOKEN` | Set the authentication token |
+| `VICTAURI_AUTH_TOKEN` | Enable auth with this token |
 | `VICTAURI_EVAL_TIMEOUT` | Eval timeout in seconds |
 
 Environment variables take priority over builder settings.

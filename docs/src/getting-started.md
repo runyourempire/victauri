@@ -78,7 +78,7 @@ Claude Code will automatically discover and connect to your running app.
 
 ### With Authentication
 
-By default, Victauri generates a random auth token and prints it to the console on startup. To use a fixed token:
+Auth is disabled by default for zero-friction setup. For shared machines or CI, enable it:
 
 ```rust
 tauri::Builder::default()
@@ -104,16 +104,6 @@ Then include it in your `.mcp.json`:
     }
   }
 }
-```
-
-Or disable auth entirely for local development:
-
-```rust
-.plugin(
-    victauri_plugin::VictauriBuilder::new()
-        .auth_disabled()
-        .build(),
-)
 ```
 
 ## Step 5: Verify It Works

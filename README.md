@@ -362,7 +362,7 @@ Victauri is designed for development, not production:
 
 - **Debug-only**: compiles away in release builds (`#[cfg(debug_assertions)]`)
 - **Localhost-only**: binds to 127.0.0.1, DNS rebinding protection
-- **Auth by default**: auto-generates Bearer token on startup
+- **Optional auth**: Bearer token authentication for shared/CI environments
 - **Rate limited**: 1000 req/sec, token-bucket algorithm
 - **Privacy profiles**: `Observe` (read-only), `Test` (interactions), `FullControl` (everything)
 - **Output redaction**: auto-scrub API keys, tokens, emails from tool responses
