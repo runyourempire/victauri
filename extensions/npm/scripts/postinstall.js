@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const REPO = "runyourempire/victauri";
 const BINARY_NAME = "victauri-browser-host";
 

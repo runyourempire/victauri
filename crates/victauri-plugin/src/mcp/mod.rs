@@ -62,7 +62,7 @@ const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
 
-const BRIDGE_VERSION: &str = "0.4.0";
+const BRIDGE_VERSION: &str = "0.5.0";
 
 const SAFE_ENV_PREFIXES: &[&str] = &[
     "PATH",

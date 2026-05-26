@@ -3994,7 +3994,7 @@ async fn rest_call_tool_with_callback_bridge() {
 async fn rest_get_diagnostics_returns_warnings_and_info() {
     let state = test_state();
     let base = start_callback_server(state, &["main"], |_js| {
-        r#"{"warnings":[],"info":{"bridge_version":"0.4.0","dom_elements":42,"open_shadow_roots":0,"event_listeners":10,"protocol":"tauri:","url":"tauri://localhost/","user_agent":"test"}}"#.to_string()
+        r#"{"warnings":[],"info":{"bridge_version":"0.5.0","dom_elements":42,"open_shadow_roots":0,"event_listeners":10,"protocol":"tauri:","url":"tauri://localhost/","user_agent":"test"}}"#.to_string()
     }).await;
     let client = reqwest::Client::new();
 
@@ -4012,7 +4012,7 @@ async fn rest_get_diagnostics_returns_warnings_and_info() {
     assert!(result["warnings"].is_array(), "should have warnings array");
     assert!(result["info"].is_object(), "should have info object");
     assert_eq!(
-        result["info"]["bridge_version"], "0.4.0",
+        result["info"]["bridge_version"], "0.5.0",
         "should have bridge_version"
     );
     assert_eq!(
