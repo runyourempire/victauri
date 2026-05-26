@@ -1141,6 +1141,9 @@ Key tools that only Victauri can provide (not available via CDP/Playwright):
 - `verify_state` — cross-boundary frontend/backend state verification
 - `detect_ghost_commands` — find commands with no backend handler
 - `check_ipc_integrity` — verify IPC pipeline health
+- `introspect` — command timings, IPC contract testing, coverage, startup timing, capabilities
+- `fault` — inject IPC faults (delay, error, drop, corrupt) for chaos engineering
+- `explain` — natural-language narration of what happened in the app
 - `get_memory_stats` — real OS process memory stats
 - `audit_accessibility` — WCAG accessibility checks
 - `get_performance` — navigation timing, JS heap, resource loading

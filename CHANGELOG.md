@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-26
+
+### Added
+
+- **victauri-plugin**: `introspect` compound tool with 15 actions for deep backend introspection — `command_timings` (per-command min/max/avg/p95), `coverage` (session command usage), `contract_record`/`contract_check`/`contract_list`/`contract_clear` (IPC schema drift detection), `startup_timing` (plugin init phases), `capabilities` (Tauri v2 permission audit), `db_health` (SQLite diagnostics), `managed_state` (full plugin internals), `processes` (PID, platform, arch), `tasks` (tracked async task status), `fs_scope` (app directory paths), `event_bus`/`event_bus_clear` (combined Tauri + app event timeline)
+- **victauri-plugin**: `fault` compound tool for IPC chaos engineering — `inject` (delay/error/drop/corrupt fault types with optional trigger limits), `list`, `clear`, `clear_all`. CDP cannot inject failures at the backend IPC layer.
+- **victauri-plugin**: `explain` compound tool for natural-language event narration — `summary` (aggregate events into narrative with type counts), `last_action` (causal chain with arrows), `diff` (count IPC/DOM/errors/interactions over time window)
+- **victauri-plugin**: `recording.replay` action — re-executes all IPC commands from a recorded session, compares response shapes, reports per-command pass/fail with shape diff on drift
+- **victauri-plugin**: `EventBusMonitor` — `Arc<RwLock<VecDeque<CapturedTauriEvent>>>` ring buffer (1000 capacity) for Tauri native events, combined with `EventLog` in `introspect.event_bus`
+- **victauri-plugin**: `TaskTracker` — tracks spawned async tasks (MCP server, event drain loop, on_ready probe) via `Arc<AtomicBool>` finished flags
+- **victauri-plugin**: Managed state introspection via `introspect.managed_state` — serializes full `VictauriState` internals: event counts, registry size, recording state, active faults, contract baselines, timing data, task status, tool invocations, uptime, port
+- **victauri-plugin**: `FaultRegistry` (thread-safe `RwLock<HashMap>`) with `CommandTimings` (per-command timing stats), `ContractStore` (IPC contract baselines with JSON shape diffing), `StartupTimeline` (plugin init phase timestamps)
+- **victauri-plugin**: `JsonShape` recursive type structure extraction from JSON for contract comparison; `diff_shapes()` detects new/removed fields and type changes
+- **victauri-core**: `EventLog.since(timestamp)` for time-windowed queries with `chrono::TimeDelta`
+
+### Changed
+
+- Tool count increased from 30 to 31 (19 standalone + 12 compound)
+- Bridge version bumped to 0.5.0
+
 ## [0.4.0] - 2026-05-26
 
 ### Changed
@@ -237,7 +257,9 @@ Initial public release.
 - Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
 - Screenshot error handling: `GetDIBits()` return value checked on Windows
 
-[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/runyourempire/victauri/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/runyourempire/victauri/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/runyourempire/victauri/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/runyourempire/victauri/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/runyourempire/victauri/compare/v0.1.1...v0.1.2

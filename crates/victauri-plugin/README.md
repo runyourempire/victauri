@@ -4,11 +4,11 @@ The main [Victauri](https://github.com/runyourempire/victauri) crate -- an embed
 
 ## Quick Start
 
-Add the dependency (dev-only):
+Add the dependency:
 
 ```toml
-[dev-dependencies]
-victauri-plugin = "0.3"
+[dependencies]
+victauri-plugin = "0.5"
 ```
 
 Wire it into your Tauri app:
@@ -41,7 +41,7 @@ victauri_plugin::VictauriBuilder::new()
 
 ## Tools
 
-28 MCP tools across three layers -- webview, IPC, and Rust backend:
+31 MCP tools across three layers -- webview, IPC, and Rust backend:
 
 ### Backend (direct Rust access, no webview needed)
 
@@ -88,6 +88,9 @@ victauri_plugin::VictauriBuilder::new()
 | **`navigate`** | Go to URL, go back, get history, configure dialog responses |
 | **`recording`** | Start/stop sessions, checkpoints, get events, export/import |
 | **`logs`** | Console, network, IPC, navigation, dialog logs |
+| **`introspect`** | Command timings, coverage, contract testing, startup timing, capabilities, DB health, managed state, tasks |
+| **`fault`** | Inject IPC faults: delay, error, drop, corrupt (chaos engineering) |
+| **`explain`** | Natural-language narration: summary, last action, diff |
 | `get_plugin_info` | Victauri config: port, enabled tools, version |
 | `get_diagnostics` | Server health, compatibility warnings, tool status |
 

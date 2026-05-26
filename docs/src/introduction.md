@@ -64,4 +64,4 @@ victauri/
 
 ## Current Status
 
-All 7 crates are published to crates.io. 1976 tests pass (1813 Rust + 163 JavaScript). Tested against 5 real-world open-source Tauri apps (96.9% pass rate across 895 tests) with zero Victauri bugs found. Supports Tauri 2.0+ with rmcp 1.5.0.
+All 7 crates are published to crates.io at v0.5.0. 2019 tests pass (1856 Rust + 163 JavaScript). Tested against 5 real-world open-source Tauri apps (96.9% pass rate across 895 tests) with zero Victauri bugs found. Supports Tauri 2.0+ with rmcp 1.5.0.

@@ -8,7 +8,7 @@ Add the test crate to your dev dependencies:
 
 ```toml
 [dev-dependencies]
-victauri-test = "0.3"
+victauri-test = "0.5"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 

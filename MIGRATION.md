@@ -1,5 +1,62 @@
 # Migration Guide
 
+## v0.4.x → v0.5.0
+
+### New Tools
+
+Three new compound tools added — no breaking changes, purely additive.
+
+**`introspect`** — 15 actions for deep backend introspection:
+
+```json
+{"action": "command_timings", "slow_threshold_ms": 100}
+{"action": "coverage"}
+{"action": "contract_record", "command": "get_settings"}
+{"action": "contract_check"}
+{"action": "startup_timing"}
+{"action": "capabilities"}
+{"action": "db_health"}
+{"action": "managed_state"}
+{"action": "processes"}
+{"action": "tasks"}
+{"action": "fs_scope"}
+{"action": "event_bus"}
+```
+
+**`fault`** — IPC chaos engineering (delay, error, drop, corrupt):
+
+```json
+{"action": "inject", "command": "get_settings", "fault_type": "delay", "delay_ms": 2000}
+{"action": "inject", "command": "save_data", "fault_type": "error", "error_message": "disk full"}
+{"action": "list"}
+{"action": "clear_all"}
+```
+
+**`explain`** — Natural-language event narration:
+
+```json
+{"action": "summary", "seconds": 30}
+{"action": "last_action"}
+{"action": "diff", "seconds": 15}
+```
+
+**`recording.replay`** — New action on existing `recording` tool. Re-executes recorded IPC commands and checks for response shape drift:
+
+```json
+{"action": "replay"}
+```
+
+### Version Bump
+
+Update your dependency version:
+
+```toml
+victauri-plugin = "0.5"
+victauri-test = "0.5"
+```
+
+---
+
 ## v0.3.x → v0.4.0
 
 ### Breaking Change: Auth Disabled by Default

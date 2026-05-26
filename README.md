@@ -217,7 +217,7 @@ See the [Testing Guide](docs/src/testing.md) for IPC checkpoints, visual regress
 
 ## MCP Tools
 
-28 tools across three layers — backend, IPC, and webview:
+31 tools across three layers — backend, IPC, and webview:
 
 ### Backend tools (direct Rust access, no webview needed)
 
@@ -264,6 +264,9 @@ See the [Testing Guide](docs/src/testing.md) for IPC checkpoints, visual regress
 | **`inspect`** | `styles`, `bounds`, `highlight`, `audit_accessibility`, `get_performance` |
 | **`logs`** | `console`, `network`, `ipc`, `navigation`, `dialogs`, `events`, `slow_ipc` |
 | **`css`** | `inject`, `remove` |
+| **`introspect`** | `command_timings`, `coverage`, `contract_record`, `contract_check`, `startup_timing`, `capabilities`, `db_health`, `managed_state`, `processes`, `tasks`, `fs_scope`, `event_bus` |
+| **`fault`** | `inject` (delay/error/drop/corrupt), `list`, `clear`, `clear_all` |
+| **`explain`** | `summary`, `last_action`, `diff` |
 | `get_plugin_info` | Plugin config: port, tools, privacy, version |
 | `get_diagnostics` | Shadow DOM, service workers, iframes, large DOM detection |
 
@@ -416,7 +419,7 @@ victauri init    # generates .github/workflows/victauri.yml
 
 - [**Getting Started**](docs/src/getting-started.md) — Setup, capabilities, first connection
 - [**Testing Guide**](docs/src/testing.md) — Locator API, IPC verification, visual regression, CI integration
-- [**Tools Reference**](docs/src/tools-reference.md) — All 28 tools with parameters and examples
+- [**Tools Reference**](docs/src/tools-reference.md) — All 31 tools with parameters and examples
 - [**Architecture**](docs/src/architecture.md) — Embedded design, JS bridge, dual protocol
 - [**Configuration**](docs/src/configuration.md) — Port, auth, privacy, capacity tuning
 - [**Security**](docs/src/security.md) — Threat model, privacy profiles, redaction
