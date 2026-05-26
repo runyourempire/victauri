@@ -444,6 +444,7 @@ fn main() {
                     show_notification_window__schema(),
                     get_app_state__schema(),
                 ])
+                .listen_events(&["notification-added"])
                 .build()
                 .expect("victauri config is valid"),
         )

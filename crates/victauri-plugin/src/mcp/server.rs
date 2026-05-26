@@ -396,10 +396,6 @@ async fn event_drain_loop(
             _ = shutdown.changed() => break,
         }
 
-        if !state.recorder.is_recording() {
-            continue;
-        }
-
         let code = format!("return window.__VICTAURI__?.getEventStream({last_drain_ts})");
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -457,7 +453,10 @@ async fn event_drain_loop(
             }
 
             if let Some(app_event) = parse_bridge_event(ev) {
-                state.recorder.record_event(app_event);
+                state.event_log.push(app_event.clone());
+                if state.recorder.is_recording() {
+                    state.recorder.record_event(app_event);
+                }
             }
         }
     }

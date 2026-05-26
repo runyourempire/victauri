@@ -1064,6 +1064,29 @@ mod tests {
     }
 
     #[test]
+    fn builder_listen_events() {
+        let builder =
+            VictauriBuilder::new().listen_events(&["notification-added", "settings-changed"]);
+        assert_eq!(builder.listen_events.len(), 2);
+        assert!(
+            builder
+                .listen_events
+                .contains(&"notification-added".to_string())
+        );
+        assert!(
+            builder
+                .listen_events
+                .contains(&"settings-changed".to_string())
+        );
+    }
+
+    #[test]
+    fn builder_listen_events_empty_by_default() {
+        let builder = VictauriBuilder::new();
+        assert!(builder.listen_events.is_empty());
+    }
+
+    #[test]
     fn init_script_contains_custom_capacities() {
         let caps = js_bridge::BridgeCapacities {
             console_logs: 3000,

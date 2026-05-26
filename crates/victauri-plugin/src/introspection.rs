@@ -1264,4 +1264,77 @@ mod tests {
         assert!(report[1].cumulative_ms >= report[0].cumulative_ms);
         assert!(timeline.total_ms() > 0.0);
     }
+
+    #[test]
+    fn enumerate_child_processes_returns_vec() {
+        let children = enumerate_child_processes();
+        // The test process itself may or may not have children, but the
+        // function must not panic and must return a well-formed Vec.
+        for child in &children {
+            assert_ne!(child.pid, 0, "child PID should be non-zero");
+            assert_eq!(
+                child.ppid,
+                std::process::id(),
+                "parent PID should match current process"
+            );
+            assert!(!child.name.is_empty(), "child name should not be empty");
+        }
+    }
+
+    #[test]
+    fn enumerate_child_processes_with_spawned_child() {
+        // Spawn a short-lived child process and verify we can enumerate it.
+        let child = std::process::Command::new(if cfg!(windows) { "cmd.exe" } else { "sleep" })
+            .args(if cfg!(windows) {
+                &["/c", "timeout /t 10 /nobreak >nul"][..]
+            } else {
+                &["10"][..]
+            })
+            .spawn();
+
+        if let Ok(mut child_proc) = child {
+            let children = enumerate_child_processes();
+            assert!(
+                !children.is_empty(),
+                "should find at least one child process"
+            );
+
+            let found = children.iter().any(|c| c.pid == child_proc.id());
+            assert!(
+                found,
+                "spawned child (PID {}) should appear in enumeration",
+                child_proc.id()
+            );
+
+            let _ = child_proc.kill();
+            let _ = child_proc.wait();
+        }
+    }
+
+    #[test]
+    fn child_process_info_serializes() {
+        let info = ChildProcessInfo {
+            pid: 1234,
+            ppid: 5678,
+            name: "test-sidecar".to_string(),
+            memory_bytes: Some(1_048_576),
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["pid"], 1234);
+        assert_eq!(json["ppid"], 5678);
+        assert_eq!(json["name"], "test-sidecar");
+        assert_eq!(json["memory_bytes"], 1_048_576);
+    }
+
+    #[test]
+    fn child_process_info_serializes_no_memory() {
+        let info = ChildProcessInfo {
+            pid: 42,
+            ppid: 1,
+            name: "zombie".to_string(),
+            memory_bytes: None,
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert!(json["memory_bytes"].is_null());
+    }
 }
