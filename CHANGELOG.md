@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.1] - 2026-05-26
+## [0.5.2] - 2026-05-26
 
 ### Changed
 
@@ -286,8 +286,8 @@ Initial public release.
 - Security headers (X-Frame-Options, X-Content-Type-Options, Cache-Control)
 - Screenshot error handling: `GetDIBits()` return value checked on Windows
 
-[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.5.1...HEAD
-[0.5.1]: https://github.com/runyourempire/victauri/compare/v0.5.0...v0.5.1
+[Unreleased]: https://github.com/runyourempire/victauri/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/runyourempire/victauri/compare/v0.5.0...v0.5.2
 [0.5.0]: https://github.com/runyourempire/victauri/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/runyourempire/victauri/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/runyourempire/victauri/compare/v0.2.0...v0.3.0
