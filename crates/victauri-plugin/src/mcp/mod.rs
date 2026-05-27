@@ -106,6 +106,7 @@ pub struct VictauriMcpHandler {
     bridge: Arc<dyn WebviewBridge>,
     subscriptions: Arc<Mutex<HashSet<String>>>,
     bridge_checked: Arc<AtomicBool>,
+    probed_labels: Arc<Mutex<HashSet<String>>>,
 }
 
 #[tool_router]
@@ -132,15 +133,7 @@ impl VictauriMcpHandler {
             .eval_with_return(&params.code, params.webview_label.as_deref())
             .await
         {
-            Ok(result) => {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result)
-                    && let Some(err_val) = parsed.get("__error")
-                {
-                    let msg = err_val.as_str().unwrap_or("unknown error");
-                    return tool_error(format!("JavaScript error: {msg}"));
-                }
-                CallToolResult::success(vec![Content::text(result)])
-            }
+            Ok(result) => CallToolResult::success(vec![Content::text(result)]),
             Err(e) => tool_error(e),
         }
     }
@@ -959,25 +952,56 @@ impl VictauriMcpHandler {
             Err(e) => return tool_error(format!("cannot access app data directory: {e}")),
         };
 
+        let search_dirs: Vec<std::path::PathBuf> = [
+            self.bridge.app_data_dir(),
+            self.bridge.app_config_dir(),
+            self.bridge.app_local_data_dir(),
+            self.bridge.app_log_dir(),
+        ]
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
         let db_path = if let Some(ref rel_path) = params.path {
-            let resolved = data_dir.join(rel_path);
-            if !resolved.exists() {
-                return tool_error(format!("database not found: {rel_path}"));
-            }
-            if let Err(e) = Self::safe_within(&data_dir, &resolved) {
-                return tool_error(e);
-            }
-            resolved
-        } else {
-            let databases = crate::database::discover_databases(&data_dir);
-            match databases.first() {
-                Some(p) => p.clone(),
-                None => {
-                    return tool_error(format!(
-                        "no SQLite databases found in {}",
-                        data_dir.display()
-                    ));
+            let mut found = None;
+            for dir in &search_dirs {
+                let resolved = dir.join(rel_path);
+                if resolved.exists() {
+                    if let Err(e) = Self::safe_within(dir, &resolved) {
+                        return tool_error(e);
+                    }
+                    found = Some(resolved);
+                    break;
                 }
+            }
+            if let Some(p) = found {
+                p
+            } else {
+                let dirs_str = search_dirs
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return tool_error(format!(
+                    "database not found: {rel_path} (searched: {dirs_str})"
+                ));
+            }
+        } else {
+            let mut databases = Vec::new();
+            for dir in &search_dirs {
+                databases.extend(crate::database::discover_databases(dir));
+            }
+            if let Some(p) = databases.first() {
+                p.clone()
+            } else {
+                let dirs_str = search_dirs
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return tool_error(format!("no SQLite databases found in: {dirs_str}"));
             }
         };
 
@@ -1405,7 +1429,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Time-travel recording. Actions: start (begin recording), stop (end and return session), checkpoint (save state snapshot), list_checkpoints, get_events (since index), events_between (two checkpoints), get_replay (IPC replay sequence), export (session as JSON), import (load session from JSON), replay (re-execute recorded IPC commands and compare responses).",
+        description = "Time-travel recording. Actions: start (begin recording), stop (end and return session), checkpoint (save state snapshot), list_checkpoints, get_events (since index), events_between (two checkpoints), get_replay (IPC replay sequence), export (session as JSON), import (load session from JSON), replay (re-execute recorded IPC commands and compare responses), flush (immediately drain pending events into recording without waiting for the 1-second poll).",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1517,6 +1541,34 @@ impl VictauriMcpHandler {
                 });
                 self.state.recorder.import(session);
                 CallToolResult::success(vec![Content::text(result.to_string())])
+            }
+            RecordingAction::Flush => {
+                if !self.state.recorder.is_recording() {
+                    return tool_error("no active recording — start a recording first");
+                }
+                let code = "return window.__VICTAURI__?.getEventStream(0)";
+                match self
+                    .eval_with_return(code, params.webview_label.as_deref())
+                    .await
+                {
+                    Ok(result_str) => {
+                        let events: Vec<serde_json::Value> =
+                            serde_json::from_str(&result_str).unwrap_or_default();
+                        let mut count = 0u64;
+                        for ev in &events {
+                            if let Some(app_event) = crate::mcp::server::parse_bridge_event(ev) {
+                                self.state.event_log.push(app_event.clone());
+                                self.state.recorder.record_event(app_event);
+                                count += 1;
+                            }
+                        }
+                        json_result(&serde_json::json!({
+                            "flushed": true,
+                            "events_captured": count,
+                        }))
+                    }
+                    Err(e) => tool_error(format!("flush failed: {e}")),
+                }
             }
             RecordingAction::Replay => {
                 let calls = self.state.recorder.ipc_replay_sequence();
@@ -2315,12 +2367,10 @@ impl VictauriMcpHandler {
                         victauri_core::AppEvent::DomMutation { mutation_count, .. } => {
                             dom_mutations += u64::from(*mutation_count)
                         }
-                        victauri_core::AppEvent::StateChange { caused_by, .. } => {
-                            let is_victauri =
-                                caused_by.as_ref().is_some_and(|c| c.contains("victauri"));
-                            if !is_victauri {
-                                state_changes += 1;
-                            }
+                        victauri_core::AppEvent::StateChange { key, .. }
+                            if !key.starts_with("console.") =>
+                        {
+                            state_changes += 1;
                         }
                         victauri_core::AppEvent::WindowEvent { .. } => window_events += 1,
                         victauri_core::AppEvent::DomInteraction { .. } => interactions += 1,
@@ -2439,7 +2489,7 @@ impl VictauriMcpHandler {
                             key,
                             caused_by,
                         } => {
-                            if caused_by.as_ref().is_some_and(|c| c.contains("victauri")) {
+                            if key.starts_with("console.") {
                                 return None;
                             }
                             Some(serde_json::json!({
@@ -2554,6 +2604,7 @@ impl VictauriMcpHandler {
             bridge,
             subscriptions: Arc::new(Mutex::new(HashSet::new())),
             bridge_checked: Arc::new(AtomicBool::new(false)),
+            probed_labels: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -2864,7 +2915,12 @@ impl VictauriMcpHandler {
         self.track_tool_call();
 
         if webview_label.is_some() {
-            self.probe_bridge(webview_label).await?;
+            let label_key = webview_label.unwrap_or_default().to_string();
+            let already_probed = self.probed_labels.lock().await.contains(&label_key);
+            if !already_probed {
+                self.probe_bridge(webview_label).await?;
+                self.probed_labels.lock().await.insert(label_key);
+            }
         }
 
         let id = uuid::Uuid::new_v4().to_string();
@@ -2909,25 +2965,26 @@ impl VictauriMcpHandler {
 
         let id_js = js_string(&id);
         let inject = format!(
-            r#"
+            r"
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
-                    const __serialized = __result === undefined ? '"undefined"'
-                        : __result === null ? 'null'
-                        : JSON.stringify(__result) ?? 'null';
+                    const __type = __result === undefined ? 'undefined'
+                        : __result === null ? 'null' : 'value';
+                    const __val = __type === 'undefined' ? null
+                        : __type === 'null' ? null : __result;
                     await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                         id: {id_js},
-                        result: __serialized
+                        result: JSON.stringify({{ __victauri_ok: __val, __victauri_type: __type }})
                     }});
                 }} catch (e) {{
                     await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
                         id: {id_js},
-                        result: JSON.stringify({{ __error: String(e && e.message || e) }})
+                        result: JSON.stringify({{ __victauri_err: String(e && e.message || e) }})
                     }});
                 }}
             }})();
-            "#
+            "
         );
 
         if let Err(e) = self.bridge.eval_webview(webview_label, &inject) {
@@ -2936,9 +2993,32 @@ impl VictauriMcpHandler {
         }
 
         match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(result)) => {
+            Ok(Ok(raw)) => {
                 self.check_bridge_version_once();
-                Ok(result)
+                if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    if let Some(err) = envelope.get("__victauri_err") {
+                        return Err(format!(
+                            "JavaScript error: {}",
+                            err.as_str().unwrap_or("unknown error")
+                        ));
+                    }
+                    if envelope.get("__victauri_ok").is_some() {
+                        let js_type = envelope
+                            .get("__victauri_type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("value");
+                        return match js_type {
+                            "undefined" => Ok("undefined".to_string()),
+                            "null" => Ok("null".to_string()),
+                            _ => {
+                                let val = &envelope["__victauri_ok"];
+                                Ok(serde_json::to_string(val)
+                                    .unwrap_or_else(|_| "null".to_string()))
+                            }
+                        };
+                    }
+                }
+                Ok(raw)
             }
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {

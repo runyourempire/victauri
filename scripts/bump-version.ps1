@@ -16,6 +16,7 @@
 #   - editors/vscode/package.json
 #   - editors/vscode/package-lock.json
 #   - crates/victauri-plugin/src/js_bridge.rs (bridge version constant)
+#   - crates/victauri-plugin/tests/bridge_tests.rs (version assertions)
 #   - docs/src/getting-started.md (example output)
 #   - docs/src/compatibility.md (example output)
 #   - CLAUDE.md (Current State header and version ref)
@@ -131,13 +132,16 @@ if (Test-Path $lockPath) {
 # 9. JS bridge version (hardcoded in bridge init script)
 Update-File "crates\victauri-plugin\src\js_bridge.rs" "version: '$OldVersion'" "version: '$NewVersion'" "JS bridge version"
 
-# 10. docs/src/getting-started.md version in example output
+# 10. Bridge test file (hardcoded version assertions)
+Update-File "crates\victauri-plugin\tests\bridge_tests.rs" "$OldVersion" "$NewVersion" "bridge_tests.rs version assertions"
+
+# 11. docs/src/getting-started.md version in example output
 Update-File "docs\src\getting-started.md" "`"version`":`"$OldVersion`"" "`"version`":`"$NewVersion`"" "docs getting-started.md example"
 
-# 11. docs/src/compatibility.md bridge_version
+# 12. docs/src/compatibility.md bridge_version
 Update-File "docs\src\compatibility.md" "`"bridge_version`": `"$OldVersion`"" "`"bridge_version`": `"$NewVersion`"" "docs compatibility.md bridge_version"
 
-# 12. CLAUDE.md Current State version ref
+# 13. CLAUDE.md Current State version ref
 $claudeMd = Join-Path $root "CLAUDE.md"
 if (Test-Path $claudeMd) {
     $content = Get-Content $claudeMd -Raw
@@ -154,7 +158,7 @@ if (Test-Path $claudeMd) {
     }
 }
 
-# 12. Update Cargo.lock via cargo check
+# 14. Update Cargo.lock via cargo check
 if (-not $DryRun) {
     Write-Host "`nUpdating Cargo.lock..." -ForegroundColor Cyan
     Push-Location $root

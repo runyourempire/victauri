@@ -408,18 +408,19 @@ async fn event_drain_loop(
             pending.insert(id.clone(), tx);
         }
 
+        let id_js = super::helpers::js_string(&id);
         let inject = format!(
             r"
             (async () => {{
                 try {{
                     const __result = await (async () => {{ {code} }})();
                     await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
-                        id: '{id}',
+                        id: {id_js},
                         result: JSON.stringify(__result)
                     }});
                 }} catch (e) {{
                     await window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {{
-                        id: '{id}',
+                        id: {id_js},
                         result: JSON.stringify({{ __error: e.message }})
                     }});
                 }}

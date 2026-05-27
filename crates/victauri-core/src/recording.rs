@@ -224,50 +224,75 @@ impl EventRecorder {
     }
 
     /// Returns all events with an index >= the given value.
+    /// Falls back to the last stopped session if no active recording.
     #[must_use]
     pub fn events_since(&self, index: usize) -> Vec<RecordedEvent> {
         let rec = crate::acquire_lock(&self.recording, "EventRecorder");
-        match rec.as_ref() {
-            Some(active) => active
+        if let Some(active) = rec.as_ref() {
+            return active
                 .events
                 .iter()
                 .filter(|e| e.index >= index)
                 .cloned()
-                .collect(),
-            None => Vec::new(),
+                .collect();
         }
+        drop(rec);
+        let last = crate::acquire_lock(&self.last_session, "EventRecorder::last_session");
+        last.as_ref().map_or_else(Vec::new, |session| {
+            session
+                .events
+                .iter()
+                .filter(|e| e.index >= index)
+                .cloned()
+                .collect()
+        })
     }
 
     /// Returns events whose timestamps fall within the given inclusive range.
+    /// Falls back to the last stopped session if no active recording.
     #[must_use]
     pub fn events_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<RecordedEvent> {
         let rec = crate::acquire_lock(&self.recording, "EventRecorder");
-        match rec.as_ref() {
-            Some(active) => active
+        if let Some(active) = rec.as_ref() {
+            return active
                 .events
                 .iter()
                 .filter(|e| e.timestamp >= from && e.timestamp <= to)
                 .cloned()
-                .collect(),
-            None => Vec::new(),
+                .collect();
         }
+        drop(rec);
+        let last = crate::acquire_lock(&self.last_session, "EventRecorder::last_session");
+        last.as_ref().map_or_else(Vec::new, |session| {
+            session
+                .events
+                .iter()
+                .filter(|e| e.timestamp >= from && e.timestamp <= to)
+                .cloned()
+                .collect()
+        })
     }
 
     /// Returns all checkpoints from the active recording session.
+    /// Falls back to the last stopped session if no active recording.
     #[must_use]
     pub fn get_checkpoints(&self) -> Vec<StateCheckpoint> {
         let rec = crate::acquire_lock(&self.recording, "EventRecorder");
-        match rec.as_ref() {
-            Some(active) => active.checkpoints.iter().cloned().collect(),
-            None => Vec::new(),
+        if let Some(active) = rec.as_ref() {
+            return active.checkpoints.iter().cloned().collect();
         }
+        drop(rec);
+        let last = crate::acquire_lock(&self.last_session, "EventRecorder::last_session");
+        last.as_ref()
+            .map_or_else(Vec::new, |session| session.checkpoints.to_vec())
     }
 
     /// Returns events recorded between two named checkpoints.
+    /// Falls back to the last stopped session if no active recording.
     ///
     /// # Errors
     ///
-    /// - [`VictauriError::NoActiveRecording`] if no session is active.
+    /// - [`VictauriError::NoActiveRecording`] if no session is active and no last session exists.
     /// - [`VictauriError::CheckpointNotFound`] if either checkpoint ID does not exist.
     pub fn events_between_checkpoints(
         &self,
@@ -275,18 +300,27 @@ impl EventRecorder {
         to_checkpoint_id: &str,
     ) -> crate::error::Result<Vec<RecordedEvent>> {
         let rec = crate::acquire_lock(&self.recording, "EventRecorder");
-        let active = rec.as_ref().ok_or(VictauriError::NoActiveRecording)?;
+        let source_checkpoints;
+        let source_events;
+        if let Some(active) = rec.as_ref() {
+            source_checkpoints = active.checkpoints.iter().cloned().collect::<Vec<_>>();
+            source_events = active.events.iter().cloned().collect::<Vec<_>>();
+        } else {
+            drop(rec);
+            let last = crate::acquire_lock(&self.last_session, "EventRecorder::last_session");
+            let session = last.as_ref().ok_or(VictauriError::NoActiveRecording)?;
+            source_checkpoints = session.checkpoints.clone();
+            source_events = session.events.clone();
+        }
 
-        let from_idx = active
-            .checkpoints
+        let from_idx = source_checkpoints
             .iter()
             .find(|c| c.id == from_checkpoint_id)
             .ok_or_else(|| VictauriError::CheckpointNotFound {
                 id: from_checkpoint_id.to_string(),
             })?
             .event_index;
-        let to_idx = active
-            .checkpoints
+        let to_idx = source_checkpoints
             .iter()
             .find(|c| c.id == to_checkpoint_id)
             .ok_or_else(|| VictauriError::CheckpointNotFound {
@@ -300,8 +334,7 @@ impl EventRecorder {
             (to_idx, from_idx)
         };
 
-        Ok(active
-            .events
+        Ok(source_events
             .iter()
             .filter(|e| e.index >= start && e.index < end)
             .cloned()

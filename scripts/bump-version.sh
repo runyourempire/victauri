@@ -83,11 +83,14 @@ replace_in_file "editors/vscode/package-lock.json" "\"version\": \"$OLD_VERSION\
 # 9. JS bridge version
 replace_in_file "crates/victauri-plugin/src/js_bridge.rs" "version: '$OLD_VERSION'" "version: '$NEW_VERSION'" "JS bridge version"
 
-# 10-11. Docs
+# 10. Bridge test file
+replace_in_file "crates/victauri-plugin/tests/bridge_tests.rs" "$OLD_VERSION" "$NEW_VERSION" "bridge_tests.rs version assertions"
+
+# 11-12. Docs
 replace_in_file "docs/src/getting-started.md" "\"version\":\"$OLD_VERSION\"" "\"version\":\"$NEW_VERSION\"" "docs getting-started"
 replace_in_file "docs/src/compatibility.md" "\"bridge_version\": \"$OLD_VERSION\"" "\"bridge_version\": \"$NEW_VERSION\"" "docs compatibility"
 
-# 12. CLAUDE.md — replace all vX.Y.Z references
+# 13. CLAUDE.md — replace all vX.Y.Z references
 if [[ -f "$ROOT/CLAUDE.md" ]]; then
     if grep -qF "v$OLD_VERSION" "$ROOT/CLAUDE.md"; then
         if $DRY_RUN; then

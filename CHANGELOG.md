@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-05-27
+
+### Fixed
+
+- **Eval envelope protocol:** Replaced `__error` key convention with `__victauri_ok`/`__victauri_err`/`__victauri_type` envelope — eliminates false positives when user JS returns objects with `__error` key, and distinguishes `undefined` value from `"undefined"` string
+- **XHR interceptor:** Added `isVictauriInternal` filter to XMLHttpRequest interceptor — Victauri IPC no longer leaks into network log via XHR path
+- **Explain narrative:** Filters now check `key.starts_with("console.")` instead of `caused_by.contains("victauri")` — app console logs mentioning "victauri" are no longer suppressed
+- **Recording methods:** `events_since()`, `events_between()`, `get_checkpoints()`, and `events_between_checkpoints()` now fall back to `last_session` after `stop()` — agents can query recording data after stopping
+- **Bridge probe caching:** Probes are cached per window label, preventing redundant 2-second probes on repeated calls to the same window
+- **WeakRef map cleanup:** Full `weakRefMap` sweep on every `snapshot()` call — GC'd element entries are removed, preventing map growth in long sessions
+- **Drain loop injection safety:** UUID interpolation in drain loop now uses `js_string()` helper instead of raw string interpolation
+
+### Added
+
+- **Recording flush:** New `recording.flush` action triggers immediate one-shot event drain instead of waiting for the 1-second polling interval
+- **query_db expanded search:** Database discovery now searches `app_data_dir`, `app_config_dir`, `app_local_data_dir`, and `app_log_dir` (deduplicated)
+
 ## [0.5.3] - 2026-05-27
 
 ### Fixed

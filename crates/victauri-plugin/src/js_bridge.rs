@@ -177,7 +177,7 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Public API ───────────────────────────────────────────────────────────
 
     window.__VICTAURI__ = {
-        version: '0.5.3',
+        version: '0.5.4',
         _captureIpcBodies: true,
 
         // ── DOM ──────────────────────────────────────────────────────────────
@@ -206,6 +206,12 @@ const INIT_SCRIPT_BODY: &str = r#"
                     } else {
                         stale.push(refId);
                     }
+                }
+            });
+            weakRefMap.forEach(function(weak, rid) {
+                if (!weak.deref()) {
+                    weakRefMap.delete(rid);
+                    stale.push(rid);
                 }
             });
             return { tree: tree, stale_refs: stale, format: fmt };
@@ -1631,6 +1637,11 @@ const INIT_SCRIPT_BODY: &str = r#"
         };
         XMLHttpRequest.prototype.send = function() {
             if (this.__victauri_net) {
+                var isVictauriInternal = this.__victauri_net.url.indexOf('plugin%3Avictauri%7C') !== -1
+                    || this.__victauri_net.url.indexOf('plugin:victauri|') !== -1;
+                if (isVictauriInternal) {
+                    return origSend.apply(this, arguments);
+                }
                 var id = ++networkCounter;
                 var entry = {
                     id: id,

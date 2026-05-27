@@ -1757,7 +1757,7 @@ async fn eval_immediate_response() {
 async fn eval_bridge_returns_error_string() {
     let state = test_state();
     let base = start_callback_server(state, &["main"], |_| {
-        r#"{"__error": "ReferenceError: foo is not defined"}"#.to_string()
+        r#"{"__victauri_err": "ReferenceError: foo is not defined"}"#.to_string()
     })
     .await;
     let (client, sid) = mcp_session(&base).await;

@@ -408,6 +408,8 @@ pub enum RecordingAction {
     Import,
     /// Replay recorded IPC commands and compare responses to baseline.
     Replay,
+    /// Immediately drain pending bridge events into the recording (no 1-second wait).
+    Flush,
 }
 
 impl fmt::Display for RecordingAction {
@@ -423,6 +425,7 @@ impl fmt::Display for RecordingAction {
             Self::Export => f.write_str("export"),
             Self::Import => f.write_str("import"),
             Self::Replay => f.write_str("replay"),
+            Self::Flush => f.write_str("flush"),
         }
     }
 }
@@ -430,7 +433,7 @@ impl fmt::Display for RecordingAction {
 /// Parameters for the compound `recording` tool (start, stop, checkpoint, replay, export, import).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecordingParams {
-    /// Action to perform: start, stop, checkpoint, `list_checkpoints`, `get_events`, `events_between`, `get_replay`, export, import.
+    /// Action to perform: start, stop, checkpoint, `list_checkpoints`, `get_events`, `events_between`, `get_replay`, export, import, replay, flush.
     pub action: RecordingAction,
     /// Session ID (for start — optional, UUID generated if omitted).
     pub session_id: Option<String>,

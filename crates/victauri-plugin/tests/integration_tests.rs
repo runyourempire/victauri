@@ -3162,7 +3162,7 @@ async fn adversarial_eval_js_empty_code() {
 async fn adversarial_eval_js_syntax_error() {
     let state = test_state();
     let base = start_callback_server(state, &["main"], |_code| {
-        r#"{"__error":"Unexpected token"}"#.to_string()
+        r#"{"__victauri_err":"Unexpected token"}"#.to_string()
     })
     .await;
 
@@ -3177,7 +3177,7 @@ async fn adversarial_eval_js_syntax_error() {
     .await;
 
     assert!(
-        body.contains("__error") || body.contains("Unexpected"),
+        body.contains("Unexpected"),
         "eval_js with syntax error should surface the error, got: {body}"
     );
 }
