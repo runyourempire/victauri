@@ -5115,6 +5115,7 @@ dependencies = [
 name = "victauri-core"
 version = "0.5.6"
 dependencies = [
+ "axum",
  "chrono",
  "criterion",
  "inventory",
@@ -5123,6 +5124,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+ "url",
  "uuid",
 ]
 

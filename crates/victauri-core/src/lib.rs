@@ -11,8 +11,11 @@ pub extern crate inventory;
 pub mod codegen;
 pub mod error;
 pub mod event;
+#[cfg(feature = "middleware")]
+pub mod middleware;
 pub mod recording;
 pub mod registry;
+pub mod security;
 pub mod snapshot;
 pub mod types;
 pub mod verification;

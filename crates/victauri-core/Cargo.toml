@@ -23,13 +23,16 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+url = { workspace = true }
 thiserror = { workspace = true }
 schemars = { workspace = true, optional = true }
 inventory = "0.3"
 tracing = { workspace = true }
+axum = { workspace = true, optional = true }
 
 [features]
 schema = ["dep:schemars"]
+middleware = ["dep:axum"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -375,35 +375,34 @@ async fn origin_bypass_evil_on_local_port() {
 #[tokio::test]
 async fn origin_bypass_ipv6_evil() {
     let (app, _, _) = test_app(None);
-    // NOTE: "http://[::1].evil.com" — the host parser extracts "[::1]" because
-    // it matches the IPv6 bracket pattern. The ".evil.com" is treated as port/path.
-    // This means the origin guard sees host "[::1]" and ALLOWS it.
-    // This is a known limitation but not exploitable in practice because
-    // "[::1].evil.com" is not a valid DNS name and browsers won't send this origin.
+    // "[::1].evil.com" is invalid per WHATWG URL spec (nothing valid after `]`
+    // except `:port`, `/path`, `?query`, `#fragment`), so url::Url::parse fails.
     let (status, _) = get_json(app, "/health", vec![("origin", "http://[::1].evil.com")]).await;
-    // The parser extracts "[::1]" as the host, which matches the allowlist
-    assert_eq!(status, 200);
+    assert_eq!(status, 403);
 }
 
 #[tokio::test]
 async fn origin_bypass_hex_ip() {
     let (app, _, _) = test_app(None);
+    // url::Url::parse resolves 0x7f000001 to 127.0.0.1 per WHATWG — this IS localhost
     let (status, _) = get_json(app, "/health", vec![("origin", "http://0x7f000001")]).await;
-    assert_eq!(status, 403);
+    assert_eq!(status, 200);
 }
 
 #[tokio::test]
 async fn origin_bypass_octal_ip() {
     let (app, _, _) = test_app(None);
+    // url::Url::parse resolves octal to 127.0.0.1 per WHATWG — this IS localhost
     let (status, _) = get_json(app, "/health", vec![("origin", "http://017700000001")]).await;
-    assert_eq!(status, 403);
+    assert_eq!(status, 200);
 }
 
 #[tokio::test]
 async fn origin_bypass_decimal_ip() {
     let (app, _, _) = test_app(None);
+    // url::Url::parse resolves 2130706433 to 127.0.0.1 per WHATWG — this IS localhost
     let (status, _) = get_json(app, "/health", vec![("origin", "http://2130706433")]).await;
-    assert_eq!(status, 403);
+    assert_eq!(status, 200);
 }
 
 #[tokio::test]

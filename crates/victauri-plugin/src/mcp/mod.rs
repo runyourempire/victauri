@@ -1,3 +1,9 @@
+// This file is intentionally large (~3,400 lines). rmcp's `#[tool_router]`
+// macro requires every `#[tool]` method to live in a single `impl` block, so
+// splitting the handler across files would break tool registration. Parameter
+// structs are already factored into sub-modules (webview_params, window_params,
+// etc.) to keep this file focused on dispatch logic.
+
 mod backend_params;
 mod compound_params;
 mod helpers;

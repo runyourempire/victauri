@@ -23,7 +23,7 @@ name = "victauri-browser-host"
 path = "src/main.rs"
 
 [dependencies]
-victauri-core = { workspace = true }
+victauri-core = { workspace = true, features = ["middleware"] }
 axum = { workspace = true }
 rmcp = { workspace = true }
 tokio = { workspace = true }

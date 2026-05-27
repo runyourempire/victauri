@@ -1,291 +1,23 @@
-use axum::extract::Request;
-use axum::http::StatusCode;
-use axum::middleware::Next;
-use axum::response::Response;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use url::Url;
-
-const BEARER_PREFIX_LEN: usize = "Bearer ".len();
-
-/// Constant-time byte comparison to prevent timing side-channel attacks on token validation.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter()
-        .zip(b.iter())
-        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-        == 0
-}
-
-/// Generate a random `UUID` v4 token suitable for Bearer authentication.
-#[must_use]
-pub fn generate_token() -> String {
-    uuid::Uuid::new_v4().to_string()
-}
-
-/// Shared authentication state holding the optional Bearer token for the MCP server.
-#[derive(Clone)]
-pub struct AuthState {
-    /// The expected Bearer token, or `None` if authentication is disabled.
-    pub(crate) token: Option<String>,
-}
-
-/// Axum middleware that validates the `Authorization: Bearer <token>` header against [`AuthState`].
-///
-/// # Errors
-///
-/// Returns [`StatusCode::UNAUTHORIZED`] if the token is missing or invalid.
-pub async fn require_auth(
-    axum::extract::State(auth): axum::extract::State<Arc<AuthState>>,
-    request: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let Some(expected) = &auth.token else {
-        return Ok(next.run(request).await);
-    };
-
-    let provided = request
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| {
-            let lower = v.to_lowercase();
-            if lower.starts_with("bearer ") {
-                Some(v[BEARER_PREFIX_LEN..].to_string())
-            } else {
-                None
-            }
-        });
-
-    match provided {
-        Some(ref token) if constant_time_eq(token.as_bytes(), expected.as_bytes()) => {
-            Ok(next.run(request).await)
-        }
-        _ => {
-            tracing::warn!("Victauri: rejected request — invalid or missing auth token");
-            Err(StatusCode::UNAUTHORIZED)
-        }
-    }
-}
-
-// ── Rate Limiter ───────────────────────────────────────────────────────────
-
-/// Lock-free token-bucket rate limiter using millisecond-precision timestamps for smooth refill.
-pub struct RateLimiterState {
-    tokens: AtomicU64,
-    max_tokens: u64,
-    last_refill_ms: AtomicU64,
-    refill_rate_per_sec: u64,
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-impl RateLimiterState {
-    /// Create a rate limiter with the given maximum requests per second.
-    #[must_use]
-    pub fn new(max_requests_per_sec: u64) -> Self {
-        Self {
-            tokens: AtomicU64::new(max_requests_per_sec),
-            max_tokens: max_requests_per_sec,
-            last_refill_ms: AtomicU64::new(now_ms()),
-            refill_rate_per_sec: max_requests_per_sec,
-        }
-    }
-
-    /// Atomically consume one token, returning `true` if the request is allowed.
-    pub fn try_acquire(&self) -> bool {
-        self.refill();
-        loop {
-            let current = self.tokens.load(Ordering::Relaxed);
-            if current == 0 {
-                return false;
-            }
-            if self
-                .tokens
-                .compare_exchange_weak(current, current - 1, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                return true;
-            }
-        }
-    }
-
-    fn refill(&self) {
-        let now = now_ms();
-        let last = self.last_refill_ms.load(Ordering::Relaxed);
-        let elapsed_ms = now.saturating_sub(last);
-        if elapsed_ms == 0 {
-            return;
-        }
-        let add = elapsed_ms * self.refill_rate_per_sec / 1000;
-        if add == 0 {
-            return;
-        }
-        if self
-            .last_refill_ms
-            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-        {
-            loop {
-                let current = self.tokens.load(Ordering::Relaxed);
-                let new_val = (current + add).min(self.max_tokens);
-                if self
-                    .tokens
-                    .compare_exchange_weak(current, new_val, Ordering::Relaxed, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    break;
-                }
-            }
-        }
-    }
-}
-
-/// Axum middleware that rejects requests with 429 when the token bucket is exhausted.
-///
-/// # Errors
-///
-/// Returns [`StatusCode::TOO_MANY_REQUESTS`] if the token bucket has no remaining capacity.
-pub async fn rate_limit(
-    axum::extract::State(limiter): axum::extract::State<Arc<RateLimiterState>>,
-    request: Request,
-    next: Next,
-) -> Result<
-    Response,
-    (
-        StatusCode,
-        [(axum::http::HeaderName, axum::http::HeaderValue); 1],
-    ),
-> {
-    if limiter.try_acquire() {
-        Ok(next.run(request).await)
-    } else {
-        Err((
-            StatusCode::TOO_MANY_REQUESTS,
-            [(
-                axum::http::header::RETRY_AFTER,
-                axum::http::HeaderValue::from_static("1"),
-            )],
-        ))
-    }
-}
-
-const DEFAULT_RATE_LIMIT: u64 = 1000;
-
-/// Create a rate limiter with the default capacity of 1000 requests per second.
-#[must_use]
-pub fn default_rate_limiter() -> Arc<RateLimiterState> {
-    Arc::new(RateLimiterState::new(DEFAULT_RATE_LIMIT))
-}
-
-// ── Security Middlewares ──────────────────────────────────────────────────
-
-/// Axum middleware that blocks DNS rebinding attacks.
-///
-/// Rejects any request where the Host header is not a localhost address.
-///
-/// # Errors
-///
-/// Returns [`StatusCode::FORBIDDEN`] if the `Host` header is not `localhost`, `127.0.0.1`, or `::1`.
-pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
-    let host = request
-        .headers()
-        .get("host")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let host_name = if host.starts_with('[') {
-        // Bracketed IPv6: [::1] or [::1]:7373
-        host.split(']').next().map_or(host, |s| &s[1..])
-    } else if host.contains("::") {
-        // Bare IPv6 (no brackets): ::1
-        host
-    } else {
-        // IPv4 or hostname, strip port: 127.0.0.1:7373 → 127.0.0.1
-        host.split(':').next().unwrap_or(host)
-    };
-    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1");
-    if !is_allowed {
-        tracing::warn!("DNS rebinding attempt blocked: Host={host}");
-        return Err(StatusCode::FORBIDDEN);
-    }
-    Ok(next.run(request).await)
-}
-
-/// Axum middleware that blocks cross-origin requests from browsers.
-///
-/// # Errors
-///
-/// Returns [`StatusCode::FORBIDDEN`] if the `Origin` header is present and does not match a
-/// localhost or `tauri://` origin.
-pub async fn origin_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
-    if let Some(origin) = request
-        .headers()
-        .get("origin")
-        .and_then(|v| v.to_str().ok())
-        && !is_allowed_origin(origin)
-    {
-        tracing::warn!("Cross-origin request blocked: Origin={origin}");
-        return Err(StatusCode::FORBIDDEN);
-    }
-    Ok(next.run(request).await)
-}
-
-fn is_allowed_origin(origin: &str) -> bool {
-    if origin.starts_with("tauri://") {
-        return true;
-    }
-    let Ok(parsed) = Url::parse(origin) else {
-        return false;
-    };
-    matches!(parsed.scheme(), "http" | "https")
-        && matches!(
-            parsed.host_str(),
-            Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
-        )
-}
-
-/// Axum middleware that sets security-hardening response headers on every response.
-pub async fn security_headers(request: Request, next: Next) -> Response {
-    let mut response = next.run(request).await;
-    let headers = response.headers_mut();
-    headers.insert(
-        axum::http::header::X_CONTENT_TYPE_OPTIONS,
-        axum::http::HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        axum::http::header::CACHE_CONTROL,
-        axum::http::HeaderValue::from_static("no-store"),
-    );
-    headers.insert(
-        axum::http::header::HeaderName::from_static("x-frame-options"),
-        axum::http::HeaderValue::from_static("DENY"),
-    );
-    headers.insert(
-        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        axum::http::HeaderValue::from_static("null"),
-    );
-    headers.insert(
-        axum::http::header::HeaderName::from_static("content-security-policy"),
-        axum::http::HeaderValue::from_static("default-src 'none'"),
-    );
-    response
-}
+pub use victauri_core::middleware::{
+    AuthState, default_rate_limiter, dns_rebinding_guard, origin_guard, rate_limit, require_auth,
+    security_headers,
+};
+pub use victauri_core::security::{
+    self, RateLimiter as RateLimiterState, constant_time_eq, generate_token, is_allowed_origin,
+    is_localhost_host,
+};
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use axum::Router;
     use axum::body::Body;
+    use axum::http::StatusCode;
     use axum::middleware;
     use axum::routing::get;
-    use tower::ServiceExt; // for oneshot
+    use tower::ServiceExt;
 
     async fn ok_handler() -> &'static str {
         "ok"
@@ -325,13 +57,12 @@ mod tests {
     #[test]
     fn rate_limiter_initial_tokens_match_max() {
         let limiter = RateLimiterState::new(42);
-        assert_eq!(limiter.tokens.load(Ordering::Relaxed), 42);
-        assert_eq!(limiter.max_tokens, 42);
+        assert_eq!(limiter.current_tokens(), 42);
+        assert_eq!(limiter.max_tokens(), 42);
     }
 
     #[test]
     fn rate_limiter_concurrent_acquire() {
-        // Use a large bucket so time-based refills (1 per second) are negligible
         let limiter = Arc::new(RateLimiterState::new(1000));
         let mut handles = vec![];
         for _ in 0..10 {
@@ -347,8 +78,6 @@ mod tests {
             }));
         }
         let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-        // All 1000 initial tokens dispensed; time-based refills (1000/sec) add
-        // tokens proportional to wall-clock duration, which varies by machine.
         assert!(
             total >= 1000,
             "should dispense at least the initial budget, got {total}"
@@ -359,7 +88,7 @@ mod tests {
     #[test]
     fn default_rate_limiter_has_expected_tokens() {
         let limiter = default_rate_limiter();
-        assert_eq!(limiter.max_tokens, 1000);
+        assert_eq!(limiter.max_tokens(), 1000);
     }
 
     #[test]
@@ -376,8 +105,8 @@ mod tests {
             .layer(middleware::from_fn(dns_rebinding_guard))
     }
 
-    fn dns_request(host: Option<&str>) -> Request<Body> {
-        let mut builder = Request::builder().uri("/test");
+    fn dns_request(host: Option<&str>) -> axum::extract::Request<Body> {
+        let mut builder = axum::extract::Request::builder().uri("/test");
         if let Some(h) = host {
             builder = builder.header("host", h);
         }
@@ -461,8 +190,8 @@ mod tests {
             .layer(middleware::from_fn(origin_guard))
     }
 
-    fn origin_request(origin: Option<&str>) -> Request<Body> {
-        let mut builder = Request::builder().uri("/test");
+    fn origin_request(origin: Option<&str>) -> axum::extract::Request<Body> {
+        let mut builder = axum::extract::Request::builder().uri("/test");
         if let Some(o) = origin {
             builder = builder.header("origin", o);
         }
@@ -534,7 +263,10 @@ mod tests {
     #[tokio::test]
     async fn security_headers_x_content_type_options() {
         let app = security_headers_router();
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(
@@ -546,7 +278,10 @@ mod tests {
     #[tokio::test]
     async fn security_headers_cache_control() {
         let app = security_headers_router();
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get("cache-control").unwrap(), "no-store");
@@ -555,7 +290,10 @@ mod tests {
     #[tokio::test]
     async fn security_headers_x_frame_options() {
         let app = security_headers_router();
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
@@ -572,8 +310,8 @@ mod tests {
             .layer(middleware::from_fn_with_state(state, require_auth))
     }
 
-    fn auth_request(token: Option<&str>) -> Request<Body> {
-        let mut builder = Request::builder().uri("/test");
+    fn auth_request(token: Option<&str>) -> axum::extract::Request<Body> {
+        let mut builder = axum::extract::Request::builder().uri("/test");
         if let Some(t) = token {
             builder = builder.header("authorization", format!("Bearer {t}"));
         }
@@ -620,7 +358,7 @@ mod tests {
             .route("/test", get(ok_handler))
             .layer(middleware::from_fn_with_state(state, require_auth));
 
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("authorization", "BEARER my-token")
             .body(Body::empty())
@@ -632,7 +370,7 @@ mod tests {
     #[tokio::test]
     async fn auth_rejects_non_bearer_scheme() {
         let app = auth_router(Some("secret"));
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("authorization", "Basic c2VjcmV0")
             .body(Body::empty())
@@ -653,13 +391,22 @@ mod tests {
         let app2 = app.clone();
         let app3 = app2.clone();
 
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         assert_eq!(app.oneshot(req).await.unwrap().status(), StatusCode::OK);
 
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         assert_eq!(app2.oneshot(req).await.unwrap().status(), StatusCode::OK);
 
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         assert_eq!(
             app3.oneshot(req).await.unwrap().status(),
             StatusCode::TOO_MANY_REQUESTS
@@ -684,7 +431,7 @@ mod tests {
             .layer(middleware::from_fn(dns_rebinding_guard));
 
         // Good request: all guards pass
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("authorization", "Bearer tok-123")
             .header("host", "127.0.0.1:7373")
@@ -695,7 +442,7 @@ mod tests {
         assert_eq!(resp.headers().get("x-frame-options").unwrap(), "DENY");
 
         // Bad host: DNS rebinding guard blocks
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("authorization", "Bearer tok-123")
             .header("host", "evil.com")
@@ -705,7 +452,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
         // Bad origin: origin guard blocks
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("authorization", "Bearer tok-123")
             .header("host", "localhost")
@@ -716,7 +463,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
         // Missing auth: auth middleware blocks
-        let req = Request::builder()
+        let req = axum::extract::Request::builder()
             .uri("/test")
             .header("host", "localhost")
             .body(Body::empty())
@@ -793,7 +540,6 @@ mod tests {
 
     #[test]
     fn constant_time_eq_single_bit_difference() {
-        // 'A' = 0x41, 'B' = 0x42 — differ by one bit
         assert!(!constant_time_eq(b"A", b"B"));
     }
 
@@ -802,7 +548,10 @@ mod tests {
     #[tokio::test]
     async fn security_headers_cors_deny() {
         let app = security_headers_router();
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(
             resp.headers().get("access-control-allow-origin").unwrap(),
@@ -813,7 +562,10 @@ mod tests {
     #[tokio::test]
     async fn security_headers_csp() {
         let app = security_headers_router();
-        let req = Request::builder().uri("/test").body(Body::empty()).unwrap();
+        let req = axum::extract::Request::builder()
+            .uri("/test")
+            .body(Body::empty())
+            .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(
             resp.headers().get("content-security-policy").unwrap(),
