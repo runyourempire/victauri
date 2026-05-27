@@ -93,7 +93,8 @@ Native messaging host binary + Chrome extension for browser MCP inspection.
 
 ### victauri-core
 Shared types used by all other crates. No Tauri dependency.
-- `EventLog` — append-only ring buffer of `AppEvent` variants
+- `EventLog` — append-only ring buffer of `AppEvent` variants (Ipc, StateChange, DomMutation, DomInteraction, WindowEvent, Console)
+- `AppEvent::is_internal()` — identifies Victauri's own infrastructure events (e.g. `plugin:victauri|*` IPC)
 - `CommandRegistry` — thread-safe registry of `CommandInfo` with search
 - `DomSnapshot` / `DomElement` — accessible tree with ref handles
 - `WindowState` — position, size, visibility, focus state
@@ -417,7 +418,7 @@ Tested against 4 third-party open-source Tauri 2 apps with fully built frontends
 - **TaskTracker** — Tracks spawned async tasks (MCP server, event drain loop, on_ready probe) via `Arc<AtomicBool>` finished flags. `introspect.plugin_tasks` reports active/finished counts. Helps agents diagnose background task failures.
 - **Plugin state introspection** — `introspect.plugin_state` serializes the full `VictauriState` internals: event counts, registry size, recording state, active faults, contract baselines, timing data, task status, tool invocations, uptime, and port. Answers "what does the plugin know?" in one call.
 - **IPC replay** — `recording.replay` re-executes all IPC commands captured during a recording session via `invoke_command`, comparing response shapes. Reports per-command pass/fail with shape diff on drift. Enables regression testing from recorded sessions.
-- **Explain tool** — Natural-language narration via `explain` compound tool. `summary` aggregates EventLog events over a time window into a narrative with type counts and top commands. `last_action` maps events to a causal chain. `diff` counts IPC calls, DOM changes, errors, and interactions. All use `EventLog.since()` for time-windowed queries with `chrono::TimeDelta`.
+- **Explain tool** — Natural-language narration via `explain` compound tool. `summary` aggregates EventLog events over a time window into a narrative with type counts (IPC, DOM, console, state, window, interaction) and top commands. `last_action` maps events to a causal chain. `diff` counts IPC calls, DOM changes, console messages, errors, and interactions. All use `EventLog.since()` for time-windowed queries with `chrono::TimeDelta`. Internal Victauri events filtered via `AppEvent::is_internal()`.
 
 ### Relationship to 4DA:
 Victauri is a standalone open-source project. 4DA has `victauri-plugin` as a path dependency (`path = "../../runyourempire/victauri/crates/victauri-plugin"` in `src-tauri/Cargo.toml`), with `victauri:default` in capabilities and `.mcp.json` configured. They share no code. The 4DA repo is at `D:\4DA`, this repo is at `D:\runyourempire\victauri`.
