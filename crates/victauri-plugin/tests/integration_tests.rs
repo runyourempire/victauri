@@ -1043,6 +1043,8 @@ async fn state_port_reflected_in_info() {
         startup_timeline: victauri_plugin::introspection::StartupTimeline::new(),
         event_bus: victauri_plugin::introspection::EventBusMonitor::default(),
         task_tracker: victauri_plugin::introspection::TaskTracker::new(),
+        bridge_ready: std::sync::atomic::AtomicBool::new(true),
+        bridge_notify: tokio::sync::Notify::new(),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
@@ -1112,6 +1114,8 @@ fn builder_custom_port_reflected_in_state() {
         startup_timeline: victauri_plugin::introspection::StartupTimeline::new(),
         event_bus: victauri_plugin::introspection::EventBusMonitor::default(),
         task_tracker: victauri_plugin::introspection::TaskTracker::new(),
+        bridge_ready: std::sync::atomic::AtomicBool::new(true),
+        bridge_notify: tokio::sync::Notify::new(),
     });
 
     assert_eq!(state.port.load(std::sync::atomic::Ordering::Relaxed), 8888);
@@ -1376,6 +1380,8 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
         startup_timeline: victauri_plugin::introspection::StartupTimeline::new(),
         event_bus: victauri_plugin::introspection::EventBusMonitor::default(),
         task_tracker: victauri_plugin::introspection::TaskTracker::new(),
+        bridge_ready: std::sync::atomic::AtomicBool::new(true),
+        bridge_notify: tokio::sync::Notify::new(),
     })
 }
 

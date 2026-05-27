@@ -60,7 +60,7 @@ pub mod introspection;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64};
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Listener, Manager, RunEvent, Runtime};
 use tokio::sync::{Mutex, oneshot, watch};
@@ -152,6 +152,10 @@ pub struct VictauriState {
     pub event_bus: introspection::EventBusMonitor,
     /// Tracker for Victauri's own spawned async tasks.
     pub task_tracker: introspection::TaskTracker,
+    /// Set to `true` when any webview's JS bridge sends its ready signal.
+    pub bridge_ready: AtomicBool,
+    /// Notifies waiters when the JS bridge ready signal arrives.
+    pub bridge_notify: tokio::sync::Notify,
 }
 
 /// Builder for configuring the Victauri plugin before adding it to a Tauri app.
@@ -633,6 +637,8 @@ impl VictauriBuilder {
                         startup_timeline,
                         event_bus: introspection::EventBusMonitor::default(),
                         task_tracker: introspection::TaskTracker::new(),
+                        bridge_ready: AtomicBool::new(false),
+                        bridge_notify: tokio::sync::Notify::new(),
                     });
                     state.startup_timeline.mark("state_created");
 

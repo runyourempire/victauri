@@ -139,6 +139,8 @@ fn make_state_with_privacy(privacy: PrivacyConfig) -> Arc<VictauriState> {
         startup_timeline: victauri_plugin::introspection::StartupTimeline::new(),
         event_bus: victauri_plugin::introspection::EventBusMonitor::default(),
         task_tracker: victauri_plugin::introspection::TaskTracker::new(),
+        bridge_ready: std::sync::atomic::AtomicBool::new(true),
+        bridge_notify: tokio::sync::Notify::new(),
     })
 }
 

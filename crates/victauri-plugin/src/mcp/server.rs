@@ -158,9 +158,16 @@ pub async fn start_server_with_options<R: Runtime>(
 
     state.port.store(actual_port, Ordering::Relaxed);
     write_port_file(actual_port);
-    if let Some(ref token) = token_for_file {
-        write_token_file(token);
-    }
+    // Always write a session token to the discovery directory so clients can
+    // authenticate automatically.  When auth is explicitly configured the
+    // configured token is used; otherwise a fresh UUID is generated.  The auth
+    // middleware is only enabled when `auth_token` is `Some`, so this file is
+    // purely informational when auth is off — sending the token header is a
+    // harmless no-op.
+    let discovery_token = token_for_file
+        .as_deref()
+        .map_or_else(crate::auth::generate_token, String::from);
+    write_token_file(&discovery_token);
 
     tracing::info!("Victauri MCP server listening on 127.0.0.1:{actual_port}");
 

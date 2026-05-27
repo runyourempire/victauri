@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-05-28
+
+### Added
+
+- **`AppEvent::Console` variant:** Console log events now have a dedicated event type instead of being mapped to `StateChange` — cleaner typing for explain narratives and recording
+- **`AppEvent::is_internal()`:** Centralised check for Victauri infrastructure events (replaces scattered string-matching)
+- **Bridge ready signal:** JS bridge sends `__victauri_bridge_ready__` callback on initialization — eval pipeline waits for this signal instead of racing on first eval
+- **Discovery session tokens:** Server always writes a session token to the discovery directory — clients auto-read it for future zero-config auth
+- **Cross-platform E2E CI:** Demo app E2E tests now run on Linux (xvfb), macOS, and Windows in CI
+- **Regression E2E tests:** 8 targeted tests validating all v0.5.3/v0.5.4 fixes (eval errors, IPC log purity, recording after stop, explain noise, CSS selector errors, checkpoint labels)
+- **Soak test:** `soak_test.rs` — 120-second longevity test checking memory growth, latency degradation (`VICTAURI_SOAK=1`)
+- **Concurrent stress test:** `concurrent_stress_test.rs` — 10-client concurrent tool exercise for 60 seconds (`VICTAURI_STRESS=1`)
+- **IPC capture health check:** `check_ipc_integrity` warns when zero IPC entries but >5 network requests detected
+
 ## [0.5.4] - 2026-05-27
 
 ### Fixed

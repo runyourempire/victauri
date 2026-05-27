@@ -177,7 +177,7 @@ const INIT_SCRIPT_BODY: &str = r#"
     // ── Public API ───────────────────────────────────────────────────────────
 
     window.__VICTAURI__ = {
-        version: '0.5.4',
+        version: '0.5.5',
         _captureIpcBodies: true,
 
         // ── DOM ──────────────────────────────────────────────────────────────
@@ -1740,5 +1740,13 @@ const INIT_SCRIPT_BODY: &str = r#"
             return result;
         };
     })();
+
+    // Signal to the Rust backend that the JS bridge is fully initialized.
+    try {
+        window.__TAURI_INTERNALS__.invoke('plugin:victauri|victauri_eval_callback', {
+            id: '__victauri_bridge_ready__',
+            result: ''
+        });
+    } catch(e) {}
 })();
 "#;

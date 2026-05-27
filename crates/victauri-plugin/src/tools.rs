@@ -58,6 +58,13 @@ pub async fn victauri_eval_callback(
     id: String,
     result: String,
 ) -> Result<(), String> {
+    if id == "__victauri_bridge_ready__" {
+        state
+            .bridge_ready
+            .store(true, std::sync::atomic::Ordering::Release);
+        state.bridge_notify.notify_waiters();
+        return Ok(());
+    }
     if let Some(tx) = state.pending_evals.lock().await.remove(&id) {
         let _ = tx.send(result);
     }

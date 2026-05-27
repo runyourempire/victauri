@@ -968,6 +968,158 @@ e2e_test!(rapid_tool_calls_dont_crash, {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+// ── Regression: v0.5.3/v0.5.4 Fix Validation ──────────────────────────────
+
+e2e_test!(regression_network_log_no_victauri_pollution, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    // Generate some Victauri-internal traffic
+    for _ in 0..10 {
+        let _ = client.eval_js("1+1").await;
+    }
+    let _ = client.dom_snapshot().await;
+    let _ = client.find_elements(json!({"selector": "button"})).await;
+
+    let ipc_log = client.get_ipc_log(Some(50)).await.unwrap();
+    let text = serde_json::to_string(&ipc_log).unwrap();
+    assert!(
+        !text.contains("plugin:victauri|") && !text.contains("plugin%3Avictauri%7C"),
+        "IPC log should not contain Victauri-internal entries: {text}"
+    );
+});
+
+e2e_test!(regression_eval_throw_returns_mcp_error, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    let result = client.eval_js("throw new Error('intentional test')").await;
+    assert!(result.is_err(), "throw should return Err, got: {result:?}");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("intentional test"),
+        "error should contain original message: {err_msg}"
+    );
+});
+
+e2e_test!(regression_eval_undefined_distinguishable, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    let undef = client.eval_js("undefined").await.unwrap();
+    assert_eq!(
+        undef,
+        Value::String("undefined".into()),
+        "JavaScript undefined should return the string \"undefined\""
+    );
+    let string_undef = client.eval_js("'undefined'").await.unwrap();
+    assert_eq!(
+        string_undef.as_str().unwrap(),
+        "undefined",
+        "The string 'undefined' should also return \"undefined\""
+    );
+});
+
+e2e_test!(regression_eval_null_returns_null, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    let result = client.eval_js("null").await.unwrap();
+    assert!(
+        result.is_null() || result == Value::String("null".into()),
+        "JavaScript null should return null or \"null\", got: {result}"
+    );
+});
+
+e2e_test!(regression_invalid_css_selector_returns_error, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    let result = client
+        .find_elements(json!({"selector": "###invalid"}))
+        .await;
+    assert!(
+        result.is_err(),
+        "invalid CSS selector should return an error, got: {result:?}"
+    );
+});
+
+e2e_test!(regression_recording_replay_after_stop, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    // Start recording
+    let start = client
+        .call_tool("recording", json!({"action": "start"}))
+        .await
+        .unwrap();
+    assert!(
+        serde_json::to_string(&start).unwrap().contains("true")
+            || serde_json::to_string(&start)
+                .unwrap()
+                .contains("session_id"),
+        "recording.start should succeed"
+    );
+
+    // Generate some events
+    let _ = client.eval_js("document.title").await;
+
+    // Stop recording
+    let _ = client
+        .call_tool("recording", json!({"action": "stop"}))
+        .await
+        .unwrap();
+
+    // Export AFTER stop should still return session data
+    let export = client
+        .call_tool("recording", json!({"action": "export"}))
+        .await
+        .unwrap();
+    let export_text = serde_json::to_string(&export).unwrap();
+    assert!(
+        export_text.contains("events") || export_text.contains("session"),
+        "recording.export after stop should return session data, got: {export_text}"
+    );
+});
+
+e2e_test!(regression_checkpoint_label_alias, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    client
+        .call_tool("recording", json!({"action": "start"}))
+        .await
+        .unwrap();
+
+    // Use "label" (the alias) not "checkpoint_label"
+    client
+        .call_tool(
+            "recording",
+            json!({"action": "checkpoint", "label": "test-label-alias"}),
+        )
+        .await
+        .unwrap();
+
+    let events = client
+        .call_tool("recording", json!({"action": "list_checkpoints"}))
+        .await
+        .unwrap();
+    let text = serde_json::to_string(&events).unwrap();
+    assert!(
+        text.contains("test-label-alias"),
+        "checkpoint created with 'label' alias should appear in list: {text}"
+    );
+
+    let _ = client
+        .call_tool("recording", json!({"action": "stop"}))
+        .await;
+});
+
+e2e_test!(regression_explain_no_victauri_noise, {
+    let mut client = VictauriClient::discover().await.unwrap();
+    // Generate some app activity
+    let _ = client.eval_js("document.title").await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    let summary = client
+        .call_tool("explain", json!({"action": "summary", "window_secs": 30}))
+        .await
+        .unwrap();
+    let text = serde_json::to_string(&summary).unwrap().to_lowercase();
+    assert!(
+        !text.contains("victauri_eval_callback"),
+        "explain.summary should not mention internal callbacks: {text}"
+    );
+});
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
 fn find_ref_by_id(snapshot: &Value, html_id: &str) -> Option<String> {
     let text = serde_json::to_string(snapshot).unwrap();
     // Try to find an element with the given id and extract its ref

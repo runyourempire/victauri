@@ -2928,6 +2928,25 @@ impl VictauriMcpHandler {
     ) -> Result<String, String> {
         self.track_tool_call();
 
+        // Wait for the JS bridge ready signal (sent on bridge init) before
+        // attempting evals.  For explicitly targeted windows the probe
+        // mechanism is still used because the ready signal only proves that
+        // *some* webview's bridge loaded — not necessarily the targeted one.
+        if !self
+            .state
+            .bridge_ready
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            let notified = self.state.bridge_notify.notified();
+            if !self
+                .state
+                .bridge_ready
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), notified).await;
+            }
+        }
+
         if webview_label.is_some() {
             let label_key = webview_label.unwrap_or_default().to_string();
             let already_probed = self.probed_labels.lock().await.contains(&label_key);
