@@ -1,5 +1,28 @@
 # Migration Guide
 
+## v0.5.4 → v0.5.5
+
+### New Public API
+
+**`AppEvent::Console` variant** — Console log events from the bridge are now typed as `AppEvent::Console { level, message, timestamp }` instead of `AppEvent::StateChange { key: "console.warn", caused_by: Some(message) }`. If you match on `AppEvent` variants, this is a new arm. Since `AppEvent` is `#[non_exhaustive]`, existing code with wildcard matches compiles unchanged.
+
+**`AppEvent::is_internal()`** — Returns `true` for Victauri's own infrastructure events (`plugin:victauri|*` IPC). Use this instead of manual string-matching when filtering event logs.
+
+### Behavior Changes
+
+**Bridge ready signal** — The JS bridge now sends a `__victauri_bridge_ready__` callback when it initializes. The eval pipeline waits up to 5 seconds for this signal before the first eval. This eliminates the race condition on page load and removes the 2-second first-call latency from the probe mechanism.
+
+**Discovery session tokens** — The server now always writes a session token to the discovery directory (`<temp>/victauri/<pid>/token`), even when auth is not enabled. `VictauriClient::discover()` reads this token and includes it as a Bearer header. When auth is off, the header is harmlessly ignored. This prepares the path for zero-config auth in a future release.
+
+### Version Bump
+
+```toml
+victauri-plugin = "0.5.5"
+victauri-test = "0.5.5"
+```
+
+---
+
 ## v0.5.2 → v0.5.3
 
 ### Behavior Changes
