@@ -288,16 +288,18 @@ pub fn parse_bridge_event(ev: &serde_json::Value) -> Option<victauri_core::AppEv
     let now = Utc::now();
 
     let app_event = match event_type {
-        "console" => AppEvent::StateChange {
-            key: format!(
-                "console.{}",
-                ev.get("level").and_then(|l| l.as_str()).unwrap_or("log")
-            ),
-            timestamp: now,
-            caused_by: ev
+        "console" => AppEvent::Console {
+            level: ev
+                .get("level")
+                .and_then(|l| l.as_str())
+                .unwrap_or("log")
+                .to_string(),
+            message: ev
                 .get("message")
                 .and_then(|m| m.as_str())
-                .map(std::string::ToString::to_string),
+                .unwrap_or("")
+                .to_string(),
+            timestamp: now,
         },
         "dom_mutation" => AppEvent::DomMutation {
             webview_label: DEFAULT_WEBVIEW_LABEL.to_string(),
@@ -715,11 +717,11 @@ mod tests {
         });
         let result = parse_bridge_event(&ev).expect("should produce an event");
         match result {
-            AppEvent::StateChange { key, caused_by, .. } => {
-                assert_eq!(key, "console.warn");
-                assert_eq!(caused_by.as_deref(), Some("deprecated API usage"));
+            AppEvent::Console { level, message, .. } => {
+                assert_eq!(level, "warn");
+                assert_eq!(message, "deprecated API usage");
             }
-            other => panic!("expected StateChange, got {other:?}"),
+            other => panic!("expected Console, got {other:?}"),
         }
     }
 
@@ -731,10 +733,11 @@ mod tests {
         });
         let result = parse_bridge_event(&ev).expect("should produce an event");
         match result {
-            AppEvent::StateChange { key, .. } => {
-                assert_eq!(key, "console.log");
+            AppEvent::Console { level, message, .. } => {
+                assert_eq!(level, "log");
+                assert_eq!(message, "hello");
             }
-            other => panic!("expected StateChange, got {other:?}"),
+            other => panic!("expected Console, got {other:?}"),
         }
     }
 

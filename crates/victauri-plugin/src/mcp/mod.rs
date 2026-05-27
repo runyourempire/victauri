@@ -507,6 +507,11 @@ impl VictauriMcpHandler {
                 var pending = log.filter(function(c) {{ return c.status === 'pending'; }});
                 var stale = pending.filter(function(c) {{ return (now - c.timestamp) > threshold; }});
                 var errored = log.filter(function(c) {{ return c.status === 'error'; }});
+                var net = window.__VICTAURI__?.getNetworkLog() || [];
+                var warning = null;
+                if (log.length === 0 && net.length > 5) {{
+                    warning = 'Zero IPC calls captured but ' + net.length + ' network requests observed. IPC capture may not be working — verify the app uses Tauri IPC via fetch to ipc.localhost.';
+                }}
                 return {{
                     healthy: stale.length === 0 && errored.length === 0,
                     total_calls: log.length,
@@ -514,7 +519,8 @@ impl VictauriMcpHandler {
                     stale_count: stale.length,
                     error_count: errored.length,
                     stale_calls: stale.slice(0, 20),
-                    errored_calls: errored.slice(0, 20)
+                    errored_calls: errored.slice(0, 20),
+                    warning: warning
                 }};
             }})()"
         );
@@ -2350,6 +2356,7 @@ impl VictauriMcpHandler {
                 let mut ipc_count = 0u64;
                 let mut dom_mutations = 0u64;
                 let mut state_changes = 0u64;
+                let mut console_count = 0u64;
                 let mut window_events = 0u64;
                 let mut interactions = 0u64;
                 let mut top_commands: HashMap<String, u64> = HashMap::new();
@@ -2367,10 +2374,12 @@ impl VictauriMcpHandler {
                         victauri_core::AppEvent::DomMutation { mutation_count, .. } => {
                             dom_mutations += u64::from(*mutation_count)
                         }
-                        victauri_core::AppEvent::StateChange { key, .. }
-                            if !key.starts_with("console.") =>
-                        {
-                            state_changes += 1;
+                        victauri_core::AppEvent::StateChange { .. } => state_changes += 1,
+                        victauri_core::AppEvent::Console { level, message, .. } => {
+                            console_count += 1;
+                            if level == "error" {
+                                errors.push(format!("console.error: {message}"));
+                            }
                         }
                         victauri_core::AppEvent::WindowEvent { .. } => window_events += 1,
                         victauri_core::AppEvent::DomInteraction { .. } => interactions += 1,
@@ -2385,7 +2394,7 @@ impl VictauriMcpHandler {
                 let narrative = format!(
                     "{ipc_count} IPC call{} in the last {secs}s{}. \
                      {dom_mutations} DOM mutation{}, {interactions} interaction{}, \
-                     {window_events} window event{}. {}.",
+                     {console_count} console message{}, {window_events} window event{}. {}.",
                     if ipc_count == 1 { "" } else { "s" },
                     if top.is_empty() {
                         String::new()
@@ -2400,6 +2409,7 @@ impl VictauriMcpHandler {
                     },
                     if dom_mutations == 1 { "" } else { "s" },
                     if interactions == 1 { "" } else { "s" },
+                    if console_count == 1 { "" } else { "s" },
                     if window_events == 1 { "" } else { "s" },
                     if errors.is_empty() {
                         "No errors".to_string()
@@ -2418,6 +2428,7 @@ impl VictauriMcpHandler {
                     "ipc_calls": ipc_count,
                     "dom_mutations": dom_mutations,
                     "state_changes": state_changes,
+                    "console_messages": console_count,
                     "window_events": window_events,
                     "interactions": interactions,
                     "top_commands": sorted_cmds.iter().take(5).map(|(cmd, n)| {
@@ -2436,95 +2447,89 @@ impl VictauriMcpHandler {
 
                 let timeline: Vec<serde_json::Value> = events
                     .iter()
-                    .filter_map(|event| match event {
-                        victauri_core::AppEvent::Ipc(call) => {
-                            if call.command.starts_with("plugin:victauri|") {
-                                return None;
-                            }
-                            Some(serde_json::json!({
-                                "time": call.timestamp.to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "ipc",
-                                "detail": format!(
-                                    "{} {} ({}ms)",
-                                    call.command,
-                                    call.result,
-                                    call.duration_ms.unwrap_or(0)
-                                ),
-                            }))
-                        }
+                    .filter(|e| !e.is_internal())
+                    .map(|event| match event {
+                        victauri_core::AppEvent::Ipc(call) => serde_json::json!({
+                            "time": call.timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "ipc",
+                            "detail": format!(
+                                "{} {} ({}ms)",
+                                call.command,
+                                call.result,
+                                call.duration_ms.unwrap_or(0)
+                            ),
+                        }),
                         victauri_core::AppEvent::DomMutation {
                             timestamp,
                             mutation_count,
                             webview_label,
-                        } => {
-                            Some(serde_json::json!({
-                                "time": timestamp.to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "dom_mutation",
-                                "detail": format!(
-                                    "{mutation_count} element{} updated in {webview_label}",
-                                    if *mutation_count == 1 { "" } else { "s" }
-                                ),
-                            }))
-                        }
+                        } => serde_json::json!({
+                            "time": timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "dom_mutation",
+                            "detail": format!(
+                                "{mutation_count} element{} updated in {webview_label}",
+                                if *mutation_count == 1 { "" } else { "s" }
+                            ),
+                        }),
                         victauri_core::AppEvent::DomInteraction {
                             timestamp,
                             action,
                             selector,
                             ..
-                        } => {
-                            Some(serde_json::json!({
-                                "time": timestamp.to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "interaction",
-                                "detail": format!("{action} on {selector}"),
-                            }))
-                        }
+                        } => serde_json::json!({
+                            "time": timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "interaction",
+                            "detail": format!("{action} on {selector}"),
+                        }),
                         victauri_core::AppEvent::StateChange {
                             timestamp,
                             key,
                             caused_by,
-                        } => {
-                            if key.starts_with("console.") {
-                                return None;
-                            }
-                            Some(serde_json::json!({
-                                "time": timestamp.to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "state_change",
-                                "detail": format!(
-                                    "{key} changed{}",
-                                    caused_by.as_ref().map_or(String::new(), |c| format!(" (by {c})"))
-                                ),
-                            }))
-                        }
+                        } => serde_json::json!({
+                            "time": timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "state_change",
+                            "detail": format!(
+                                "{key} changed{}",
+                                caused_by.as_ref().map_or(String::new(), |c| format!(" (by {c})"))
+                            ),
+                        }),
+                        victauri_core::AppEvent::Console {
+                            timestamp,
+                            level,
+                            message,
+                        } => serde_json::json!({
+                            "time": timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "console",
+                            "detail": format!("console.{level}: {message}"),
+                        }),
                         victauri_core::AppEvent::WindowEvent {
                             timestamp,
                             label,
                             event,
-                        } => {
-                            Some(serde_json::json!({
-                                "time": timestamp.to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "window_event",
-                                "detail": format!("{event} on window '{label}'"),
-                            }))
-                        }
-                        _ => {
-                            Some(serde_json::json!({
-                                "time": event.timestamp().to_rfc3339_opts(
-                                    chrono::SecondsFormat::Millis, true
-                                ),
-                                "type": "other",
-                                "detail": "unknown event type",
-                            }))
-                        }
+                        } => serde_json::json!({
+                            "time": timestamp.to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "window_event",
+                            "detail": format!("{event} on window '{label}'"),
+                        }),
+                        _ => serde_json::json!({
+                            "time": event.timestamp().to_rfc3339_opts(
+                                chrono::SecondsFormat::Millis, true
+                            ),
+                            "type": "other",
+                            "detail": "unknown event type",
+                        }),
                     })
                     .collect();
 
@@ -2557,12 +2562,14 @@ impl VictauriMcpHandler {
                 let mut dom_changes = 0u64;
                 let mut error_count = 0u64;
                 let mut interaction_count = 0u64;
+                let mut console_messages = 0u64;
 
                 for event in &events {
+                    if event.is_internal() {
+                        continue;
+                    }
                     match event {
-                        victauri_core::AppEvent::Ipc(call)
-                            if !call.command.starts_with("plugin:victauri|") =>
-                        {
+                        victauri_core::AppEvent::Ipc(call) => {
                             ipc_commands.push(call.command.clone());
                             if matches!(call.result, victauri_core::IpcResult::Err(_)) {
                                 error_count += 1;
@@ -2573,6 +2580,12 @@ impl VictauriMcpHandler {
                         }
                         victauri_core::AppEvent::DomInteraction { .. } => {
                             interaction_count += 1;
+                        }
+                        victauri_core::AppEvent::Console { level, .. } => {
+                            console_messages += 1;
+                            if level == "error" {
+                                error_count += 1;
+                            }
                         }
                         _ => {}
                     }
@@ -2588,6 +2601,7 @@ impl VictauriMcpHandler {
                     "unique_commands": ipc_commands,
                     "dom_elements_changed": dom_changes,
                     "interactions": interaction_count,
+                    "console_messages": console_messages,
                     "errors": error_count,
                 });
                 json_result(&result)
