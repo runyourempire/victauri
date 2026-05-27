@@ -58,6 +58,10 @@ fn chrono_now() -> String {
 /// Maximum length of JavaScript code accepted by the `eval_js` tool (1 MB).
 const MAX_EVAL_CODE_LEN: usize = 1_000_000;
 
+/// Maximum length of a JavaScript eval return value (5 MB).
+/// Results exceeding this are truncated to prevent memory exhaustion.
+const MAX_EVAL_RESULT_LEN: usize = 5_000_000;
+
 const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
@@ -3012,6 +3016,12 @@ impl VictauriMcpHandler {
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(raw)) => {
                 self.check_bridge_version_once();
+                if raw.len() > MAX_EVAL_RESULT_LEN {
+                    return Err(format!(
+                        "eval result too large ({} bytes, limit {MAX_EVAL_RESULT_LEN})",
+                        raw.len()
+                    ));
+                }
                 if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&raw) {
                     if let Some(err) = envelope.get("__victauri_err") {
                         return Err(format!(
