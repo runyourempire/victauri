@@ -1,5 +1,37 @@
 # Migration Guide
 
+## v0.5.2 → v0.5.3
+
+### Behavior Changes
+
+**`find_elements` with invalid CSS selectors now returns an error** instead of silently returning `[]`. If your code catches empty results as "not found", you may need to handle the error case:
+
+```json
+// Before: {"selector": "###invalid"} → []
+// After:  {"selector": "###invalid"} → isError: "invalid CSS selector: ###invalid — ..."
+```
+
+**`eval_js` errors now set MCP `isError`** flag. Previously, `throw new Error("x")` returned `{"__error":"x"}` as a successful text result. Now it returns a proper MCP error with `isError: true` and message `"JavaScript error: x"`.
+
+**`eval_js` with `undefined` and `null`** — Previously returned `{}` for both. Now returns `"undefined"` (string) or `null` respectively.
+
+### Fixed
+
+- **Network log pollution:** Victauri's own `plugin:victauri|*` IPC traffic no longer fills the 1000-entry `networkLog` buffer, preserving real app IPC evidence for `get_ipc_log`
+- **Hidden window timeout:** Eval targeting hidden/unresponsive windows now fails in 2 seconds with a diagnostic message instead of timing out after 30s
+- **Replay after stop:** `recording.replay` and `recording.export` now work after `recording.stop` — session data is persisted
+- **Checkpoint label alias:** `recording.checkpoint` now accepts `label` as an alias for `checkpoint_label`
+- **Explain noise:** `explain.summary`, `explain.last_action`, and `explain.diff` filter out Victauri's internal IPC and state change events
+
+### Version Bump
+
+```toml
+victauri-plugin = "0.5.3"
+victauri-test = "0.5.3"
+```
+
+---
+
 ## v0.5.0 → v0.5.2
 
 ### Introspect Action Renames

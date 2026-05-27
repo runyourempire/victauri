@@ -86,7 +86,7 @@ Evaluate JavaScript in the webview and return the result.
 {"code": "await fetch('/api/data').then(r => r.json())"}
 ```
 
-Bare expressions are auto-wrapped with `return`. Multi-statement code and async/await are supported.
+Bare expressions are auto-wrapped with `return`. Multi-statement code and async/await are supported. JavaScript errors (thrown exceptions, syntax errors) return an MCP error with `isError: true`. `undefined` returns `"undefined"`, `null` returns `null`. Targeting a hidden or unresponsive window fails fast (~2s) with a diagnostic message.
 
 ---
 
@@ -105,12 +105,12 @@ Capture a full accessible DOM tree with ref handles for every element.
 
 ### find_elements
 
-Search for elements by CSS selector or text content.
+Search for elements by CSS selector or text content. Returns an MCP error for invalid CSS selectors.
 
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `selector` | string | no | CSS selector (alias: `css`) |
+| `selector` | string | no | CSS selector (alias: `css`). Invalid selectors return an error. |
 | `text` | string | no | Text content to search for |
 | `role` | string | no | ARIA role to filter by |
 | `webview_label` | string | no | Target webview |
@@ -399,11 +399,11 @@ Time-travel recording for session capture and replay.
 |--------|-----------|-------------|
 | `start` | — | Start recording events |
 | `stop` | — | Stop recording and return session |
-| `checkpoint` | `label` | Create a named checkpoint |
+| `checkpoint` | `label` (alias: `checkpoint_label`) | Create a named checkpoint |
 | `events` | `since`, `limit` | Get recorded events |
-| `export` | — | Export full session data |
+| `export` | — | Export full session data (works after stop) |
 | `import` | `session` | Import a session for replay |
-| `replay` | `webview_label` | Re-execute recorded IPC commands and report pass/fail per command |
+| `replay` | `webview_label` | Re-execute recorded IPC commands and report pass/fail per command (works after stop) |
 
 **Example:**
 ```json
