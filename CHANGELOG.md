@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-05-28
+
+### Changed
+
+- **BREAKING: Auth enabled by default.** The MCP server now auto-generates a UUID v4 Bearer token on startup and writes it to the discovery directory (`<temp>/victauri/<pid>/token`). Clients using `VictauriClient::discover()` pick it up automatically — zero config change needed. To opt out: call `auth_disabled()` on `VictauriBuilder`. See Migration Guide for details.
+- **Environment variable allowlist trimmed.** `get_diagnostics` now exposes 16 safe prefixes (down from ~30). Removed: `PATH`, `RUST*`, `CARGO*`, `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `TEMP`, `TMP`, `PROGRAMFILES*`, `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PROCESSOR_*`, `NUMBER_OF_PROCESSORS`, `COMPUTERNAME`, `OLDPWD`.
+- **Rate limiter 429 responses** now include `Retry-After: 1` header per RFC 6585.
+
+### Added
+
+- **DNS rebinding guard** (both plugin and browser crates): Middleware validates `Host` header is `localhost`, `127.0.0.1`, `[::1]`, or `localhost:<port>` — blocks DNS rebinding attacks via crafted hostnames.
+- **Origin guard** (browser crate): URL-parsed origin validation blocks subdomain smuggling (e.g. `localhost.evil.com`). Rejects non-localhost origins and null origins.
+- **Security response headers**: All responses include `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, `X-Frame-Options: DENY`, `Access-Control-Allow-Origin: null`, `Content-Security-Policy: default-src 'none'`.
+- **SQL comment stripping**: `query_db` strips `--` line comments and `/* */` block comments before the read-only check, preventing comment-based injection bypasses.
+- **Stacked query blocking**: `query_db` rejects queries containing `;` (multiple statements), preventing `SELECT 1; DROP TABLE` attacks.
+- **Discovery file ACLs** (Windows): Port and token files in the discovery directory are restricted to the current user via `icacls /inheritance:r /grant:r <user>:F`.
+- **Eval output size limit**: `eval_js` results capped at 5 MB (`MAX_EVAL_RESULT_LEN`). Oversized results return an error with the actual size, preventing memory exhaustion from `JSON.stringify` on large DOM trees.
+
+### Fixed
+
+- Browser crate `rate_limit()` now returns proper 429 with `Retry-After` header (was returning bare 429).
+- Rate limiter concurrent test assertion widened to account for token refill timing variance.
+
 ## [0.5.5] - 2026-05-28
 
 ### Added

@@ -1,5 +1,48 @@
 # Migration Guide
 
+## v0.5.5 → v0.5.6
+
+### Breaking Change: Auth Enabled by Default
+
+The MCP server now **generates a Bearer token automatically** on startup and enforces authentication on all endpoints except `/health`. Previously auth was opt-in.
+
+**If you use `VictauriClient::discover()`** — no change needed. The client reads the token from the discovery directory automatically.
+
+**If you use a custom HTTP client** — read the token from `<temp>/victauri/<pid>/token` and send it as `Authorization: Bearer <token>`.
+
+**If you want the old behavior (no auth):**
+
+```rust
+VictauriBuilder::new()
+    .auth_disabled()   // Explicitly opt out of auth
+    .build()
+```
+
+**If you set `VICTAURI_AUTH_TOKEN` env var** — that token is used instead of auto-generation. Behavior unchanged.
+
+### Behavior Changes
+
+**DNS rebinding guard** — All requests must have a `Host` header matching `localhost`, `127.0.0.1`, `[::1]`, or `localhost:<port>`. Requests from DNS-rebound hostnames (e.g. `evil.com` resolving to `127.0.0.1`) receive 403. This affects both the plugin MCP server and the browser native host.
+
+**Security response headers** — All responses now include `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`, `X-Frame-Options: DENY`, and `Content-Security-Policy: default-src 'none'`. If your client parses response headers, these are new.
+
+**Eval output limit** — `eval_js` results exceeding 5 MB return an error instead of the result. If you eval expressions that produce very large strings (e.g. `JSON.stringify(document.body)`), you may need to trim output in your JS expression.
+
+**Rate limiter 429 responses** now include a `Retry-After: 1` header. Clients should respect this before retrying.
+
+**`get_diagnostics` env vars** — The environment variable allowlist was trimmed from ~30 to 16 prefixes. If you relied on seeing `PATH`, `RUST*`, `CARGO*`, `APPDATA`, or other system variables in diagnostics output, they are no longer exposed.
+
+**SQL hardening** — `query_db` now strips SQL comments (`--` and `/* */`) before the read-only check and rejects stacked queries (statements with `;`). Legitimate multi-statement queries are not supported.
+
+### Version Bump
+
+```toml
+victauri-plugin = "0.5.6"
+victauri-test = "0.5.6"
+```
+
+---
+
 ## v0.5.4 → v0.5.5
 
 ### New Public API
