@@ -10,8 +10,40 @@ const MAX_ROWS_LIMIT: usize = 10_000;
 static READ_ONLY_PREFIXES: &[&str] = &["select", "pragma", "explain", "with"];
 
 #[cfg(feature = "sqlite")]
+fn strip_sql_comments(sql: &str) -> String {
+    let mut result = String::with_capacity(sql.len());
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if i + 1 < len && bytes[i] == b'-' && bytes[i + 1] == b'-' {
+            while i < len && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            if i + 1 < len {
+                i += 2;
+            }
+            result.push(' ');
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
+#[cfg(feature = "sqlite")]
 fn is_read_only(sql: &str) -> bool {
-    let trimmed = sql.trim_start().to_lowercase();
+    let cleaned = strip_sql_comments(sql);
+    let trimmed = cleaned.trim_start().to_lowercase();
+    if trimmed.is_empty() {
+        return false;
+    }
     READ_ONLY_PREFIXES
         .iter()
         .any(|prefix| trimmed.starts_with(prefix))
@@ -66,6 +98,19 @@ pub fn query(
             "only SELECT, PRAGMA, EXPLAIN, and WITH queries are allowed (read-only access)"
                 .to_string(),
         );
+    }
+
+    let cleaned = strip_sql_comments(sql);
+    if cleaned.contains(';') {
+        let parts: Vec<&str> = cleaned
+            .split(';')
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+        if parts.len() > 1 {
+            return Err(
+                "stacked queries (multiple statements separated by ;) are not allowed".to_string(),
+            );
+        }
     }
 
     let max_rows = max_rows.unwrap_or(MAX_ROWS_DEFAULT).min(MAX_ROWS_LIMIT);
@@ -309,6 +354,75 @@ mod tests {
 
         let dbs = discover_databases(dir.path());
         assert_eq!(dbs.len(), 3);
+    }
+
+    #[test]
+    fn rejects_comment_bypass_block() {
+        let (_f, path) = create_test_db();
+        let err = query(&path, "/* sneaky */DELETE FROM users", &[], None).unwrap_err();
+        assert!(err.contains("read-only"));
+    }
+
+    #[test]
+    fn rejects_line_comment_bypass() {
+        let (_f, path) = create_test_db();
+        let err = query(&path, "-- comment\nDELETE FROM users", &[], None).unwrap_err();
+        assert!(err.contains("read-only"));
+    }
+
+    #[test]
+    fn rejects_stacked_queries() {
+        let (_f, path) = create_test_db();
+        let err = query(&path, "SELECT 1; DROP TABLE users", &[], None).unwrap_err();
+        assert!(err.contains("stacked queries"));
+    }
+
+    #[test]
+    fn allows_trailing_semicolon() {
+        let (_f, path) = create_test_db();
+        let result = query(&path, "SELECT * FROM users;", &[], None).unwrap();
+        assert_eq!(result["row_count"], 3);
+    }
+
+    #[test]
+    fn allows_select_with_block_comment() {
+        let (_f, path) = create_test_db();
+        let result = query(
+            &path,
+            "/* filter */ SELECT name FROM users WHERE id = 1",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert_eq!(result["row_count"], 1);
+        assert_eq!(result["rows"][0]["name"], "Alice");
+    }
+
+    #[test]
+    fn rejects_empty_query() {
+        let (_f, path) = create_test_db();
+        let err = query(&path, "", &[], None).unwrap_err();
+        assert!(err.contains("read-only"));
+    }
+
+    #[test]
+    fn rejects_comment_only_query() {
+        let (_f, path) = create_test_db();
+        let err = query(&path, "/* just a comment */", &[], None).unwrap_err();
+        assert!(err.contains("read-only"));
+    }
+
+    #[test]
+    fn rejects_nested_comment_bypass() {
+        let (_f, path) = create_test_db();
+        let err = query(
+            &path,
+            "/* outer /* inner */ still comment */ DROP TABLE users",
+            &[],
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("read-only"));
     }
 
     #[test]

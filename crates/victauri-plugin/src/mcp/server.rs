@@ -227,6 +227,27 @@ fn discovery_dir() -> std::path::PathBuf {
         .join(std::process::id().to_string())
 }
 
+/// Restrict a file or directory to current-user-only access on Windows via `icacls`.
+#[cfg(windows)]
+fn restrict_to_current_user(path: &std::path::Path) {
+    let Ok(username) = std::env::var("USERNAME") else {
+        return;
+    };
+    let path_str = path.to_string_lossy();
+    let _ = std::process::Command::new("icacls")
+        .args([
+            &*path_str,
+            "/inheritance:r",
+            "/grant:r",
+            &format!("{username}:F"),
+            "/q",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 fn write_port_file(port: u16) {
     let dir = discovery_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -235,6 +256,9 @@ fn write_port_file(port: u16) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     }
+    #[cfg(windows)]
+    restrict_to_current_user(&dir);
+
     let port_path = dir.join("port");
     if let Err(e) = std::fs::write(&port_path, port.to_string()) {
         tracing::debug!("could not write port file: {e}");
@@ -268,6 +292,9 @@ fn write_token_file(token: &str) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     }
+    #[cfg(windows)]
+    restrict_to_current_user(&dir);
+
     let token_path = dir.join("token");
     if let Err(e) = std::fs::write(&token_path, token) {
         tracing::debug!("could not write token file: {e}");
@@ -277,6 +304,8 @@ fn write_token_file(token: &str) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600));
     }
+    #[cfg(windows)]
+    restrict_to_current_user(&token_path);
 }
 
 fn remove_port_file() {

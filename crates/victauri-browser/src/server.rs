@@ -78,6 +78,7 @@ pub fn build_app_full(
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(axum::middleware::from_fn(auth::security_headers))
         .layer(axum::middleware::from_fn(auth::origin_guard))
+        .layer(axum::middleware::from_fn(auth::dns_rebinding_guard))
 }
 
 fn rest_routes(handler: VictauriBrowserHandler) -> axum::Router {
@@ -125,12 +126,19 @@ mod tests {
         build_app(handler, auth)
     }
 
+    fn req(uri: &str) -> axum::http::request::Builder {
+        axum::http::Request::builder()
+            .uri(uri)
+            .header("host", "localhost")
+    }
+
     async fn get_json(
         app: axum::Router,
         path: &str,
     ) -> (axum::http::StatusCode, serde_json::Value) {
         let req = axum::http::Request::builder()
             .uri(path)
+            .header("host", "localhost")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -149,6 +157,7 @@ mod tests {
         let mut req = axum::http::Request::builder()
             .method("POST")
             .uri(path)
+            .header("host", "localhost")
             .header("content-type", "application/json");
         if let Some(token) = auth {
             req = req.header("authorization", format!("Bearer {token}"));
@@ -248,8 +257,7 @@ mod tests {
     async fn auth_passes_with_correct_token() {
         let token = "secret-token";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", format!("Bearer {token}"))
             .body(Body::empty())
             .unwrap();
@@ -268,10 +276,7 @@ mod tests {
     #[tokio::test]
     async fn security_headers_present() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
-            .body(Body::empty())
-            .unwrap();
+        let req = req("/health").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(
             resp.headers().get("x-content-type-options").unwrap(),
@@ -283,8 +288,7 @@ mod tests {
     #[tokio::test]
     async fn non_local_origin_blocked() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "https://evil.com")
             .body(Body::empty())
             .unwrap();
@@ -295,8 +299,7 @@ mod tests {
     #[tokio::test]
     async fn local_origin_allowed() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://127.0.0.1:7474")
             .body(Body::empty())
             .unwrap();
@@ -316,17 +319,11 @@ mod tests {
     async fn rate_limit_exhaustion_returns_429() {
         let app = make_app_with_rate_limit(1);
 
-        let req1 = axum::http::Request::builder()
-            .uri("/info")
-            .body(Body::empty())
-            .unwrap();
+        let req1 = req("/info").body(Body::empty()).unwrap();
         let resp1 = app.clone().oneshot(req1).await.unwrap();
         assert_eq!(resp1.status(), 200);
 
-        let req2 = axum::http::Request::builder()
-            .uri("/info")
-            .body(Body::empty())
-            .unwrap();
+        let req2 = req("/info").body(Body::empty()).unwrap();
         let resp2 = app.oneshot(req2).await.unwrap();
         assert_eq!(resp2.status(), 429);
     }
@@ -334,8 +331,7 @@ mod tests {
     #[tokio::test]
     async fn auth_wrong_token_returns_401() {
         let app = make_app(Some("correct-token".to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer wrong-token")
             .body(Body::empty())
             .unwrap();
@@ -346,8 +342,7 @@ mod tests {
     #[tokio::test]
     async fn auth_no_bearer_prefix_returns_401() {
         let app = make_app(Some("my-token".to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "my-token")
             .body(Body::empty())
             .unwrap();
@@ -359,8 +354,7 @@ mod tests {
     async fn auth_case_insensitive_bearer() {
         let token = "my-secret-token";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", format!("BEARER {token}"))
             .body(Body::empty())
             .unwrap();
@@ -397,8 +391,7 @@ mod tests {
     #[tokio::test]
     async fn localhost_origin_allowed() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://localhost:3000")
             .body(Body::empty())
             .unwrap();
@@ -409,8 +402,7 @@ mod tests {
     #[tokio::test]
     async fn ipv6_localhost_origin_allowed() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://[::1]:7474")
             .body(Body::empty())
             .unwrap();
@@ -432,8 +424,7 @@ mod tests {
         assert_eq!(json_no_auth["auth_required"], false);
 
         let app = make_app(Some("tok".to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer tok")
             .body(Body::empty())
             .unwrap();
@@ -488,8 +479,7 @@ mod tests {
     #[tokio::test]
     async fn origin_bypass_localhost_in_subdomain_blocked() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "https://localhost.evil.com")
             .body(Body::empty())
             .unwrap();
@@ -500,8 +490,7 @@ mod tests {
     #[tokio::test]
     async fn origin_bypass_127_in_subdomain_blocked() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "https://127.0.0.1.evil.com")
             .body(Body::empty())
             .unwrap();
@@ -512,8 +501,7 @@ mod tests {
     #[tokio::test]
     async fn origin_with_path_containing_localhost_blocked() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "https://evil.com/localhost")
             .body(Body::empty())
             .unwrap();
@@ -524,8 +512,7 @@ mod tests {
     #[tokio::test]
     async fn origin_evil_localhost_prefix_blocked() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "https://evil-localhost.com")
             .body(Body::empty())
             .unwrap();
@@ -536,8 +523,7 @@ mod tests {
     #[tokio::test]
     async fn origin_localhost_with_port_allowed() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://localhost:9999")
             .body(Body::empty())
             .unwrap();
@@ -548,8 +534,7 @@ mod tests {
     #[tokio::test]
     async fn origin_127_with_port_allowed() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://127.0.0.1:8080")
             .body(Body::empty())
             .unwrap();
@@ -561,8 +546,7 @@ mod tests {
     async fn auth_with_extra_spaces_in_bearer() {
         let token = "test-token";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer  test-token")
             .body(Body::empty())
             .unwrap();
@@ -575,8 +559,7 @@ mod tests {
     async fn auth_with_trailing_whitespace() {
         let token = "test-token";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer test-token ")
             .body(Body::empty())
             .unwrap();
@@ -589,8 +572,7 @@ mod tests {
     async fn auth_empty_bearer_token() {
         let token = "secret";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer ")
             .body(Body::empty())
             .unwrap();
@@ -606,10 +588,7 @@ mod tests {
         for _ in 0..20 {
             let a = app.clone();
             handles.push(tokio::spawn(async move {
-                let req = axum::http::Request::builder()
-                    .uri("/info")
-                    .body(Body::empty())
-                    .unwrap();
+                let req = req("/info").body(Body::empty()).unwrap();
                 let resp = a.oneshot(req).await.unwrap();
                 resp.status()
             }));
@@ -634,9 +613,8 @@ mod tests {
     async fn body_limit_enforcement() {
         let app = make_app(None);
         let huge_body = "x".repeat(3 * 1024 * 1024);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/eval_js")
             .method("POST")
-            .uri("/api/tools/eval_js")
             .header("content-type", "application/json")
             .body(Body::from(huge_body))
             .unwrap();
@@ -647,9 +625,8 @@ mod tests {
     #[tokio::test]
     async fn malformed_json_body() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/eval_js")
             .method("POST")
-            .uri("/api/tools/eval_js")
             .header("content-type", "application/json")
             .body(Body::from("not json {{{"))
             .unwrap();
@@ -661,9 +638,8 @@ mod tests {
     #[tokio::test]
     async fn empty_body_on_post() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/eval_js")
             .method("POST")
-            .uri("/api/tools/eval_js")
             .header("content-type", "application/json")
             .body(Body::empty())
             .unwrap();
@@ -707,10 +683,7 @@ mod tests {
         let app = make_app(None);
 
         for path in ["/health", "/info", "/api/tools"] {
-            let req = axum::http::Request::builder()
-                .uri(path)
-                .body(Body::empty())
-                .unwrap();
+            let req = req(path).body(Body::empty()).unwrap();
             let resp = app.clone().oneshot(req).await.unwrap();
             assert_eq!(
                 resp.headers().get("x-content-type-options").unwrap(),
@@ -733,10 +706,7 @@ mod tests {
         for _ in 0..100 {
             let a = app.clone();
             handles.push(tokio::spawn(async move {
-                let req = axum::http::Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap();
+                let req = req("/health").body(Body::empty()).unwrap();
                 a.oneshot(req).await.unwrap().status()
             }));
         }
@@ -749,9 +719,8 @@ mod tests {
     #[tokio::test]
     async fn method_not_allowed_on_get_to_tool() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/eval_js")
             .method("GET")
-            .uri("/api/tools/eval_js")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -761,11 +730,7 @@ mod tests {
     #[tokio::test]
     async fn put_method_on_health() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .method("PUT")
-            .uri("/health")
-            .body(Body::empty())
-            .unwrap();
+        let req = req("/health").method("PUT").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), 405);
     }
@@ -773,10 +738,7 @@ mod tests {
     #[tokio::test]
     async fn nonexistent_path_returns_404() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/nonexistent")
-            .body(Body::empty())
-            .unwrap();
+        let req = req("/nonexistent").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), 404);
     }
@@ -787,8 +749,7 @@ mod tests {
     async fn auth_token_with_unicode_rejected() {
         let token = "valid-token";
         let app = make_app(Some(token.to_string()));
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer valid-token\u{200B}")
             .body(Body::empty())
             .unwrap();
@@ -802,8 +763,7 @@ mod tests {
         let token = "valid-token";
         let app = make_app(Some(token.to_string()));
         // Newline in token value — a header injection attempt
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer valid-token\r\nX-Evil: injected")
             .body(Body::empty());
         if let Ok(req) = req {
@@ -816,9 +776,8 @@ mod tests {
     #[tokio::test]
     async fn content_type_missing_on_post_tool() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/get_plugin_info")
             .method("POST")
-            .uri("/api/tools/get_plugin_info")
             .body(Body::from("{}"))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -833,9 +792,8 @@ mod tests {
     #[tokio::test]
     async fn content_type_wrong_on_post_tool() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/get_plugin_info")
             .method("POST")
-            .uri("/api/tools/get_plugin_info")
             .header("content-type", "text/plain")
             .body(Body::from("{}"))
             .unwrap();
@@ -854,9 +812,8 @@ mod tests {
         for _ in 0..50 {
             let a = app.clone();
             handles.push(tokio::spawn(async move {
-                let req = axum::http::Request::builder()
+                let req = req("/api/tools/get_plugin_info")
                     .method("POST")
-                    .uri("/api/tools/get_plugin_info")
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
                     .unwrap();
@@ -878,9 +835,8 @@ mod tests {
     async fn tool_name_with_url_encoded_chars() {
         let app = make_app(None);
         // %5F = underscore. "get%5Fplugin%5Finfo" → "get_plugin_info"
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/get%5Fplugin%5Finfo")
             .method("POST")
-            .uri("/api/tools/get%5Fplugin%5Finfo")
             .header("content-type", "application/json")
             .body(Body::from("{}"))
             .unwrap();
@@ -901,38 +857,34 @@ mod tests {
 
         // Wrong token same length
         let wrong_same_len = "b".repeat(64);
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let r = req("/info")
             .header("authorization", format!("Bearer {wrong_same_len}"))
             .body(Body::empty())
             .unwrap();
-        let resp = app.clone().oneshot(req).await.unwrap();
+        let resp = app.clone().oneshot(r).await.unwrap();
         assert_eq!(resp.status(), 401);
 
         // Wrong token different length
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let r = req("/info")
             .header("authorization", "Bearer short")
             .body(Body::empty())
             .unwrap();
-        let resp = app.clone().oneshot(req).await.unwrap();
+        let resp = app.clone().oneshot(r).await.unwrap();
         assert_eq!(resp.status(), 401);
 
         // Correct token works
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let r = req("/info")
             .header("authorization", format!("Bearer {token}"))
             .body(Body::empty())
             .unwrap();
-        let resp = app.oneshot(req).await.unwrap();
+        let resp = app.oneshot(r).await.unwrap();
         assert_eq!(resp.status(), 200);
     }
 
     #[tokio::test]
     async fn origin_with_credentials_in_url() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://user:pass@evil.com")
             .body(Body::empty())
             .unwrap();
@@ -943,8 +895,7 @@ mod tests {
     #[tokio::test]
     async fn origin_localhost_with_credentials() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .uri("/health")
+        let req = req("/health")
             .header("origin", "http://user:pass@localhost:7474")
             .body(Body::empty())
             .unwrap();
@@ -960,8 +911,7 @@ mod tests {
         let token = "real-token";
         let app = make_app(Some(token.to_string()));
         // HTTP allows multiple header values; axum takes the first
-        let req = axum::http::Request::builder()
-            .uri("/info")
+        let req = req("/info")
             .header("authorization", "Bearer wrong-token")
             .header("authorization", format!("Bearer {token}"))
             .body(Body::empty())
@@ -975,9 +925,8 @@ mod tests {
     async fn json_body_with_duplicate_keys() {
         let app = make_app(None);
         // JSON with duplicate "action" keys — serde takes the last one
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/tabs")
             .method("POST")
-            .uri("/api/tools/tabs")
             .header("content-type", "application/json")
             .body(Body::from(r#"{"action": "get_state", "action": "list"}"#))
             .unwrap();
@@ -997,9 +946,8 @@ mod tests {
         // Use get_plugin_info which doesn't dispatch to bridge (avoids 30s timeout)
         let padding = "x".repeat(1_500_000);
         let body = serde_json::json!({"unused_field": padding});
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/get_plugin_info")
             .method("POST")
-            .uri("/api/tools/get_plugin_info")
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_vec(&body).unwrap()))
             .unwrap();
@@ -1013,11 +961,7 @@ mod tests {
     #[tokio::test]
     async fn head_request_on_health() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
-            .method("HEAD")
-            .uri("/health")
-            .body(Body::empty())
-            .unwrap();
+        let req = req("/health").method("HEAD").body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         // HEAD on a GET route should return 200 with no body
         assert_eq!(resp.status(), 200);
@@ -1026,9 +970,8 @@ mod tests {
     #[tokio::test]
     async fn options_request_on_tool() {
         let app = make_app(None);
-        let req = axum::http::Request::builder()
+        let req = req("/api/tools/eval_js")
             .method("OPTIONS")
-            .uri("/api/tools/eval_js")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
@@ -1048,8 +991,7 @@ mod tests {
             "secret-token-value!",
             &"x".repeat(1000),
         ] {
-            let req = axum::http::Request::builder()
-                .uri("/info")
+            let req = req("/info")
                 .header("authorization", format!("Bearer {attempt}"))
                 .body(Body::empty())
                 .unwrap();

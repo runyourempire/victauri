@@ -903,6 +903,7 @@ mod integration_tests {
         let req = axum::http::Request::builder()
             .method("POST")
             .uri("/api/tools/dom_snapshot")
+            .header("host", "localhost")
             .header("content-type", "application/json")
             .body(Body::from("{}"))
             .unwrap();

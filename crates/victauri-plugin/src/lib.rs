@@ -19,9 +19,10 @@
 //!
 //! # Configuration
 //!
-//! Authentication is disabled by default for zero-friction setup. The MCP server
-//! listens on `127.0.0.1` only and is gated behind `#[cfg(debug_assertions)]`.
-//! Use `.auth_token("...")` or `.auth_enabled()` to require a Bearer token.
+//! Authentication is **enabled by default** with an auto-generated Bearer token
+//! written to `<temp>/victauri/<pid>/token` for client auto-discovery. The MCP
+//! server listens on `127.0.0.1` only and is gated behind `#[cfg(debug_assertions)]`.
+//! Use `.auth_token("...")` for a fixed token, or `.auth_disabled()` to opt out.
 //!
 //! ```ignore
 //! tauri::Builder::default()
@@ -164,11 +165,11 @@ pub struct VictauriState {
 /// and capacity tuning. All settings have sensible defaults and can be overridden
 /// via environment variables.
 ///
-/// **Authentication is disabled by default** for zero-friction local development.
-/// The server binds to `127.0.0.1` only and the entire plugin is `#[cfg(debug_assertions)]`.
-/// Call [`auth_token()`](VictauriBuilder::auth_token) to set an explicit token,
-/// [`auth_enabled()`](VictauriBuilder::auth_enabled) to auto-generate one, or set
-/// the `VICTAURI_AUTH_TOKEN` environment variable.
+/// **Authentication is enabled by default** with an auto-generated token written to
+/// the discovery directory (`<temp>/victauri/<pid>/token`). MCP clients that read
+/// this file get seamless access. Set `VICTAURI_AUTH_TOKEN` for a fixed token, or
+/// call [`auth_disabled()`](VictauriBuilder::auth_disabled) to opt out for local-only
+/// single-user development.
 pub struct VictauriBuilder {
     port: Option<u16>,
     event_capacity: usize,
@@ -176,6 +177,7 @@ pub struct VictauriBuilder {
     eval_timeout: std::time::Duration,
     auth_token: Option<String>,
     auth_explicitly_enabled: bool,
+    auth_explicitly_disabled: bool,
     disabled_tools: Vec<String>,
     command_allowlist: Option<Vec<String>>,
     command_blocklist: Vec<String>,
@@ -199,6 +201,7 @@ impl Default for VictauriBuilder {
             eval_timeout: DEFAULT_EVAL_TIMEOUT,
             auth_token: None,
             auth_explicitly_enabled: false,
+            auth_explicitly_disabled: false,
             disabled_tools: Vec::new(),
             command_allowlist: None,
             command_blocklist: Vec::new(),
@@ -281,14 +284,18 @@ impl VictauriBuilder {
         self
     }
 
-    /// No-op — authentication is already disabled by default since v0.4.0.
+    /// Disable authentication entirely.
     ///
-    /// Kept for backwards compatibility. Previously, auth was enabled by default
-    /// and this method was needed to opt out. Now auth is off by default and
-    /// [`auth_enabled()`](Self::auth_enabled) or [`auth_token()`](Self::auth_token)
-    /// turn it on.
+    /// By default, Victauri auto-generates a Bearer token and writes it to the
+    /// discovery directory. Call this method to opt out of authentication for
+    /// single-user local development where convenience outweighs the risk.
+    ///
+    /// **Warning:** Without auth, any process on localhost can invoke all MCP
+    /// tools including `eval_js` and `invoke_command`. Only disable auth on
+    /// machines where you trust every running process.
     #[must_use]
-    pub fn auth_disabled(self) -> Self {
+    pub fn auth_disabled(mut self) -> Self {
+        self.auth_explicitly_disabled = true;
         self
     }
 
@@ -501,16 +508,16 @@ impl VictauriBuilder {
     }
 
     fn resolve_auth_token(&self) -> Option<String> {
+        if self.auth_explicitly_disabled {
+            return None;
+        }
         if let Some(ref token) = self.auth_token {
             return Some(token.clone());
         }
         if let Ok(token) = std::env::var("VICTAURI_AUTH_TOKEN") {
             return Some(token);
         }
-        if self.auth_explicitly_enabled {
-            return Some(auth::generate_token());
-        }
-        None
+        Some(auth::generate_token())
     }
 
     fn resolve_eval_timeout(&self) -> std::time::Duration {
@@ -673,14 +680,18 @@ impl VictauriBuilder {
                         .mark("event_bus_listeners_registered");
 
                     if let Some(ref token) = auth_token {
+                        let prefix_len = token.len().min(8);
+                        let suffix_start = token.len().saturating_sub(4);
                         tracing::info!(
                             "Victauri MCP server auth enabled — token: {}…{}",
-                            &token[..8],
-                            &token[token.len().saturating_sub(4)..]
+                            &token[..prefix_len],
+                            &token[suffix_start..]
                         );
                     } else {
-                        tracing::info!(
-                            "Victauri MCP server running without auth (localhost-only, debug build)"
+                        tracing::warn!(
+                            "Victauri MCP server running WITHOUT auth — any localhost process can \
+                             access all tools. Use VictauriBuilder::auth_enabled() or set \
+                             VICTAURI_AUTH_TOKEN for shared/CI environments."
                         );
                     }
 
@@ -829,8 +840,9 @@ fn format_window_event(label: &str, event: &tauri::WindowEvent) -> (String, Stri
 
 /// Initialize the Victauri plugin with default settings (port 7373 or `VICTAURI_PORT` env var).
 ///
-/// In debug builds: starts the embedded MCP server, injects the JS bridge, and
-/// registers all Tauri command handlers.
+/// In debug builds: starts the embedded MCP server with **authentication enabled**
+/// (auto-generated token written to `<temp>/victauri/<pid>/token`), injects the JS
+/// bridge, and registers all Tauri command handlers.
 ///
 /// In release builds: returns a no-op plugin. The MCP server, JS bridge, and
 /// all introspection tools are completely stripped — zero overhead, zero attack surface.
@@ -874,8 +886,17 @@ mod tests {
         assert_eq!(builder.recorder_capacity, DEFAULT_RECORDER_CAPACITY);
         assert!(builder.auth_token.is_none());
         assert!(!builder.auth_explicitly_enabled);
+        assert!(!builder.auth_explicitly_disabled);
         let resolved = builder.resolve_auth_token();
-        assert!(resolved.is_none(), "auth should be disabled by default");
+        assert!(
+            resolved.is_some(),
+            "auth should be enabled by default (auto-generated token)"
+        );
+        assert_eq!(
+            resolved.unwrap().len(),
+            36,
+            "auto-generated token should be UUID v4"
+        );
         assert!(builder.disabled_tools.is_empty());
         assert!(builder.command_allowlist.is_none());
         assert!(builder.command_blocklist.is_empty());
@@ -929,14 +950,22 @@ mod tests {
     }
 
     #[test]
-    fn builder_auth_disabled_does_not_override_explicit_token() {
+    fn builder_auth_disabled_returns_none() {
+        let builder = VictauriBuilder::new().auth_disabled();
+        assert!(
+            builder.resolve_auth_token().is_none(),
+            "auth_disabled should suppress auto-generated token"
+        );
+    }
+
+    #[test]
+    fn builder_auth_disabled_overrides_explicit_token() {
         let builder = VictauriBuilder::new()
             .auth_token("my-secret")
             .auth_disabled();
-        assert_eq!(
-            builder.resolve_auth_token(),
-            Some("my-secret".to_string()),
-            "auth_disabled is a no-op, explicit token should remain"
+        assert!(
+            builder.resolve_auth_token().is_none(),
+            "auth_disabled should override explicit token"
         );
     }
 

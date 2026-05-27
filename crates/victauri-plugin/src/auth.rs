@@ -157,11 +157,23 @@ pub async fn rate_limit(
     axum::extract::State(limiter): axum::extract::State<Arc<RateLimiterState>>,
     request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<
+    Response,
+    (
+        StatusCode,
+        [(axum::http::HeaderName, axum::http::HeaderValue); 1],
+    ),
+> {
     if limiter.try_acquire() {
         Ok(next.run(request).await)
     } else {
-        Err(StatusCode::TOO_MANY_REQUESTS)
+        Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_static("1"),
+            )],
+        ))
     }
 }
 
@@ -335,8 +347,13 @@ mod tests {
             }));
         }
         let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-        // All 1000 tokens should be dispensed; a time-based refill may add a few
-        assert!((1000..=1010).contains(&total));
+        // All 1000 initial tokens dispensed; time-based refills (1000/sec) add
+        // tokens proportional to wall-clock duration, which varies by machine.
+        assert!(
+            total >= 1000,
+            "should dispense at least the initial budget, got {total}"
+        );
+        assert!(total <= 1200, "refill overshoot too high, got {total}");
     }
 
     #[test]

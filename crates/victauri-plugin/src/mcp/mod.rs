@@ -65,7 +65,6 @@ const RESOURCE_URI_STATE: &str = "victauri://state";
 const BRIDGE_VERSION: &str = "0.5.0";
 
 const SAFE_ENV_PREFIXES: &[&str] = &[
-    "PATH",
     "HOME",
     "USER",
     "LANG",
@@ -76,25 +75,10 @@ const SAFE_ENV_PREFIXES: &[&str] = &[
     "XDG_",
     "TAURI_",
     "VICTAURI_",
-    "RUST",
-    "CARGO",
     "NODE_ENV",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "USERPROFILE",
-    "TEMP",
-    "TMP",
-    "PROGRAMFILES",
-    "SYSTEMROOT",
-    "WINDIR",
-    "COMSPEC",
     "OS",
-    "PROCESSOR_",
-    "NUMBER_OF_PROCESSORS",
-    "COMPUTERNAME",
     "HOSTNAME",
     "PWD",
-    "OLDPWD",
     "SHLVL",
     "LOGNAME",
 ];

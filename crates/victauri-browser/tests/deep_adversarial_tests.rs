@@ -42,7 +42,9 @@ fn test_app_rate_limited(budget: u64) -> (axum::Router, Arc<TabManager>, Arc<Bri
 }
 
 async fn get(app: axum::Router, path: &str, headers: Vec<(&str, &str)>) -> (u16, Vec<u8>) {
-    let mut builder = axum::http::Request::builder().uri(path);
+    let mut builder = axum::http::Request::builder()
+        .uri(path)
+        .header("host", "localhost");
     for (k, v) in headers {
         builder = builder.header(k, v);
     }
@@ -72,7 +74,8 @@ async fn post_tool(
     let mut builder = axum::http::Request::builder()
         .method("POST")
         .uri(format!("/api/tools/{tool}"))
-        .header("content-type", "application/json");
+        .header("content-type", "application/json")
+        .header("host", "localhost");
     if let Some(token) = auth {
         builder = builder.header("authorization", format!("Bearer {token}"));
     }
@@ -93,7 +96,10 @@ async fn raw_post(
     body_bytes: Vec<u8>,
     headers: Vec<(&str, &str)>,
 ) -> (u16, Vec<u8>) {
-    let mut builder = axum::http::Request::builder().method("POST").uri(path);
+    let mut builder = axum::http::Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", "localhost");
     if let Some(ct) = content_type {
         builder = builder.header("content-type", ct);
     }
@@ -113,7 +119,10 @@ async fn resp_headers(
     method: &str,
     extra_headers: Vec<(&str, &str)>,
 ) -> (u16, axum::http::HeaderMap) {
-    let mut builder = axum::http::Request::builder().method(method).uri(path);
+    let mut builder = axum::http::Request::builder()
+        .method(method)
+        .uri(path)
+        .header("host", "localhost");
     for (k, v) in extra_headers {
         builder = builder.header(k, v);
     }
@@ -170,6 +179,7 @@ async fn auth_bypass_null_byte_in_token() {
     // at build time, which means the attack is blocked at the protocol level.
     let result = axum::http::Request::builder()
         .uri("/info")
+        .header("host", "localhost")
         .header("authorization", "Bearer real-token\0extra")
         .body(Body::empty());
     if let Ok(req) = result {
@@ -513,6 +523,7 @@ async fn smuggling_connect_method() {
     let req = axum::http::Request::builder()
         .method("CONNECT")
         .uri("/health")
+        .header("host", "localhost")
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -525,6 +536,7 @@ async fn smuggling_trace_method() {
     let req = axum::http::Request::builder()
         .method("TRACE")
         .uri("/health")
+        .header("host", "localhost")
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -656,6 +668,7 @@ async fn smuggling_x_rewrite_url_injection() {
     let (app, _, _) = test_app(Some("tok".into()));
     let req = axum::http::Request::builder()
         .uri("/health")
+        .header("host", "localhost")
         .header("x-rewrite-url", "/info")
         .header("x-original-url", "/info")
         .body(Body::empty())
@@ -674,6 +687,7 @@ async fn smuggling_connection_upgrade_without_websocket() {
     let (app, _, _) = test_app(None);
     let req = axum::http::Request::builder()
         .uri("/health")
+        .header("host", "localhost")
         .header("connection", "upgrade")
         .header("upgrade", "h2c")
         .body(Body::empty())
@@ -689,6 +703,7 @@ async fn smuggling_delete_method_on_health() {
     let req = axum::http::Request::builder()
         .method("DELETE")
         .uri("/health")
+        .header("host", "localhost")
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
@@ -701,6 +716,7 @@ async fn smuggling_patch_method_on_tool() {
     let req = axum::http::Request::builder()
         .method("PATCH")
         .uri("/api/tools/get_plugin_info")
+        .header("host", "localhost")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -959,6 +975,7 @@ async fn tool_rapid_50_concurrent() {
             let req = axum::http::Request::builder()
                 .method("POST")
                 .uri("/api/tools/get_plugin_info")
+                .header("host", "localhost")
                 .header("content-type", "application/json")
                 .body(Body::from("{}"))
                 .unwrap();
@@ -1121,6 +1138,7 @@ async fn tool_unknown_name_returns_error_not_crash() {
         let result = axum::http::Request::builder()
             .method("POST")
             .uri(&uri)
+            .header("host", "localhost")
             .header("content-type", "application/json")
             .body(Body::from("{}"));
         // These should either fail to build (InvalidUri) or return an error
@@ -1619,6 +1637,7 @@ async fn response_security_headers_on_tool_execution() {
     let req = axum::http::Request::builder()
         .method("POST")
         .uri("/api/tools/get_plugin_info")
+        .header("host", "localhost")
         .header("content-type", "application/json")
         .body(Body::from("{}"))
         .unwrap();
@@ -1849,6 +1868,7 @@ async fn integration_auth_on_all_protected_endpoints() {
         let req = axum::http::Request::builder()
             .method(method)
             .uri(path)
+            .header("host", "localhost")
             .body(Body::empty())
             .unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();

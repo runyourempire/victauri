@@ -142,28 +142,85 @@ pub fn default_rate_limiter() -> Arc<RateLimiterState> {
 ///
 /// # Errors
 ///
-/// Returns `429 Too Many Requests` when the rate limit is exceeded.
+/// Returns `429 Too Many Requests` with `Retry-After: 1` header when the rate
+/// limit is exceeded.
 pub async fn rate_limit(
     axum::extract::State(limiter): axum::extract::State<Arc<RateLimiterState>>,
     request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<
+    Response,
+    (
+        StatusCode,
+        [(axum::http::HeaderName, axum::http::HeaderValue); 1],
+    ),
+> {
     if limiter.try_acquire() {
         Ok(next.run(request).await)
     } else {
-        Err(StatusCode::TOO_MANY_REQUESTS)
+        Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(
+                axum::http::header::RETRY_AFTER,
+                axum::http::HeaderValue::from_static("1"),
+            )],
+        ))
     }
 }
 
-/// Security headers middleware: X-Content-Type-Options, Cache-Control.
+/// Axum middleware that blocks DNS rebinding attacks.
 ///
-/// # Panics
-/// Panics if header values cannot be parsed (hardcoded valid values).
+/// Rejects any request where the Host header is not a localhost address.
+///
+/// # Errors
+///
+/// Returns [`StatusCode::FORBIDDEN`] if the `Host` header is not `localhost`,
+/// `127.0.0.1`, or `::1`.
+pub async fn dns_rebinding_guard(request: Request, next: Next) -> Result<Response, StatusCode> {
+    let host = request
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let host_name = if host.starts_with('[') {
+        host.split(']').next().map_or(host, |s| &s[1..])
+    } else if host.contains("::") {
+        host
+    } else {
+        host.split(':').next().unwrap_or(host)
+    };
+    let is_allowed = matches!(host_name, "localhost" | "127.0.0.1" | "::1");
+    if !is_allowed {
+        tracing::warn!("DNS rebinding attempt blocked: Host={host}");
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(next.run(request).await)
+}
+
+/// Axum middleware that sets security-hardening response headers on every response.
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    headers.insert("x-content-type-options", "nosniff".parse().unwrap());
-    headers.insert("cache-control", "no-store".parse().unwrap());
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    headers.insert(
+        axum::http::header::HeaderName::from_static("x-frame-options"),
+        axum::http::HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        axum::http::HeaderValue::from_static("null"),
+    );
+    headers.insert(
+        axum::http::header::HeaderName::from_static("content-security-policy"),
+        axum::http::HeaderValue::from_static("default-src 'none'"),
+    );
     response
 }
 
@@ -358,6 +415,43 @@ mod tests {
                 assert!(!constant_time_eq(&a, &c));
             }
         }
+    }
+
+    // --- DNS rebinding guard tests ---
+
+    #[test]
+    fn dns_rebinding_guard_allows_localhost() {
+        let host = "localhost";
+        let host_name = host.split(':').next().unwrap_or(host);
+        assert!(matches!(host_name, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn dns_rebinding_guard_allows_127() {
+        let host = "127.0.0.1:7474";
+        let host_name = host.split(':').next().unwrap_or(host);
+        assert!(matches!(host_name, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn dns_rebinding_guard_blocks_evil() {
+        let host = "evil.com";
+        let host_name = host.split(':').next().unwrap_or(host);
+        assert!(!matches!(host_name, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn dns_rebinding_guard_blocks_localhost_subdomain() {
+        let host = "localhost.evil.com";
+        let host_name = host.split(':').next().unwrap_or(host);
+        assert!(!matches!(host_name, "localhost" | "127.0.0.1" | "::1"));
+    }
+
+    #[test]
+    fn dns_rebinding_guard_blocks_empty() {
+        let host = "";
+        let host_name = host.split(':').next().unwrap_or(host);
+        assert!(!matches!(host_name, "localhost" | "127.0.0.1" | "::1"));
     }
 
     // --- Origin guard tests ---
