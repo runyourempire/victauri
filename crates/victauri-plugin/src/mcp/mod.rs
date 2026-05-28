@@ -1114,7 +1114,15 @@ impl VictauriMcpHandler {
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "select_option");
                 };
-                let values = params.values.as_deref().unwrap_or(&[]);
+                let values_vec;
+                let values: &[String] = match (&params.values, &params.value) {
+                    (Some(v), _) => v,
+                    (None, Some(v)) => {
+                        values_vec = vec![v.clone()];
+                        &values_vec
+                    }
+                    (None, None) => &[],
+                };
                 let values_json =
                     serde_json::to_string(values).unwrap_or_else(|_| "[]".to_string());
                 let code = format!(
@@ -1758,10 +1766,15 @@ impl VictauriMcpHandler {
         match params.action {
             LogsAction::Console => {
                 let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
-                let code = if since_arg.is_empty() {
-                    "return window.__VICTAURI__?.getConsoleLogs()".to_string()
+                let base = if since_arg.is_empty() {
+                    "window.__VICTAURI__?.getConsoleLogs()".to_string()
                 } else {
-                    format!("return window.__VICTAURI__?.getConsoleLogs({since_arg})")
+                    format!("window.__VICTAURI__?.getConsoleLogs({since_arg})")
+                };
+                let code = if let Some(limit) = params.limit {
+                    format!("return ({base} || []).slice(-{limit})")
+                } else {
+                    format!("return {base}")
                 };
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
@@ -1815,25 +1828,36 @@ impl VictauriMcpHandler {
                 }
             }
             LogsAction::Navigation => {
-                self.eval_bridge(
-                    "return window.__VICTAURI__?.getNavigationLog()",
-                    params.webview_label.as_deref(),
-                )
-                .await
+                let code = if let Some(limit) = params.limit {
+                    format!(
+                        "return (window.__VICTAURI__?.getNavigationLog() || []).slice(-{limit})"
+                    )
+                } else {
+                    "return window.__VICTAURI__?.getNavigationLog()".to_string()
+                };
+                self.eval_bridge(&code, params.webview_label.as_deref())
+                    .await
             }
             LogsAction::Dialogs => {
-                self.eval_bridge(
-                    "return window.__VICTAURI__?.getDialogLog()",
-                    params.webview_label.as_deref(),
-                )
-                .await
+                let code = if let Some(limit) = params.limit {
+                    format!("return (window.__VICTAURI__?.getDialogLog() || []).slice(-{limit})")
+                } else {
+                    "return window.__VICTAURI__?.getDialogLog()".to_string()
+                };
+                self.eval_bridge(&code, params.webview_label.as_deref())
+                    .await
             }
             LogsAction::Events => {
                 let since_arg = params.since.map(|ts| format!("{ts}")).unwrap_or_default();
-                let code = if since_arg.is_empty() {
-                    "return window.__VICTAURI__?.getEventStream()".to_string()
+                let base = if since_arg.is_empty() {
+                    "window.__VICTAURI__?.getEventStream()".to_string()
                 } else {
-                    format!("return window.__VICTAURI__?.getEventStream({since_arg})")
+                    format!("window.__VICTAURI__?.getEventStream({since_arg})")
+                };
+                let code = if let Some(limit) = params.limit {
+                    format!("return ({base} || []).slice(-{limit})")
+                } else {
+                    format!("return {base}")
                 };
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await

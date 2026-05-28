@@ -133,6 +133,8 @@ pub struct InteractParams {
     pub ref_id: Option<String>,
     /// Option values for `select_option` action.
     pub values: Option<Vec<String>>,
+    /// Single option value for `select_option` (convenience alias for `values`).
+    pub value: Option<String>,
     /// Horizontal scroll position (pixels). Used with `scroll_into_view` when `ref_id` is null.
     pub x: Option<f64>,
     /// Vertical scroll position (pixels). Used with `scroll_into_view` when `ref_id` is null.

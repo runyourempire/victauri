@@ -1,10 +1,31 @@
 use rmcp::model::{CallToolResult, Content};
 
 /// Produce a properly escaped JavaScript string literal (with double quotes).
-/// Uses `serde_json` which handles all special characters: \n, \r, \0, \t,
-/// unicode escapes, quotes, backslashes, etc.
+///
+/// Non-ASCII characters are escaped to `\uXXXX` sequences to avoid corruption
+/// in Tauri's `WebView2` eval pipeline on Windows, which mangles raw UTF-8 bytes.
 pub fn js_string(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\u0000"),
+            c if c.is_ascii_graphic() || c == ' ' => out.push(c),
+            c => {
+                for unit in c.encode_utf16(&mut [0; 2]) {
+                    use std::fmt::Write;
+                    let _ = write!(out, "\\u{unit:04x}");
+                }
+            }
+        }
+    }
+    out.push('"');
+    out
 }
 
 pub fn json_result(value: &impl serde::Serialize) -> CallToolResult {
