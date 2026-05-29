@@ -138,6 +138,7 @@ fn test_state() -> Arc<VictauriState> {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     })
 }
 
@@ -769,6 +770,7 @@ async fn strict_privacy_blocks_dangerous_tools() {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     });
     let base = start_test_server(state, &["main"]).await;
     let (client, sid) = mcp_session(&base).await;

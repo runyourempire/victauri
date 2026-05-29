@@ -737,6 +737,8 @@ async fn mcp_tool_count_is_correct() {
         "recording",
         "inspect",
         "css",
+        "route",
+        "trace",
         "logs",
     ];
 
@@ -1046,6 +1048,7 @@ async fn state_port_reflected_in_info() {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
@@ -1118,6 +1121,7 @@ fn builder_custom_port_reflected_in_state() {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     });
 
     assert_eq!(state.port.load(std::sync::atomic::Ordering::Relaxed), 8888);
@@ -1385,6 +1389,7 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     })
 }
 
@@ -2433,6 +2438,58 @@ async fn callback_mock_get_network_log() {
     assert!(
         body.contains("api.example.com"),
         "logs network should return mocked entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_route_add_dispatch() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |code| {
+        if code.contains("addRoute") {
+            r#"{"ok":true,"id":1,"echo":"ROUTE_OK"}"#.to_string()
+        } else {
+            "null".to_string()
+        }
+    })
+    .await;
+
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "route",
+        serde_json::json!({
+            "action": "add",
+            "pattern": "*api.example.com*",
+            "match_type": "glob",
+            "behavior": "block"
+        }),
+    )
+    .await;
+
+    assert!(
+        body.contains("ROUTE_OK"),
+        "route add should dispatch addRoute to the bridge and return its result, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn callback_mock_route_missing_pattern() {
+    let state = test_state();
+    let base = start_callback_server(state, &["main"], |_| "null".to_string()).await;
+    let (client, session_id) = mcp_session(&base).await;
+    let body = mcp_call_tool(
+        &client,
+        &base,
+        &session_id,
+        "route",
+        serde_json::json!({"action": "add", "behavior": "fulfill"}),
+    )
+    .await;
+    assert!(
+        body.contains("pattern"),
+        "route add without pattern should error about the missing pattern, got: {body}"
     );
 }
 

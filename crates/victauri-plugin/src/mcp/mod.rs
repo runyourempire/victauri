@@ -1083,6 +1083,48 @@ impl VictauriMcpHandler {
                 let Some(ref_id) = &params.ref_id else {
                     return missing_param("ref_id", "click");
                 };
+                if params.trusted.unwrap_or(false) {
+                    // Resolve the element's viewport-center coords, run the
+                    // actionability check, then deliver a real OS click.
+                    let probe = format!(
+                        "var __e=window.__VICTAURI__&&window.__VICTAURI__.getRef({}); \
+                         if(!__e) return null; __e.scrollIntoView({{block:'center',inline:'center',behavior:'instant'}}); \
+                         var __b=__e.getBoundingClientRect(); \
+                         return {{x:__b.left+__b.width/2, y:__b.top+__b.height/2}}",
+                        js_string(ref_id)
+                    );
+                    let raw = match self
+                        .eval_with_return(&probe, params.webview_label.as_deref())
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => return tool_error(e),
+                    };
+                    let Ok(point) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                        return tool_error_with_hint(
+                            format!("ref not found: {ref_id}"),
+                            RecoveryHint::CheckInput,
+                        );
+                    };
+                    let (Some(x), Some(y)) = (
+                        point.get("x").and_then(serde_json::Value::as_f64),
+                        point.get("y").and_then(serde_json::Value::as_f64),
+                    ) else {
+                        return tool_error_with_hint(
+                            format!("ref not found: {ref_id}"),
+                            RecoveryHint::CheckInput,
+                        );
+                    };
+                    return match self
+                        .bridge
+                        .native_click(params.webview_label.as_deref(), x, y)
+                    {
+                        Ok(()) => json_result(
+                            &serde_json::json!({"ok": true, "trusted": true, "x": x, "y": y}),
+                        ),
+                        Err(e) => tool_error(e),
+                    };
+                }
                 let code = format!("return window.__VICTAURI__?.click({})", js_string(ref_id));
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
@@ -1212,6 +1254,31 @@ impl VictauriMcpHandler {
                 let Some(text) = &params.text else {
                     return missing_param("text", "type_text");
                 };
+                if params.trusted.unwrap_or(false) {
+                    // Focus the element via JS, then deliver real OS keystrokes
+                    // (isTrusted: true) for handlers that reject synthetic events.
+                    let focus = format!(
+                        "var __e=window.__VICTAURI__&&window.__VICTAURI__.getRef({}); if(__e){{__e.focus();}} return !!__e",
+                        js_string(ref_id)
+                    );
+                    let focused = self
+                        .eval_with_return(&focus, params.webview_label.as_deref())
+                        .await
+                        .unwrap_or_default();
+                    if focused != "true" {
+                        return tool_error_with_hint(
+                            format!("ref not found or not focusable: {ref_id}"),
+                            RecoveryHint::CheckInput,
+                        );
+                    }
+                    return match self
+                        .bridge
+                        .native_type_text(params.webview_label.as_deref(), text)
+                    {
+                        Ok(()) => json_result(&serde_json::json!({"ok": true, "trusted": true})),
+                        Err(e) => tool_error(e),
+                    };
+                }
                 let code = format!(
                     "return window.__VICTAURI__?.type({}, {})",
                     js_string(ref_id),
@@ -1227,6 +1294,22 @@ impl VictauriMcpHandler {
                 let Some(key) = &params.key else {
                     return missing_param("key", "press_key");
                 };
+                if params.trusted.unwrap_or(false) {
+                    // Optionally focus a target element, then send a real OS key.
+                    if let Some(ref_id) = &params.ref_id {
+                        let focus = format!(
+                            "var __e=window.__VICTAURI__&&window.__VICTAURI__.getRef({}); if(__e){{__e.focus();}} return !!__e",
+                            js_string(ref_id)
+                        );
+                        let _ = self
+                            .eval_with_return(&focus, params.webview_label.as_deref())
+                            .await;
+                    }
+                    return match self.bridge.native_key(params.webview_label.as_deref(), key) {
+                        Ok(()) => json_result(&serde_json::json!({"ok": true, "trusted": true})),
+                        Err(e) => tool_error(e),
+                    };
+                }
                 let code = format!("return window.__VICTAURI__?.pressKey({})", js_string(key));
                 self.eval_bridge(&code, params.webview_label.as_deref())
                     .await
@@ -1803,6 +1886,215 @@ impl VictauriMcpHandler {
                     params.webview_label.as_deref(),
                 )
                 .await
+            }
+        }
+    }
+
+    #[tool(
+        description = "Network request interception (Playwright route() equivalent, no CDP). \
+            Matches webview fetch/XHR by URL and blocks, mocks, or delays them. \
+            Actions:\n\
+            - `add`: add a rule. `pattern` (+ optional `match_type`: substring/glob/regex/exact, \
+              and `method`) selects requests; `behavior` is `block` (abort), `fulfill` (return a \
+              mock `status`/`headers`/`body`/`content_type`), or `delay` (proceed after `delay_ms`). \
+              `times` limits how often it fires. Rules are page-scoped (cleared on reload).\n\
+            - `list`: list active rules.\n\
+            - `clear` (by `id`) / `clear_all`: remove rules.\n\
+            - `matches`: log of intercepted requests.\n\
+            Note: fetch supports all behaviors; XHR supports block/delay (fulfill is fetch-only). \
+            Top-level navigation, sub-resource (img/css), and WebSocket traffic are not intercepted. \
+            For Tauri IPC-layer faults, prefer the `fault` tool.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn route(&self, Parameters(params): Parameters<RouteParams>) -> CallToolResult {
+        self.track_tool_call();
+        match params.action {
+            RouteAction::Add => {
+                if !self.state.privacy.is_tool_enabled("route.add") {
+                    return tool_disabled("route.add");
+                }
+                let Some(pattern) = &params.pattern else {
+                    return missing_param("pattern", "add");
+                };
+                let behavior = params.behavior.unwrap_or(RouteBehavior::Fulfill);
+                let match_type = params.match_type.unwrap_or(RouteMatchType::Substring);
+                let mut rule = serde_json::json!({
+                    "pattern": pattern,
+                    "match_type": match_type.as_str(),
+                    "action": behavior.as_str(),
+                });
+                if let Some(m) = &params.method {
+                    rule["method"] = serde_json::json!(m);
+                }
+                if let Some(s) = params.status {
+                    rule["status"] = serde_json::json!(s);
+                }
+                if let Some(st) = &params.status_text {
+                    rule["status_text"] = serde_json::json!(st);
+                }
+                if let Some(h) = &params.headers {
+                    rule["headers"] = h.clone();
+                }
+                if let Some(b) = &params.body {
+                    // A JSON string body is passed through as-is; structured JSON
+                    // is stringified so the bridge sends valid JSON text.
+                    rule["body"] = match b {
+                        serde_json::Value::String(s) => serde_json::json!(s),
+                        other => serde_json::json!(other.to_string()),
+                    };
+                }
+                if let Some(ct) = &params.content_type {
+                    rule["content_type"] = serde_json::json!(ct);
+                }
+                if let Some(d) = params.delay_ms {
+                    rule["delay_ms"] = serde_json::json!(d);
+                }
+                if let Some(t) = params.times {
+                    rule["times"] = serde_json::json!(t);
+                }
+                let code = format!(
+                    "return window.__VICTAURI__?.addRoute({})",
+                    js_string(&rule.to_string())
+                );
+                self.eval_bridge(&code, params.webview_label.as_deref())
+                    .await
+            }
+            RouteAction::List => {
+                self.eval_bridge(
+                    "return window.__VICTAURI__?.getRouteRules()",
+                    params.webview_label.as_deref(),
+                )
+                .await
+            }
+            RouteAction::Clear => {
+                let Some(id) = params.id else {
+                    return missing_param("id", "clear");
+                };
+                let code = format!("return window.__VICTAURI__?.clearRoute({id})");
+                self.eval_bridge(&code, params.webview_label.as_deref())
+                    .await
+            }
+            RouteAction::ClearAll => {
+                self.eval_bridge(
+                    "return window.__VICTAURI__?.clearRoutes()",
+                    params.webview_label.as_deref(),
+                )
+                .await
+            }
+            RouteAction::Matches => {
+                let limit = params.limit.unwrap_or(100);
+                let code = format!("return window.__VICTAURI__?.getRouteMatches({limit})");
+                self.eval_bridge(&code, params.webview_label.as_deref())
+                    .await
+            }
+        }
+    }
+
+    #[tool(
+        description = "Screencast / visual trace (no CDP). Captures the window at a fixed interval \
+            into a ring buffer, forming a visual timeline that pairs with `recording` (events) and \
+            `logs` (network/console). Actions:\n\
+            - `start`: begin capturing (`interval_ms` default 500, `max_frames` default 60). Set \
+              `with_events=true` to also start the event recorder.\n\
+            - `stop`: stop and return a summary (frame count, duration, timestamps).\n\
+            - `status`: active flag + buffered frame count.\n\
+            - `frames`: return captured frames as base64 PNGs (`limit` caps how many).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn trace(&self, Parameters(params): Parameters<TraceParams>) -> CallToolResult {
+        self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("trace")
+            || !self.state.privacy.is_tool_enabled("screenshot")
+        {
+            return tool_disabled("trace");
+        }
+        match params.action {
+            TraceAction::Start => {
+                let interval = params.interval_ms.unwrap_or(500);
+                let max_frames = params.max_frames.unwrap_or(60);
+                let label = params.webview_label.clone();
+                let generation = self
+                    .state
+                    .screencast
+                    .start(interval, max_frames, label.clone());
+
+                let mut events_started = false;
+                if params.with_events.unwrap_or(false) {
+                    let session_id = uuid::Uuid::new_v4().to_string();
+                    if self.state.recorder.start(session_id).is_ok() {
+                        events_started = true;
+                    }
+                }
+
+                // Background capture task: snapshot the window each interval until
+                // the screencast is stopped (or superseded by a newer start).
+                let bridge = self.bridge.clone();
+                let screencast = self.state.screencast.clone();
+                tokio::spawn(async move {
+                    let t0 = std::time::Instant::now();
+                    while screencast.is_active() && screencast.generation() == generation {
+                        if let Ok(handle) = bridge.get_native_handle(label.as_deref())
+                            && let Ok(png) = crate::screenshot::capture_window(handle).await
+                        {
+                            use base64::Engine;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+                            #[allow(clippy::cast_possible_truncation)]
+                            screencast.push_frame(t0.elapsed().as_millis() as u64, b64);
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            screencast.interval_ms(),
+                        ))
+                        .await;
+                    }
+                });
+
+                json_result(&serde_json::json!({
+                    "started": true,
+                    "interval_ms": interval.max(50),
+                    "max_frames": max_frames.clamp(1, 600),
+                    "with_events": events_started,
+                }))
+            }
+            TraceAction::Stop => {
+                let frame_count = self.state.screencast.stop();
+                let timestamps = self.state.screencast.frame_timestamps();
+                let duration_ms = timestamps.last().copied().unwrap_or(0);
+                let event_count = self.state.recorder.event_count();
+                json_result(&serde_json::json!({
+                    "stopped": true,
+                    "frame_count": frame_count,
+                    "duration_ms": duration_ms,
+                    "frame_timestamps_ms": timestamps,
+                    "recorded_event_count": event_count,
+                    "hint": "use action=frames to retrieve PNGs; pair with recording/get_events and logs for a full bundle",
+                }))
+            }
+            TraceAction::Status => json_result(&serde_json::json!({
+                "active": self.state.screencast.is_active(),
+                "frame_count": self.state.screencast.frame_count(),
+                "interval_ms": self.state.screencast.interval_ms(),
+            })),
+            TraceAction::Frames => {
+                let limit = params.limit.unwrap_or(0);
+                let frames = self.state.screencast.frames(limit);
+                let items: Vec<Content> = frames
+                    .into_iter()
+                    .map(|f| Content::image(f.data_b64, "image/png"))
+                    .collect();
+                if items.is_empty() {
+                    return json_result(&serde_json::json!({ "frames": 0 }));
+                }
+                CallToolResult::success(items)
             }
         }
     }
@@ -2806,6 +3098,14 @@ impl VictauriMcpHandler {
             "css" => {
                 let p: CssParams = Self::parse_args(args)?;
                 self.css(Parameters(p)).await
+            }
+            "route" => {
+                let p: RouteParams = Self::parse_args(args)?;
+                self.route(Parameters(p)).await
+            }
+            "trace" => {
+                let p: TraceParams = Self::parse_args(args)?;
+                self.trace(Parameters(p)).await
             }
             "logs" => {
                 let p: LogsParams = Self::parse_args(args)?;

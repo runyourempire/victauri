@@ -114,19 +114,71 @@ const INIT_SCRIPT_BODY: &str = r#"
     var longTasks = [];
     var listenerCount = 0;
 
+    // ── Network route rules (Phase 1: interception / mock / block / delay) ──
+    var routeRules = [];
+    var routeCounter = 0;
+    var routeMatchLog = [];
+    var CAP_ROUTE_MATCHES = 200;
+
+    // Convert a glob ("*" wildcard) to a RegExp. Other chars are escaped.
+    function globToRegExp(glob) {
+        var re = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        return new RegExp('^' + re + '$');
+    }
+
+    // Find the first active route rule matching url+method, or null.
+    // Never matches Victauri's own internal IPC traffic.
+    function matchRoute(url, method) {
+        if (!routeRules.length) return null;
+        if (url.indexOf('plugin%3Avictauri%7C') !== -1 || url.indexOf('plugin:victauri|') !== -1) {
+            return null;
+        }
+        var m = (method || 'GET').toUpperCase();
+        for (var i = 0; i < routeRules.length; i++) {
+            var r = routeRules[i];
+            if (r.times && r.triggered >= r.times) continue;
+            if (r.method && r.method.toUpperCase() !== m) continue;
+            var hit = false;
+            try {
+                if (r.match_type === 'exact') hit = (url === r.pattern);
+                else if (r.match_type === 'regex') hit = new RegExp(r.pattern).test(url);
+                else if (r.match_type === 'glob') hit = globToRegExp(r.pattern).test(url);
+                else hit = (url.indexOf(r.pattern) !== -1); // substring (default)
+            } catch (e) { hit = false; }
+            if (hit) return r;
+        }
+        return null;
+    }
+
+    function recordRouteMatch(rule, url, method) {
+        rule.triggered = (rule.triggered || 0) + 1;
+        routeMatchLog.push({
+            rule_id: rule.id, action: rule.action, url: url,
+            method: (method || 'GET').toUpperCase(), timestamp: Date.now(),
+            trigger_count: rule.triggered,
+        });
+        if (routeMatchLog.length > CAP_ROUTE_MATCHES) routeMatchLog.shift();
+    }
+
     function checkActionable(el) {
         if (!el || !el.isConnected) return { error: 'element is detached from DOM', hint: 'RETRY_LATER' };
         if (el.disabled) return { error: 'element is disabled (disabled attribute)', hint: 'RETRY_LATER' };
         if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') return { error: 'element is disabled (aria-disabled)', hint: 'RETRY_LATER' };
-        var cs = window.getComputedStyle(el);
+        // Use the element's OWN document/window so the viewport and occlusion
+        // (elementFromPoint) checks are correct for elements inside same-origin
+        // iframes — getBoundingClientRect() is relative to the element's own
+        // frame viewport, not the top document.
+        var doc = el.ownerDocument || document;
+        var win = doc.defaultView || window;
+        var cs = win.getComputedStyle(el);
         if (cs.display === 'none') return { error: 'element is not visible (display: none)', hint: 'RETRY_LATER' };
         if (cs.visibility === 'hidden') return { error: 'element is not visible (visibility: hidden)', hint: 'RETRY_LATER' };
         if (parseFloat(cs.opacity) < 0.01) return { error: 'element is not visible (opacity: ' + cs.opacity + ')', hint: 'RETRY_LATER' };
         var rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return { error: 'element has zero size', hint: 'RETRY_LATER' };
         if (cs.pointerEvents === 'none') return { error: 'element has pointer-events: none', hint: 'RETRY_LATER' };
-        var vw = window.innerWidth || document.documentElement.clientWidth;
-        var vh = window.innerHeight || document.documentElement.clientHeight;
+        var vw = win.innerWidth || doc.documentElement.clientWidth;
+        var vh = win.innerHeight || doc.documentElement.clientHeight;
         if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) {
             el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
             rect = el.getBoundingClientRect();
@@ -136,7 +188,7 @@ const INIT_SCRIPT_BODY: &str = r#"
         }
         var cx = rect.left + rect.width / 2;
         var cy = rect.top + rect.height / 2;
-        var topEl = document.elementFromPoint(cx, cy);
+        var topEl = doc.elementFromPoint(cx, cy);
         if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
             var tag = topEl.tagName ? topEl.tagName.toLowerCase() : 'unknown';
             var info = tag;
@@ -340,6 +392,13 @@ const INIT_SCRIPT_BODY: &str = r#"
                     for (var s = 0; s < node.shadowRoot.children.length; s++) {
                         search(node.shadowRoot.children[s]);
                     }
+                }
+                // Same-origin iframe traversal.
+                if (node.tagName === 'IFRAME' || node.tagName === 'FRAME') {
+                    try {
+                        var idoc = node.contentDocument;
+                        if (idoc && idoc.body) search(idoc.body);
+                    } catch (e) { /* cross-origin: skip */ }
                 }
             }
 
@@ -575,6 +634,50 @@ const INIT_SCRIPT_BODY: &str = r#"
 
         clearNetworkLog: function() {
             networkLog.length = 0;
+        },
+
+        // ── Network routing (interception / mock / block / delay) ──────────────
+        // Add a route rule. `rule` is an object: { pattern, match_type, method,
+        // action ('block'|'fulfill'|'delay'), status, status_text, headers,
+        // body, content_type, delay_ms, times }. Returns the assigned id.
+        addRoute: function(rule) {
+            if (typeof rule === 'string') { try { rule = JSON.parse(rule); } catch (e) { return { ok: false, error: 'invalid rule JSON' }; } }
+            if (!rule || !rule.pattern) return { ok: false, error: 'route rule requires a pattern' };
+            var r = {
+                id: ++routeCounter,
+                pattern: String(rule.pattern),
+                match_type: rule.match_type || 'substring',
+                method: rule.method || null,
+                action: rule.action || 'fulfill',
+                status: typeof rule.status === 'number' ? rule.status : 200,
+                status_text: rule.status_text || '',
+                headers: rule.headers || {},
+                body: (rule.body === undefined || rule.body === null) ? '' : rule.body,
+                content_type: rule.content_type || 'application/json',
+                delay_ms: typeof rule.delay_ms === 'number' ? rule.delay_ms : 0,
+                times: typeof rule.times === 'number' ? rule.times : 0,
+                triggered: 0,
+            };
+            routeRules.push(r);
+            return { ok: true, id: r.id, rule: r };
+        },
+
+        getRouteRules: function() { return routeRules; },
+
+        clearRoute: function(id) {
+            var before = routeRules.length;
+            routeRules = routeRules.filter(function(r) { return r.id !== id; });
+            return { ok: true, removed: before - routeRules.length };
+        },
+
+        clearRoutes: function() {
+            var n = routeRules.length;
+            routeRules = [];
+            return { ok: true, removed: n };
+        },
+
+        getRouteMatches: function(limit) {
+            return limit ? routeMatchLog.slice(-limit) : routeMatchLog;
         },
 
         // ── Storage ──────────────────────────────────────────────────────────
@@ -1322,6 +1425,25 @@ const INIT_SCRIPT_BODY: &str = r#"
             }
         }
 
+        // Same-origin iframe traversal: descend into accessible frame documents.
+        // Cross-origin frames throw on contentDocument access — mark and skip.
+        if (node.tagName === 'IFRAME' || node.tagName === 'FRAME') {
+            try {
+                var idoc = node.contentDocument;
+                if (idoc && idoc.body) {
+                    var frameChild = walkDom(idoc.body);
+                    if (frameChild) {
+                        frameChild.frame = true;
+                        element.children.push(frameChild);
+                    }
+                } else {
+                    element.attributes['cross_origin_frame'] = 'true';
+                }
+            } catch (e) {
+                element.attributes['cross_origin_frame'] = 'true';
+            }
+        }
+
         return element;
     }
 
@@ -1387,6 +1509,21 @@ const INIT_SCRIPT_BODY: &str = r#"
         if (node.shadowRoot) {
             for (var s = 0; s < node.shadowRoot.children.length; s++) {
                 result += walkDomCompact(node.shadowRoot.children[s], depth + 1);
+            }
+        }
+
+        // Same-origin iframe traversal (see walkDom for rationale).
+        if (node.tagName === 'IFRAME' || node.tagName === 'FRAME') {
+            try {
+                var idoc = node.contentDocument;
+                if (idoc && idoc.body) {
+                    result += indent + '  ⤷ iframe content:\n';
+                    result += walkDomCompact(idoc.body, depth + 2);
+                } else {
+                    result += indent + '  ⤷ [cross-origin iframe]\n';
+                }
+            } catch (e) {
+                result += indent + '  ⤷ [cross-origin iframe]\n';
             }
         }
 
@@ -1590,41 +1727,78 @@ const INIT_SCRIPT_BODY: &str = r#"
                     if (networkLog.length > CAP_NETWORK) networkLog.shift();
                 }
 
-                return origFetch.call(this, input, init).then(function(response) {
-                    entry.status = response.status;
-                    entry.status_text = response.statusText;
-                    entry.duration_ms = Date.now() - entry.timestamp;
-
-                    if (isIpc) {
-                        if (window.__VICTAURI__._captureIpcBodies !== false) {
-                            var cloned = response.clone();
-                            cloned.text().then(function(text) {
-                                try { entry.response_body = JSON.parse(text); } catch(e) { entry.response_body = text; }
-                            }).catch(function() {}).then(function() {
-                                for (var w = ipcWaiters.length - 1; w >= 0; w--) {
-                                    ipcWaiters[w]();
-                                }
-                                ipcWaiters.length = 0;
-                            });
-                        } else {
-                            for (var w = ipcWaiters.length - 1; w >= 0; w--) {
-                                ipcWaiters[w]();
-                            }
-                            ipcWaiters.length = 0;
-                        }
-                    }
-
-                    return response;
-                }, function(err) {
-                    entry.status = 'error';
-                    entry.error = String(err);
-                    entry.duration_ms = Date.now() - entry.timestamp;
-                    for (var w = ipcWaiters.length - 1; w >= 0; w--) {
-                        ipcWaiters[w]();
-                    }
+                var self = this;
+                function flushIpcWaiters() {
+                    for (var w = ipcWaiters.length - 1; w >= 0; w--) { ipcWaiters[w](); }
                     ipcWaiters.length = 0;
-                    throw err;
-                });
+                }
+
+                // Phase 1: apply a matching route rule (block / fulfill / delay).
+                var route = matchRoute(url, method);
+                if (route) {
+                    recordRouteMatch(route, url, method);
+                    if (route.action === 'block') {
+                        entry.status = 'blocked';
+                        entry.blocked = true;
+                        entry.duration_ms = Date.now() - entry.timestamp;
+                        if (isIpc) flushIpcWaiters();
+                        return Promise.reject(new TypeError('victauri: request blocked by route #' + route.id + ' (' + url + ')'));
+                    }
+                    if (route.action === 'fulfill') {
+                        var makeResp = function() {
+                            var bodyStr = (typeof route.body === 'string') ? route.body : JSON.stringify(route.body);
+                            var hdrs = { 'content-type': route.content_type };
+                            for (var k in route.headers) { if (Object.prototype.hasOwnProperty.call(route.headers, k)) hdrs[k] = route.headers[k]; }
+                            entry.status = route.status;
+                            entry.status_text = route.status_text;
+                            entry.mocked = true;
+                            entry.duration_ms = Date.now() - entry.timestamp;
+                            if (isIpc) {
+                                try { entry.response_body = JSON.parse(bodyStr); } catch (e) { entry.response_body = bodyStr; }
+                                flushIpcWaiters();
+                            }
+                            return new Response(bodyStr, { status: route.status, statusText: route.status_text, headers: hdrs });
+                        };
+                        return route.delay_ms > 0
+                            ? new Promise(function(res) { setTimeout(function() { res(makeResp()); }, route.delay_ms); })
+                            : Promise.resolve(makeResp());
+                    }
+                    if (route.action === 'delay' && route.delay_ms > 0) {
+                        return new Promise(function(resolve, reject) {
+                            setTimeout(function() { doRealFetch().then(resolve, reject); }, route.delay_ms);
+                        });
+                    }
+                }
+                return doRealFetch();
+
+                function doRealFetch() {
+                    return origFetch.call(self, input, init).then(function(response) {
+                        entry.status = response.status;
+                        entry.status_text = response.statusText;
+                        entry.duration_ms = Date.now() - entry.timestamp;
+
+                        if (isIpc) {
+                            if (window.__VICTAURI__._captureIpcBodies !== false) {
+                                var cloned = response.clone();
+                                cloned.text().then(function(text) {
+                                    try { entry.response_body = JSON.parse(text); } catch(e) { entry.response_body = text; }
+                                }).catch(function() {}).then(function() {
+                                    flushIpcWaiters();
+                                });
+                            } else {
+                                flushIpcWaiters();
+                            }
+                        }
+
+                        return response;
+                    }, function(err) {
+                        entry.status = 'error';
+                        entry.error = String(err);
+                        entry.duration_ms = Date.now() - entry.timestamp;
+                        flushIpcWaiters();
+                        throw err;
+                    });
+                }
             };
         }
 
@@ -1663,6 +1837,29 @@ const INIT_SCRIPT_BODY: &str = r#"
                     entry.status = 'error';
                     entry.duration_ms = Date.now() - entry.timestamp;
                 });
+
+                // Phase 1 routing for XHR: block + delay are supported here.
+                // `fulfill` (synthetic response) is fetch-only — faking the full
+                // XHR response surface is unreliable; document as a limitation.
+                var xroute = matchRoute(this.__victauri_net.url, this.__victauri_net.method);
+                if (xroute) {
+                    recordRouteMatch(xroute, this.__victauri_net.url, this.__victauri_net.method);
+                    if (xroute.action === 'block') {
+                        entry.status = 'blocked';
+                        entry.blocked = true;
+                        entry.duration_ms = Date.now() - entry.timestamp;
+                        var blockedXhr = this;
+                        setTimeout(function() {
+                            try { blockedXhr.dispatchEvent(new Event('error')); } catch (e) {}
+                        }, 0);
+                        return; // do not send
+                    }
+                    if ((xroute.action === 'delay' || xroute.action === 'fulfill') && xroute.delay_ms > 0) {
+                        var dArgs = arguments, dSelf = this;
+                        setTimeout(function() { origSend.apply(dSelf, dArgs); }, xroute.delay_ms);
+                        return;
+                    }
+                }
             }
             return origSend.apply(this, arguments);
         };

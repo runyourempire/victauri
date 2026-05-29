@@ -139,6 +139,11 @@ pub struct InteractParams {
     pub x: Option<f64>,
     /// Vertical scroll position (pixels). Used with `scroll_into_view` when `ref_id` is null.
     pub y: Option<f64>,
+    /// If true, deliver a real OS mouse click (`isTrusted: true`) at the
+    /// element's center instead of a synthetic DOM click (for `click`). Falls
+    /// back with an error on platforms without native-input support. Currently
+    /// implemented on Windows.
+    pub trusted: Option<bool>,
     /// Target webview label.
     pub webview_label: Option<String>,
 }
@@ -180,6 +185,11 @@ pub struct InputParams {
     pub text: Option<String>,
     /// Key to press (for `press_key` action, e.g. "Enter", "Escape", "Tab", "`ArrowDown`").
     pub key: Option<String>,
+    /// If true, deliver real OS keyboard input (`isTrusted: true`) instead of
+    /// synthetic DOM events — for `type_text`/`press_key`. The target element is
+    /// focused first (via `ref_id`). Falls back with an error on platforms
+    /// without native-input support. Currently implemented on Windows.
+    pub trusted: Option<bool>,
     /// Target webview label.
     pub webview_label: Option<String>,
 }
@@ -540,6 +550,167 @@ pub struct CssParams {
     /// CSS text to inject (for inject action).
     pub css: Option<String>,
     /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+// ── route (network interception) ──────────────────────────────────────────
+
+/// Action for the compound `route` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteAction {
+    /// Add a network route rule.
+    Add,
+    /// List active route rules.
+    List,
+    /// Remove a route rule by id.
+    Clear,
+    /// Remove all route rules.
+    ClearAll,
+    /// Return the log of intercepted requests.
+    Matches,
+}
+
+impl fmt::Display for RouteAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Add => f.write_str("add"),
+            Self::List => f.write_str("list"),
+            Self::Clear => f.write_str("clear"),
+            Self::ClearAll => f.write_str("clear_all"),
+            Self::Matches => f.write_str("matches"),
+        }
+    }
+}
+
+/// How a route rule's pattern is matched against the request URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteMatchType {
+    /// URL contains the pattern (default).
+    Substring,
+    /// Glob with `*` wildcards.
+    Glob,
+    /// JavaScript regular expression.
+    Regex,
+    /// Exact URL match.
+    Exact,
+}
+
+impl RouteMatchType {
+    /// Bridge string for this match type.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Substring => "substring",
+            Self::Glob => "glob",
+            Self::Regex => "regex",
+            Self::Exact => "exact",
+        }
+    }
+}
+
+/// What a matched route rule does to the request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteBehavior {
+    /// Abort the request (the app sees a network failure).
+    Block,
+    /// Return a synthetic mock response (fetch only; XHR falls back to delay).
+    Fulfill,
+    /// Let the request proceed, but after `delay_ms` (latency injection).
+    Delay,
+}
+
+impl RouteBehavior {
+    /// Bridge string for this behavior.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::Fulfill => "fulfill",
+            Self::Delay => "delay",
+        }
+    }
+}
+
+/// Parameters for the compound `route` tool (network interception / mock / block / delay).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RouteParams {
+    /// Action: add, list, clear, `clear_all`, matches.
+    pub action: RouteAction,
+    /// URL pattern to match (for add). Interpreted per `match_type`.
+    pub pattern: Option<String>,
+    /// How `pattern` is matched: substring (default), glob, regex, exact.
+    pub match_type: Option<RouteMatchType>,
+    /// Restrict to a single HTTP method (for add, optional).
+    pub method: Option<String>,
+    /// What the rule does: block, fulfill, delay (for add). Defaults to fulfill.
+    pub behavior: Option<RouteBehavior>,
+    /// Mock response status code (for fulfill). Default 200.
+    pub status: Option<u16>,
+    /// Mock response status text (for fulfill).
+    pub status_text: Option<String>,
+    /// Mock response headers as a JSON object (for fulfill).
+    pub headers: Option<serde_json::Value>,
+    /// Mock response body (for fulfill). Strings sent as-is; other JSON is serialized.
+    pub body: Option<serde_json::Value>,
+    /// Mock response content-type (for fulfill). Default "application/json".
+    pub content_type: Option<String>,
+    /// Delay in milliseconds (for delay, or to delay a fulfill).
+    pub delay_ms: Option<u64>,
+    /// Maximum times this rule fires (for add). 0 or omitted = unlimited.
+    pub times: Option<u64>,
+    /// Route rule id (for clear).
+    pub id: Option<u64>,
+    /// Maximum match-log entries to return (for matches).
+    pub limit: Option<usize>,
+    /// Target webview label.
+    pub webview_label: Option<String>,
+}
+
+// ── trace (screencast) ──────────────────────────────────────────────────────
+
+/// Action for the compound `trace` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceAction {
+    /// Start capturing screenshots at a fixed interval.
+    Start,
+    /// Stop capturing and return a summary.
+    Stop,
+    /// Report whether a trace is active and how many frames are buffered.
+    Status,
+    /// Return captured frames (base64 PNGs).
+    Frames,
+}
+
+impl fmt::Display for TraceAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Start => f.write_str("start"),
+            Self::Stop => f.write_str("stop"),
+            Self::Status => f.write_str("status"),
+            Self::Frames => f.write_str("frames"),
+        }
+    }
+}
+
+/// Parameters for the compound `trace` tool (screencast / visual timeline).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TraceParams {
+    /// Action: start, stop, status, frames.
+    pub action: TraceAction,
+    /// Capture interval in milliseconds (for start). Default 500, min 50.
+    pub interval_ms: Option<u64>,
+    /// Maximum frames to retain in the ring buffer (for start). Default 60, max 600.
+    pub max_frames: Option<usize>,
+    /// If true (for start), also start the event recorder so the trace bundles
+    /// the IPC/DOM/console event timeline alongside the screencast.
+    pub with_events: Option<bool>,
+    /// Maximum frames to return (for frames). 0 or omitted returns all buffered.
+    pub limit: Option<usize>,
+    /// Target webview label to capture.
     pub webview_label: Option<String>,
 }
 

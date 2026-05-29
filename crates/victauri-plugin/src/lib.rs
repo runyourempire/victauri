@@ -49,8 +49,10 @@ pub mod mcp;
 mod memory;
 /// Privacy controls: command allowlists, blocklists, and tool disabling.
 pub mod privacy;
+
 /// Output redaction for API keys, tokens, emails, and sensitive JSON keys.
 pub mod redaction;
+pub mod screencast;
 pub(crate) mod screenshot;
 mod tools;
 
@@ -157,6 +159,8 @@ pub struct VictauriState {
     pub bridge_ready: AtomicBool,
     /// Notifies waiters when the JS bridge ready signal arrives.
     pub bridge_notify: tokio::sync::Notify,
+    /// Screencast state for the `trace` tool (background frame capture buffer).
+    pub screencast: Arc<screencast::Screencast>,
     /// Extra absolute directories searched by `query_db` / `introspect db_health`
     /// in addition to the OS app directories. Lets Victauri reach databases an
     /// app stores outside the Tauri app-data dir (e.g. a project or working
@@ -679,6 +683,7 @@ impl VictauriBuilder {
                         task_tracker: introspection::TaskTracker::new(),
                         bridge_ready: AtomicBool::new(false),
                         bridge_notify: tokio::sync::Notify::new(),
+                        screencast: Arc::new(screencast::Screencast::default()),
                         db_search_paths,
                     });
                     state.startup_timeline.mark("state_created");

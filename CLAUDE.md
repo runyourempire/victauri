@@ -198,6 +198,19 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
+## Current State (2026-05-30)
+
+### Webview Playwright-parity build-out — no CDP (2026-05-30, branch `feat/webview-parity`)
+
+Strategic decision: pursue webview parity WITHOUT CDP (pure JS-bridge + thin OS-native shims). CDP only exists on WebView2 (1 of 3 Tauri webviews) so it can't deliver the cross-platform uniformity that is Victauri's differentiator; CDP-only features (coverage/throttle) matter least for app testing. Each phase verified live. **33 MCP tools** now (added `route`, `trace`).
+
+- **Phase 1 — `route` tool (network interception).** Playwright `route()` equivalent in the JS bridge: match fetch/XHR by URL (substring/glob/regex/exact + method), then `block`/`fulfill` (mock status/headers/body)/`delay`. `times` cap, `matches` log, page-scoped rules. Fetch: all behaviors; XHR: block/delay (fulfill is fetch-only). Not intercepted: top-level navigation, sub-resources, WebSocket. For IPC-layer faults use `fault`.
+- **Phase 2 — trusted (OS-level) input.** `input`/`interact` accept `trusted: true` → real OS events (`isTrusted: true`) via Win32 `SendInput` (Unicode keys, named keys, DPI-aware absolute clicks). New `WebviewBridge::native_type_text`/`native_key`/`native_click` with macOS/Linux honest "not implemented" stubs (fall back to synthetic). Verified Windows: keydown/click `isTrusted === true`. Cookie-set: non-httpOnly via `eval_js` `document.cookie`; httpOnly platform-store deferred.
+- **Phase 3 — same-origin iframe traversal.** `dom_snapshot`/`find_elements`/`interact`/`input` descend into same-origin frames (cross-origin marked + skipped). Actionability is frame-aware (occlusion/viewport checks run against the element's own document/window).
+- **Phase 4 — `trace` tool (screencast).** Background window capture into a ring buffer (`interval_ms`/`max_frames`) via the native screenshot path; `with_events` also drives the recorder. `stop` summary + `frames` (base64 PNGs). Pairs with `recording`+`logs` for a trace bundle. New `screencast` module.
+
+Remaining frontier (documented non-goals without CDP): cross-origin frames, top-level-navigation/sub-resource/WebSocket interception, JS/CSS coverage, CPU throttling, httpOnly cookie-set, native input on macOS/Linux (trait ready, impls pending platform verification).
+
 ## Current State (2026-05-29)
 
 ### Exhaustive 4DA HEAD test + correctness fixes (2026-05-29)
