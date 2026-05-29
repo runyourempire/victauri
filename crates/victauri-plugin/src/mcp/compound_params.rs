@@ -659,6 +659,51 @@ pub struct RouteParams {
     pub webview_label: Option<String>,
 }
 
+// ── trace (screencast) ──────────────────────────────────────────────────────
+
+/// Action for the compound `trace` tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceAction {
+    /// Start capturing screenshots at a fixed interval.
+    Start,
+    /// Stop capturing and return a summary.
+    Stop,
+    /// Report whether a trace is active and how many frames are buffered.
+    Status,
+    /// Return captured frames (base64 PNGs).
+    Frames,
+}
+
+impl fmt::Display for TraceAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Start => f.write_str("start"),
+            Self::Stop => f.write_str("stop"),
+            Self::Status => f.write_str("status"),
+            Self::Frames => f.write_str("frames"),
+        }
+    }
+}
+
+/// Parameters for the compound `trace` tool (screencast / visual timeline).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TraceParams {
+    /// Action: start, stop, status, frames.
+    pub action: TraceAction,
+    /// Capture interval in milliseconds (for start). Default 500, min 50.
+    pub interval_ms: Option<u64>,
+    /// Maximum frames to retain in the ring buffer (for start). Default 60, max 600.
+    pub max_frames: Option<usize>,
+    /// If true (for start), also start the event recorder so the trace bundles
+    /// the IPC/DOM/console event timeline alongside the screencast.
+    pub with_events: Option<bool>,
+    /// Maximum frames to return (for frames). 0 or omitted returns all buffered.
+    pub limit: Option<usize>,
+    /// Target webview label to capture.
+    pub webview_label: Option<String>,
+}
+
 // ── logs ────────────────────────────────────────────────────────────────────
 
 /// Action for the compound `logs` tool.

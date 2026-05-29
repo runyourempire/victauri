@@ -738,6 +738,7 @@ async fn mcp_tool_count_is_correct() {
         "inspect",
         "css",
         "route",
+        "trace",
         "logs",
     ];
 
@@ -1047,6 +1048,7 @@ async fn state_port_reflected_in_info() {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     });
 
     let bridge: Arc<dyn WebviewBridge> = Arc::new(SimpleMockBridge::new(&["main"]));
@@ -1119,6 +1121,7 @@ fn builder_custom_port_reflected_in_state() {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     });
 
     assert_eq!(state.port.load(std::sync::atomic::Ordering::Relaxed), 8888);
@@ -1386,6 +1389,7 @@ fn privacy_state(config: PrivacyConfig) -> Arc<VictauriState> {
         bridge_ready: std::sync::atomic::AtomicBool::new(true),
         bridge_notify: tokio::sync::Notify::new(),
         db_search_paths: Vec::new(),
+        screencast: std::sync::Arc::new(victauri_plugin::screencast::Screencast::default()),
     })
 }
 

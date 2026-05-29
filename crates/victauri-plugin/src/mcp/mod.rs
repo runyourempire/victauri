@@ -1913,6 +1913,110 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
+        description = "Screencast / visual trace (no CDP). Captures the window at a fixed interval \
+            into a ring buffer, forming a visual timeline that pairs with `recording` (events) and \
+            `logs` (network/console). Actions:\n\
+            - `start`: begin capturing (`interval_ms` default 500, `max_frames` default 60). Set \
+              `with_events=true` to also start the event recorder.\n\
+            - `stop`: stop and return a summary (frame count, duration, timestamps).\n\
+            - `status`: active flag + buffered frame count.\n\
+            - `frames`: return captured frames as base64 PNGs (`limit` caps how many).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn trace(&self, Parameters(params): Parameters<TraceParams>) -> CallToolResult {
+        self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("trace")
+            || !self.state.privacy.is_tool_enabled("screenshot")
+        {
+            return tool_disabled("trace");
+        }
+        match params.action {
+            TraceAction::Start => {
+                let interval = params.interval_ms.unwrap_or(500);
+                let max_frames = params.max_frames.unwrap_or(60);
+                let label = params.webview_label.clone();
+                let generation = self
+                    .state
+                    .screencast
+                    .start(interval, max_frames, label.clone());
+
+                let mut events_started = false;
+                if params.with_events.unwrap_or(false) {
+                    let session_id = uuid::Uuid::new_v4().to_string();
+                    if self.state.recorder.start(session_id).is_ok() {
+                        events_started = true;
+                    }
+                }
+
+                // Background capture task: snapshot the window each interval until
+                // the screencast is stopped (or superseded by a newer start).
+                let bridge = self.bridge.clone();
+                let screencast = self.state.screencast.clone();
+                tokio::spawn(async move {
+                    let t0 = std::time::Instant::now();
+                    while screencast.is_active() && screencast.generation() == generation {
+                        if let Ok(handle) = bridge.get_native_handle(label.as_deref())
+                            && let Ok(png) = crate::screenshot::capture_window(handle).await
+                        {
+                            use base64::Engine;
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+                            #[allow(clippy::cast_possible_truncation)]
+                            screencast.push_frame(t0.elapsed().as_millis() as u64, b64);
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            screencast.interval_ms(),
+                        ))
+                        .await;
+                    }
+                });
+
+                json_result(&serde_json::json!({
+                    "started": true,
+                    "interval_ms": interval.max(50),
+                    "max_frames": max_frames.clamp(1, 600),
+                    "with_events": events_started,
+                }))
+            }
+            TraceAction::Stop => {
+                let frame_count = self.state.screencast.stop();
+                let timestamps = self.state.screencast.frame_timestamps();
+                let duration_ms = timestamps.last().copied().unwrap_or(0);
+                let event_count = self.state.recorder.event_count();
+                json_result(&serde_json::json!({
+                    "stopped": true,
+                    "frame_count": frame_count,
+                    "duration_ms": duration_ms,
+                    "frame_timestamps_ms": timestamps,
+                    "recorded_event_count": event_count,
+                    "hint": "use action=frames to retrieve PNGs; pair with recording/get_events and logs for a full bundle",
+                }))
+            }
+            TraceAction::Status => json_result(&serde_json::json!({
+                "active": self.state.screencast.is_active(),
+                "frame_count": self.state.screencast.frame_count(),
+                "interval_ms": self.state.screencast.interval_ms(),
+            })),
+            TraceAction::Frames => {
+                let limit = params.limit.unwrap_or(0);
+                let frames = self.state.screencast.frames(limit);
+                let items: Vec<Content> = frames
+                    .into_iter()
+                    .map(|f| Content::image(f.data_b64, "image/png"))
+                    .collect();
+                if items.is_empty() {
+                    return json_result(&serde_json::json!({ "frames": 0 }));
+                }
+                CallToolResult::success(items)
+            }
+        }
+    }
+
+    #[tool(
         description = "Application logs and monitoring. Actions: console (captured console.log/warn/error), network (intercepted fetch/XHR), ipc (IPC call log — set wait_for_capture=true to await response capture up to 500ms), navigation (URL change history), dialogs (alert/confirm/prompt events), events (combined event stream), slow_ipc (find slow IPC calls).",
         annotations(
             read_only_hint = true,
@@ -2915,6 +3019,10 @@ impl VictauriMcpHandler {
             "route" => {
                 let p: RouteParams = Self::parse_args(args)?;
                 self.route(Parameters(p)).await
+            }
+            "trace" => {
+                let p: TraceParams = Self::parse_args(args)?;
+                self.trace(Parameters(p)).await
             }
             "logs" => {
                 let p: LogsParams = Self::parse_args(args)?;
