@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-30
+
 ### Fixed
 
 - **CRITICAL: `eval_js` silently returned wrong values for multi-statement code.** The auto-return heuristic prepended `return` to any code not starting with a statement keyword, so a statement block like `foo(); return bar()` was rewritten to `return foo(); return bar()` — executing only the first statement and silently discarding the rest (typically returning `undefined`). This affected the extremely common "do X, then return Y" pattern (`localStorage.setItem(...); return localStorage.getItem(...)`, `window.scrollTo(...); return window.scrollY`, etc.). The heuristic is now string/comment/template-aware and only prepends `return` to a single bare expression; multi-statement code and code with an explicit `return` are used as-is.

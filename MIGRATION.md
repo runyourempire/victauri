@@ -1,6 +1,6 @@
 # Migration Guide
 
-## Unreleased (post-0.5.6)
+## v0.5.6 → v0.6.0
 
 ### Behavior change: `eval_js` multi-statement code
 
