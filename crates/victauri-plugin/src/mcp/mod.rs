@@ -4027,6 +4027,83 @@ fn should_prepend_return(code: &str) -> bool {
 }
 
 #[cfg(test)]
+mod prop_tests {
+    //! Property-based tests for the eval auto-return heuristic — the code that
+    //! caused the worst bug in the system (silent corruption of multi-statement
+    //! eval) and has bitten twice. These generate many JS-ish snippets and
+    //! assert the invariants that keep eval correct.
+    use super::should_prepend_return;
+    use proptest::prelude::*;
+
+    /// A small set of non-keyword identifier-ish expressions.
+    fn ident() -> impl Strategy<Value = String> {
+        prop_oneof![
+            Just("a".to_string()),
+            Just("x".to_string()),
+            Just("foo".to_string()),
+            Just("window.x".to_string()),
+            Just("document.title".to_string()),
+            Just("obj.prop".to_string()),
+            Just("arr[0]".to_string()),
+            Just("localStorage".to_string()),
+        ]
+    }
+
+    /// A single bare expression: never starts with a statement keyword, has no
+    /// top-level `;`, and contains no `return`.
+    fn bare_expr() -> impl Strategy<Value = String> {
+        prop_oneof![
+            ident(),
+            (ident(), ident()).prop_map(|(a, b)| format!("{a} + {b}")),
+            (ident(), ident()).prop_map(|(a, b)| format!("{a}({b})")),
+            ident().prop_map(|a| format!("{a}.length")),
+            any::<u16>().prop_map(|n| n.to_string()),
+        ]
+    }
+
+    proptest! {
+        /// Must never panic or hang on ANY input — including malformed code,
+        /// unbalanced quotes, and arbitrary unicode (the scanner indexes bytes).
+        #[test]
+        fn never_panics_on_arbitrary_input(s in ".{0,256}") {
+            let _ = should_prepend_return(&s);
+        }
+
+        /// A single bare expression is safe to wrap with `return` → true.
+        #[test]
+        fn bare_expressions_are_prepended(e in bare_expr()) {
+            prop_assert!(should_prepend_return(&e), "bare expr not prepended: {e:?}");
+        }
+
+        /// THE critical bug class: `<expr>; return <expr>` must NOT be prepended
+        /// (else `return <expr>;` runs and the rest is silently discarded).
+        #[test]
+        fn semicolon_multistatement_with_return_never_prepended(
+            setup in bare_expr(), ret in bare_expr()
+        ) {
+            let code = format!("{setup}; return {ret}");
+            prop_assert!(!should_prepend_return(&code), "would corrupt: {code:?}");
+        }
+
+        /// Newline-separated (ASI) explicit return must also be left as-is.
+        #[test]
+        fn newline_explicit_return_never_prepended(pre in bare_expr(), ret in bare_expr()) {
+            let code = format!("{pre}\nreturn {ret}");
+            prop_assert!(!should_prepend_return(&code), "explicit return prepended: {code:?}");
+        }
+
+        /// `;` or the word `return` INSIDE a string literal must not trigger a
+        /// false multi-statement split — a bare string is one expression.
+        #[test]
+        fn semicolons_and_return_inside_strings_are_ignored(inner in "[a-z0-9;= ]{0,24}") {
+            // `inner` never contains a quote, so the literal is well-formed.
+            let code = format!("'do;not;split return {inner}'");
+            prop_assert!(should_prepend_return(&code), "string literal mis-split: {code:?}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

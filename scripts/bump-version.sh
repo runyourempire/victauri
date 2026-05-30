@@ -65,6 +65,16 @@ replace_in_file() {
 # 1. Cargo.toml
 replace_in_file "Cargo.toml" "version = \"$OLD_VERSION\"" "version = \"$NEW_VERSION\"" "Cargo.toml workspace version"
 
+# 1b. Cargo.toml [workspace.dependencies] inter-crate pins. These can lag behind
+# the workspace version (they did on 0.6.0 and 0.7.0, breaking `cargo update`),
+# so set them structurally to the new version regardless of their current value.
+if [[ "$DRY_RUN" == true ]]; then
+    echo "  WOULD update Cargo.toml [workspace.dependencies] victauri-* pins"
+else
+    sed -i -E "s|(victauri-(core|macros|plugin|test) = \{ version = \")[^\"]+(\")|\1$NEW_VERSION\3|g" "$ROOT/Cargo.toml"
+    echo "  OK    Cargo.toml [workspace.dependencies] victauri-* pins"
+fi
+
 # 2-3. Extension manifests
 replace_in_file "extensions/chrome/manifest.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "Chrome manifest"
 replace_in_file "extensions/firefox/manifest.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "Firefox manifest"

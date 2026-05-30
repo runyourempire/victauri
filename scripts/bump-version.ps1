@@ -92,6 +92,23 @@ function Update-File {
 # 1. Cargo.toml workspace version
 Update-File "Cargo.toml" "version = `"$OldVersion`"" "version = `"$NewVersion`"" "Cargo.toml workspace version"
 
+# 1b. Cargo.toml [workspace.dependencies] inter-crate pins.
+# Update-File matches an exact old version, but these pins can lag behind the
+# workspace version (they did on 0.6.0 and 0.7.0, breaking `cargo update`). Set
+# them structurally to the new version regardless of their current value.
+$cargoToml = Join-Path $root "Cargo.toml"
+$pinPattern = '(victauri-(?:core|macros|plugin|test)\s*=\s*\{\s*version\s*=\s*")[^"]+(")'
+$cargoContent = Get-Content $cargoToml -Raw
+if ($cargoContent -match $pinPattern) {
+    if ($DryRun) {
+        Write-Host "  WOULD Cargo.toml [workspace.dependencies] victauri-* pins" -ForegroundColor DarkGray
+    } else {
+        $cargoContent = [regex]::Replace($cargoContent, $pinPattern, "`${1}$NewVersion`${2}")
+        Set-Content $cargoToml $cargoContent -NoNewline
+        Write-Host "  OK    Cargo.toml [workspace.dependencies] victauri-* pins" -ForegroundColor Green
+    }
+}
+
 # 2. Chrome extension manifest
 Update-File "extensions\chrome\manifest.json" "`"version`": `"$OldVersion`"" "`"version`": `"$NewVersion`"" "Chrome extension manifest"
 

@@ -25,10 +25,12 @@ Browse files in app backend directories (data, config, log, local_data).
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `dir_type` | string | no | One of: `data`, `config`, `log`, `local_data` (default: `data`) |
-| `subpath` | string | no | Subdirectory to list within the chosen directory |
+| `directory` | string | no | One of: `data`, `config`, `log`, `local_data` (default: `data`) |
+| `path` | string | no | Subdirectory to list within the chosen directory |
+| `pattern` | string | no | Glob to filter entries (e.g. `*.db`) |
+| `max_depth` | number | no | Recursion depth (default: 1) |
 
-**Returns:** `{path, entries: [{name, size, is_dir, modified}]}`
+**Returns:** `{root, entries: [{name, path, is_dir, size, modified}]}`
 
 ---
 
@@ -40,9 +42,11 @@ Read a file from one of the app's backend directories.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `path` | string | yes | File path relative to the directory root |
-| `dir_type` | string | no | One of: `data`, `config`, `log`, `local_data` (default: `data`) |
+| `directory` | string | no | One of: `data`, `config`, `log`, `local_data` (default: `data`) |
+| `max_bytes` | number | no | Max bytes to read (default: 1 MB) |
+| `binary` | boolean | no | Return base64 instead of UTF-8 text |
 
-**Returns:** `{content, encoding, size}` — UTF-8 text or base64-encoded binary.
+**Returns:** UTF-8 text, or base64-encoded bytes when `binary` is true. Path-traversal-guarded.
 
 ---
 
