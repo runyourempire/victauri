@@ -110,6 +110,10 @@ pub struct VictauriMcpHandler {
     subscriptions: Arc<Mutex<HashSet<String>>>,
     bridge_checked: Arc<AtomicBool>,
     probed_labels: Arc<Mutex<HashSet<String>>>,
+    /// Window keys whose previous eval timed out. The next eval on such a window
+    /// does a fast liveness probe so a reloaded/crashed bridge fails fast with a
+    /// clear error instead of blocking the full timeout again.
+    timed_out_labels: Arc<Mutex<HashSet<String>>>,
 }
 
 #[tool_router]
@@ -2979,6 +2983,7 @@ impl VictauriMcpHandler {
             subscriptions: Arc::new(Mutex::new(HashSet::new())),
             bridge_checked: Arc::new(AtomicBool::new(false)),
             probed_labels: Arc::new(Mutex::new(HashSet::new())),
+            timed_out_labels: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -3315,13 +3320,31 @@ impl VictauriMcpHandler {
             }
         }
 
+        // Reserved sentinel key for the default (unlabeled) window — cannot
+        // collide with a real label.
+        let label_key =
+            webview_label.map_or_else(|| "\u{1}__default__".to_string(), str::to_string);
+
+        // Proactively probe explicitly-targeted windows once (cached), so a
+        // hidden/unready window fails fast rather than after the full timeout.
         if webview_label.is_some() {
-            let label_key = webview_label.unwrap_or_default().to_string();
             let already_probed = self.probed_labels.lock().await.contains(&label_key);
             if !already_probed {
                 self.probe_bridge(webview_label).await?;
-                self.probed_labels.lock().await.insert(label_key);
+                self.probed_labels.lock().await.insert(label_key.clone());
             }
+        }
+
+        // Resilience: if the PREVIOUS eval on this window timed out, the bridge
+        // may have gone away (the webview reloaded or the app crashed). Do a
+        // fast liveness probe so this call fails in ~2s with a clear error
+        // instead of blocking the full timeout again. If the bridge is alive
+        // (the earlier timeout was slow code / an infinite loop), the probe
+        // succeeds quickly and we proceed normally.
+        if self.timed_out_labels.lock().await.remove(&label_key) {
+            self.probe_bridge(webview_label).await.map_err(|e| {
+                format!("{e} (previous eval on this window timed out; the webview may have reloaded or the app stopped responding)")
+            })?;
         }
 
         let id = uuid::Uuid::new_v4().to_string();
@@ -3392,11 +3415,18 @@ impl VictauriMcpHandler {
             Ok(Err(_)) => Err("eval callback channel closed".to_string()),
             Err(_) => {
                 self.state.pending_evals.lock().await.remove(&id);
+                // Mark this window so the NEXT eval does a fast liveness probe —
+                // if the bridge is gone (reloaded/crashed) the next call fails in
+                // ~2s instead of blocking the full timeout again.
+                self.timed_out_labels.lock().await.insert(label_key.clone());
                 Err(format!(
                     "eval timed out after {}s — the code never resolved. Common causes: a \
                      JavaScript syntax error in the injected code (parse errors cannot be \
                      reported by the webview and surface only as this timeout), an unresolved \
-                     promise, or an infinite loop. Verify the code parses and resolves.",
+                     promise, an infinite loop, or the webview reloaded / the app stopped \
+                     responding mid-eval. Verify the code parses and resolves; if the app may \
+                     have navigated or crashed, retry (the next call fails fast if the bridge \
+                     is gone).",
                     timeout.as_secs()
                 ))
             }

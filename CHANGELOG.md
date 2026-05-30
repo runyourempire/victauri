@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Resilience: `eval_js` fails fast when the webview reloads or the app stops responding.** Previously, if the bridge went away mid-session (e.g. an SPA navigation, a Tauri app's startup-recovery re-navigation, or an app crash), every subsequent eval blocked the full timeout (up to 30s) and returned an unclear result. Now, when an eval times out, the next eval on that window does a fast liveness probe (~2s) and fails immediately with a clear "the webview may have reloaded or the app stopped responding" message if the bridge is gone. Harmless when the bridge is alive — the re-probe succeeds in milliseconds (verified: a normal eval 70ms after a 30s timeout). The timeout message also now names the reload/crash case as a possible cause.
+
 ## [0.7.0] - 2026-05-30
 
 ### Added — Webview parity (Playwright-grade, no CDP)
