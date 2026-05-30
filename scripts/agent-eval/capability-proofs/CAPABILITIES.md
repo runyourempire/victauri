@@ -71,8 +71,20 @@ list registered Tauri commands** — you can't discover what you can't already n
 
 **Proves (deterministic):** Victauri, running in-process, reads the real database
 (including tables no UI/IPC exposes) and enumerates the backend command surface —
-capabilities a browser-attached tool (CDP/Playwright) cannot have, by construction.
-This is the unfakeable moat.
+through a single MCP tool call, with no setup, on any platform.
+
+**Adversarial caveat (tested, be honest):** the *browser* layer (`eval_js`/CDP) is
+blind to the DB — but the real opponent is **Playwright-the-Node-test-runner**, a
+full OS process. It CAN read the file directly: `sqlite3 file:.../4da.db?mode=ro`
+returned the identical rows (`active_topics=3323`, `accuracy_history` W21 125610 /
+0.174) in ~18 ms. So this is **not** "impossible elsewhere." The defensible edge is
+the *combination*, not exclusivity: **in-process & live** (the app's real WAL state,
+not a stale/locked out-of-process snapshot), **zero-setup & app-aware** (path
+discovery + read-only + the right DB vs hand-writing per-app Node+sqlite+OS code),
+**one MCP interface over all five layers**, **cross-platform without CDP**, and
+**runtime** registry/timing/contract introspection not derivable from outside
+without lossy static source parsing. Market the integration + liveness + zero-setup,
+never "only we can read it."
 
 **Does NOT prove (needs the rigorous outcome study):** that an agent *debugs better*
 overall with Victauri. That is a stochastic claim requiring real apps, real bugs
