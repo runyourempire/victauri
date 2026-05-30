@@ -1,0 +1,90 @@
+# Agent-Eval Task Corpus
+
+Reproducible debugging scenarios for the A/B agent-eval (see
+`.claude/plans/agent-eval-harness.md`). Target: the **demo-app** running on
+`http://127.0.0.1:7373` (`auth_disabled`). Each task: a **setup** (creates the
+bug state via Victauri's own tools), the **goal** given to the agent, the
+**answer key** (true root cause, for scoring), and **why Agent-B should win**.
+
+Agent-B = full Victauri toolset. Agent-A = browser-only (`eval_js` + `dom_snapshot`
+ONLY — no backend/IPC/DB introspection), simulating CDP/Playwright.
+
+REST helper: `curl -s -X POST http://127.0.0.1:7373/api/tools/<tool> -d '<json>'`
+
+---
+
+## T1 — Cross-boundary divergence (UI lies about backend state)
+- **Setup:** drive the UI a few times, then corrupt only the DOM:
+  `eval_js {"code":"document.querySelector('[data-testid=counter-value]').textContent='99'; return 'set'"}`
+  (backend `get_counter` is unchanged; the UI now disagrees with the backend.)
+- **Goal:** "The counter shows 99 in the UI. Is the displayed value actually consistent
+  with the backend's counter state? If not, explain the discrepancy."
+- **Answer key:** DOM shows 99 but `invoke_command get_counter` returns the real (different)
+  value → frontend/backend divergence; the DOM is stale/wrong, backend is source of truth.
+- **Why B wins:** `verify_state` (frontend_expr vs backend) or `invoke_command get_counter`
+  exposes the mismatch in one call. Agent-A sees only "99" in the DOM and has no way to know
+  the backend disagrees.
+
+## T2 — Ghost command (frontend calls an unregistered command)
+- **Setup:** `eval_js {"code":"window.__TAURI_INTERNALS__.invoke('ghost_secret_cmd',{}).catch(()=>{}); return 'invoked'"}`
+  (a command name the backend doesn't register, now present in the IPC log).
+- **Goal:** "Is the frontend invoking any IPC command that the backend does not actually
+  define/register? Name it."
+- **Answer key:** `ghost_secret_cmd` is invoked by the frontend but is not in the registry.
+- **Why B wins:** `detect_ghost_commands` returns it directly. Agent-A cannot enumerate the
+  backend command registry from the browser.
+
+## T3 — Swallowed IPC error (UI shows nothing, command failed)
+- **Setup:** `fault {"action":"inject","command":"submit_contact","fault_type":"error","error_message":"INJECTED_DB_ERROR"}`
+  then submit the contact form via the UI (fill contact-* fields, click contact-submit).
+- **Goal:** "The contact form submit appears to do nothing. Diagnose what actually happens
+  when the user submits."
+- **Answer key:** `submit_contact` returns an injected error (`INJECTED_DB_ERROR`); the IPC
+  call failed but the UI swallowed it. (`fault list` shows the injected rule.)
+- **Why B wins:** `logs ipc` / `check_ipc_integrity` shows the errored call; `fault list` shows
+  the cause. Agent-A sees an unchanged DOM and cannot inspect the IPC layer.
+- **Cleanup:** `fault {"action":"clear_all"}`
+
+## T4 — Intermittent flake (diagnose a non-deterministic failure)
+- **Setup:** `fault {"action":"inject","command":"increment","fault_type":"error","error_message":"FLAKE","max_triggers":2}`
+- **Goal:** "Increment sometimes works and sometimes doesn't. Diagnose the flakiness and its
+  exact cause."
+- **Answer key:** an injected fault makes `increment` error its first 2 invocations
+  (`max_triggers:2`), then succeed → looks flaky.
+- **Why B wins:** `fault list` shows the rule + trigger count; `logs ipc` shows the errored
+  vs successful calls. Agent-A cannot see the IPC errors or reproduce-on-demand.
+- **Cleanup:** `fault {"action":"clear_all"}`
+
+## T5 — Backend-only state bug (UI looks fine, backend is wrong)
+- **Setup:** change a setting via the UI (theme-select), then have the backend hold a different
+  value. (Repro: `invoke_command update_setting` with one value, then `eval_js` set the
+  select's displayed value to a different one — UI and backend now disagree on the setting.)
+- **Goal:** "The theme setting shows 'dark' in the UI. Confirm what the backend has actually
+  persisted for the theme, and whether they agree."
+- **Answer key:** UI select shows 'dark' but `get_settings` (backend) holds the other value →
+  divergence; backend is the truth.
+- **Why B wins:** `invoke_command get_settings` (or `query_db`) reads backend truth. Agent-A
+  can only read the DOM select.
+
+## T6 — CONTROL: pure-DOM bug (browser-only SHOULD succeed) — fairness check
+- **Setup:** `eval_js {"code":"document.querySelector('[data-testid=reset-btn]').style.pointerEvents='none'; return 'disabled'"}`
+- **Goal:** "The reset button doesn't respond to clicks. Why?"
+- **Answer key:** `reset-btn` has `pointer-events: none` (a CSS/DOM issue).
+- **Why this exists:** the bug is entirely in the DOM/CSS, so Agent-A (browser-only) should
+  diagnose it fine. If Victauri doesn't also win/tie here, the harness is rigged — this keeps
+  the experiment honest.
+- **Cleanup:** `eval_js {"code":"document.querySelector('[data-testid=reset-btn]').style.pointerEvents=''; return 'restored'"}`
+
+---
+
+## Scoring rubric (per agent, per task)
+- `solved` — did it state the TRUE root cause (matches answer key)?
+- `tool_calls` — count.
+- `reverted` — did it ask for CDP/Playwright, give up, or claim it "can't tell"? (headline metric)
+- `wrong_tool` / `confusion` — notes where tool descriptions/returns misled it.
+- For T6, expect A and B to BOTH solve (fairness).
+
+## Expected pattern (the hypothesis being tested)
+T1–T5: Agent-B solves; Agent-A cannot (structurally blind to backend/IPC) → reverts or guesses.
+T6: both solve. If the data shows this, it's direct evidence that full-stack visibility makes
+agents materially better at debugging Tauri apps — the central claim.
