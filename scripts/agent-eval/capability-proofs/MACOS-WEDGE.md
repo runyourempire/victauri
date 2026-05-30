@@ -70,6 +70,16 @@ Screenshot and trusted input are deliberately excluded: they need
 Screen-Recording / Accessibility TCC grants headless CI can't give. The
 same-process introspection that *is* the wedge needs none of that.
 
+**Result: PROVEN GREEN on real Apple hardware** — CI run
+[26690831417](https://github.com/runyourempire/victauri/actions/runs/26690831417)
+(2026-05-30, `macos-latest`, 2m37s). The step runs under `set -euo pipefail` with a
+`fail()` that exits non-zero on any missed assertion, so a green result
+deterministically means: the Tauri app launched on macOS, the embedded MCP server
+came up, and webview-eval (`6*7→42`) + DOM snapshot + IPC→Rust-backend invoke +
+383-style registry enumeration + native `resident_bytes` all succeeded — the four
+layers below the glass, live, on the platform where external automation can't reach
+the webview at all. Re-runs on every push to `main`.
+
 ## The honest one-liner
 
 > On macOS, the blessed Tauri E2E tooling doesn't run, and the new embedded drivers
