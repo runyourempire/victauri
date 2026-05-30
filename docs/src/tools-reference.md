@@ -1,6 +1,6 @@
 # Tools Reference
 
-Victauri exposes 31 MCP tools organized into standalone tools (one action per call) and compound tools (multiple actions via an `action` parameter).
+Victauri exposes 33 MCP tools organized into standalone tools (one action per call) and compound tools (multiple actions via an `action` parameter).
 
 All tools are accessible via MCP at `/mcp` or REST at `POST /api/tools/{tool_name}`.
 
@@ -53,17 +53,25 @@ Execute a read-only SQL query against a SQLite database in the app's data direct
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `sql` | string | yes | SQL query (SELECT only) |
-| `db_path` | string | no | Path to database file (auto-discovers if omitted) |
-| `params` | array | no | Bind parameters for the query |
+| `query` | string | yes | SQL query — `SELECT`/`PRAGMA`(read)/`EXPLAIN`/`WITH` only |
+| `path` | string | no | Path to the database file (auto-discovers if omitted) |
+| `params` | array | no | Positional bind parameters |
+| `max_rows` | number | no | Max rows to return (default 100) |
 
 **Examples:**
 ```json
-{"sql": "SELECT * FROM users WHERE active = ?", "params": [true]}
-{"sql": "SELECT count(*) FROM items", "db_path": "app.db"}
+{"query": "SELECT * FROM users WHERE active = ?", "params": [true]}
+{"query": "SELECT count(*) FROM items", "path": "app.db"}
 ```
 
-**Returns:** `{columns, rows, row_count}`
+**Returns:** `{columns, rows, row_count, truncated, database}`
+
+Read-only and path-traversal-guarded: writes (`INSERT`/`UPDATE`/…), stacked
+queries, `ATTACH`, and the write form of `PRAGMA` (`PRAGMA x = y`) are rejected.
+By default only the OS app-data directories are searched; if your app stores its
+DB elsewhere (a project/working dir or custom path), register the directory via
+`VictauriBuilder::db_search_paths(["../data", "/abs/path"])` — then relative names
+and absolute paths within those roots become reachable.
 
 ---
 
@@ -86,7 +94,18 @@ Evaluate JavaScript in the webview and return the result.
 {"code": "await fetch('/api/data').then(r => r.json())"}
 ```
 
-Bare expressions are auto-wrapped with `return`. Multi-statement code and async/await are supported. JavaScript errors (thrown exceptions, syntax errors) return an MCP error with `isError: true`. `undefined` returns `"undefined"`, `null` returns `null`. Targeting a hidden or unresponsive window fails fast (~2s) with a diagnostic message.
+**Auto-`return`:** a single bare expression is auto-wrapped with `return`
+(`document.title` → `return document.title`). **Multi-statement code must include
+an explicit `return`** — e.g. `localStorage.setItem('k','v'); return localStorage.getItem('k')` —
+or be wrapped in an IIFE; otherwise only the first statement runs. async/await is
+supported.
+
+JavaScript errors (thrown exceptions) return an MCP error with `isError: true`.
+`undefined` returns `"undefined"`, `null` returns `null`. A **syntax error**
+surfaces only as the eval timeout (the webview cannot report parse errors to the
+host). Targeting a hidden or unresponsive window fails fast (~2s); and if a prior
+eval timed out, the next call re-probes and fails fast if the webview reloaded or
+the app stopped responding.
 
 ---
 
@@ -99,13 +118,13 @@ Capture a full accessible DOM tree with ref handles for every element.
 |------|------|----------|-------------|
 | `webview_label` | string | no | Target webview |
 
-**Returns:** Tree of elements with `ref`, `role`, `name`, `children`, and bounding box data.
+**Returns:** Tree of elements with `ref`, `role`, `name`, `children`, and bounding box data. Descends into open shadow DOM and **same-origin iframes** (cross-origin frames are marked and skipped).
 
 ---
 
 ### find_elements
 
-Search for elements by CSS selector or text content. Returns an MCP error for invalid CSS selectors.
+Search for elements by CSS selector or text content. Returns an MCP error for invalid CSS selectors. Searches into open shadow roots and **same-origin iframes** — frame elements get ref handles and are fully interactable.
 
 **Parameters:**
 | Name | Type | Required | Description |
@@ -202,9 +221,10 @@ Wait for a condition to become true, polling until timeout.
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `condition` | string | yes | One of: `selector`, `selector_gone`, `text`, `text_gone`, `url` |
-| `value` | string | yes | The selector, text, or URL pattern to match |
-| `timeout_ms` | number | no | Max wait time in ms (default: 5000) |
+| `condition` | string | yes | One of: `selector`, `selector_gone`, `text`, `text_gone`, `url`, `ipc_idle`, `network_idle` |
+| `value` | string | no | Selector/text/URL to match (not needed for `ipc_idle`/`network_idle`) |
+| `timeout_ms` | number | no | Max wait time in ms (default: 10000) |
+| `poll_ms` | number | no | Poll interval in ms (default: 200) |
 
 **Example:**
 ```json
@@ -292,20 +312,31 @@ Compound tools use an `action` parameter to select the specific operation.
 
 ### interact
 
-Element interactions with actionability checks.
+Element interactions with Playwright-grade actionability checks. Works on
+elements inside same-origin iframes too (refs from a snapshot/find resolve
+across frame boundaries).
 
 | Action | Parameters | Description |
 |--------|-----------|-------------|
 | `click` | `ref_id` | Click an element |
+| `double_click` | `ref_id` | Double-click an element |
 | `hover` | `ref_id` | Hover over an element |
 | `focus` | `ref_id` | Focus an element |
 | `scroll_into_view` | `ref_id` | Scroll element into viewport |
-| `select` | `ref_id`, `value` | Select an option |
+| `select_option` | `ref_id`, `value` or `values` | Select option(s) in a `<select>` |
+
+**Trusted (OS-level) clicks:** add `"trusted": true` to `click` to deliver a
+real OS mouse event (`isTrusted: true`) at the element's center, instead of a
+synthetic DOM event — for app handlers that gate on `event.isTrusted` or browser
+features needing user activation. Implemented on Windows (Win32 `SendInput`);
+on macOS/Linux it returns a clear "not implemented" error so you fall back to the
+default synthetic click. The window is brought to the foreground first.
 
 **Example:**
 ```json
 {"action": "click", "ref_id": "e3"}
-{"action": "hover", "ref_id": "e12"}
+{"action": "click", "ref_id": "e3", "trusted": true}
+{"action": "select_option", "ref_id": "e9", "value": "us"}
 ```
 
 ---
@@ -320,10 +351,17 @@ Text input and keyboard operations.
 | `type` | `ref_id`, `text` | Type character-by-character |
 | `press_key` | `key` | Press a keyboard key |
 
+**Trusted (OS-level) input:** add `"trusted": true` to `type` or `press_key` to
+deliver real OS keystrokes (`isTrusted: true`) into the focused element instead
+of synthetic DOM events. The target element (`ref_id`) is focused first.
+Implemented on Windows (Win32 `SendInput`); macOS/Linux fall back to synthetic
+input with a clear error.
+
 **Example:**
 ```json
 {"action": "fill", "ref_id": "e5", "value": "hello@example.com"}
 {"action": "type", "ref_id": "e5", "text": "Hello"}
+{"action": "type", "ref_id": "e5", "text": "Hello", "trusted": true}
 {"action": "press_key", "key": "Enter"}
 ```
 
@@ -477,6 +515,81 @@ Access all captured logs from the application.
 {"action": "console", "level": "error"}
 {"action": "network"}
 {"action": "slow_ipc", "threshold_ms": 100}
+```
+
+> `ipc`/`network`/`slow_ipc` return at most 100 entries by default and truncate
+> large per-entry bodies (4 KB) — pass an explicit `limit` for more.
+
+---
+
+### route
+
+Network request interception — the Playwright `route()` equivalent, implemented
+purely in the JS bridge (no CDP, works identically across all Tauri webviews).
+Matches webview `fetch`/XHR by URL and blocks, mocks, or delays them. Rules are
+page-scoped (cleared on reload).
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `add` | `pattern`, `behavior`, … | Add a rule (see below) |
+| `list` | — | List active rules |
+| `clear` | `id` | Remove a rule by id |
+| `clear_all` | — | Remove all rules |
+| `matches` | `limit` | Log of intercepted requests |
+
+**`add` parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `pattern` | string | yes | URL pattern to match |
+| `match_type` | string | no | `substring` (default), `glob`, `regex`, `exact` |
+| `method` | string | no | Restrict to one HTTP method |
+| `behavior` | string | no | `block` (abort), `fulfill` (mock — default), `delay` |
+| `status` | number | no | Mock response status (fulfill, default 200) |
+| `headers` | object | no | Mock response headers (fulfill) |
+| `body` | any | no | Mock response body (fulfill) |
+| `content_type` | string | no | Mock content-type (fulfill, default `application/json`) |
+| `delay_ms` | number | no | Latency to inject (delay; also delays a fulfill) |
+| `times` | number | no | Max times the rule fires (0 = unlimited) |
+
+**Example:**
+```json
+{"action": "add", "pattern": "/api/users", "behavior": "fulfill", "status": 200, "body": {"users": []}}
+{"action": "add", "pattern": "analytics", "behavior": "block"}
+{"action": "add", "pattern": "*/slow", "match_type": "glob", "behavior": "delay", "delay_ms": 2000}
+{"action": "matches"}
+```
+
+> **Scope:** fetch supports all behaviors; XHR supports `block`/`delay`
+> (`fulfill` is fetch-only). Top-level navigation, sub-resources (img/css), and
+> WebSocket frames are not intercepted. For Tauri **IPC-layer** faults, use the
+> `fault` tool instead.
+
+---
+
+### trace
+
+Screencast / visual timeline — captures the window at a fixed interval into a
+ring buffer via the native screenshot path (no CDP). Pairs with `recording`
+(events) and `logs` (network/console) to form a Playwright-trace-style bundle.
+
+| Action | Parameters | Description |
+|--------|-----------|-------------|
+| `start` | `interval_ms`, `max_frames`, `with_events` | Begin capturing |
+| `stop` | — | Stop and return a summary |
+| `status` | — | Active flag + buffered frame count |
+| `frames` | `limit` | Return captured frames as base64 PNGs |
+
+`start` defaults: `interval_ms` 500 (min 50), `max_frames` 60 (max 600). Set
+`with_events: true` to also start the event recorder so the trace bundles the
+IPC/DOM/console timeline alongside the screencast.
+
+**Example:**
+```json
+{"action": "start", "interval_ms": 250, "max_frames": 40, "with_events": true}
+{"action": "status"}
+{"action": "stop"}
+{"action": "frames", "limit": 10}
 ```
 
 ---
