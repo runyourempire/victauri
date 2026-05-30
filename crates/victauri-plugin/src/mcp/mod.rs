@@ -456,7 +456,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads from the JS-side IPC interception log.",
+        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads the JS-side IPC interception log, which ACCUMULATES every command seen this session (including earlier test/probe traffic) — so a 'FrontendOnly' result reflects what was invoked at runtime, not necessarily a real frontend bug. For a clean signal, call `logs {action:'clear'}` first, then exercise the app, then run this.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -2225,6 +2225,11 @@ impl VictauriMcpHandler {
                     }})()",
                 );
                 self.eval_bridge(&code, None).await
+            }
+            LogsAction::Clear => {
+                let code = "return (function(){ var b = window.__VICTAURI__; if (!b) return { ok:false, error:'bridge unavailable' }; if (b.clearIpcLog) b.clearIpcLog(); if (b.clearNetworkLog) b.clearNetworkLog(); return { ok:true, cleared:['ipc','network'] }; })()";
+                self.eval_bridge(code, params.webview_label.as_deref())
+                    .await
             }
         }
     }

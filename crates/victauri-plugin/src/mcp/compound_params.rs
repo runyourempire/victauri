@@ -734,6 +734,10 @@ pub enum LogsAction {
     Events,
     /// Find slow IPC calls exceeding a threshold.
     SlowIpc,
+    /// Clear the IPC + network logs (per-test isolation — start a clean window
+    /// before exercising the app so `detect_ghost_commands`/`logs ipc` reflect
+    /// only the current test's traffic, not stale accumulated probe history).
+    Clear,
 }
 
 impl fmt::Display for LogsAction {
@@ -746,6 +750,7 @@ impl fmt::Display for LogsAction {
             Self::Dialogs => f.write_str("dialogs"),
             Self::Events => f.write_str("events"),
             Self::SlowIpc => f.write_str("slow_ipc"),
+            Self::Clear => f.write_str("clear"),
         }
     }
 }
