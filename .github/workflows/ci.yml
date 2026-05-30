@@ -142,6 +142,91 @@ jobs:
           path: /tmp/demo-app.log
           if-no-files-found: ignore
 
+  # The macOS wedge, proven on real Apple hardware. Tauri's own docs: tauri-driver
+  # supports "only Windows and Linux ... due to macOS not having a WKWebView driver
+  # tool available", and WebDriver's scope is the web DOM only (no Rust backend /
+  # IPC / DB). This job launches a real Tauri app on macOS and exercises the
+  # full stack — webview + DOM + IPC→Rust backend + command registry + native —
+  # which no external automation tool can reach on macOS. (Screenshot and trusted
+  # input are intentionally excluded: they need Screen-Recording/Accessibility TCC
+  # grants that headless CI cannot give; the same-process introspection below does
+  # not.)
+  macos-fullstack-proof:
+    name: macOS Full-Stack Proof (no CDP/WebDriver can do this)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+
+      - name: Build demo-app (debug → Victauri plugin active)
+        run: cargo build -p demo-app --bin demo-app
+
+      - name: Prove full-stack introspection live on macOS WKWebView
+        run: |
+          set -euo pipefail
+          # macOS runners have a GUI session — launch the Tauri app directly.
+          ./target/debug/demo-app > /tmp/demo-app.log 2>&1 &
+          APP_PID=$!
+
+          up=false
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:7373/health >/dev/null 2>&1; then
+              echo "MCP server up after ${i}s"; up=true; break
+            fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::demo-app exited before the server came up"; cat /tmp/demo-app.log; exit 1
+            fi
+            sleep 1
+          done
+          [ "$up" = true ] || { echo "::error::MCP server never became reachable"; cat /tmp/demo-app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
+
+          B=http://127.0.0.1:7373/api/tools
+          fail() { echo "::error::$1"; echo '--- demo-app.log ---'; cat /tmp/demo-app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
+          call() { curl -sf -X POST "$B/$1" -H 'content-type: application/json' --data-binary "$2"; }
+
+          echo "================ macOS FULL-STACK PROOF ================"
+          echo "Tauri app running on real macOS (WKWebView). External tools"
+          echo "(tauri-driver/Selenium/CDP/Playwright) cannot attach here at all."
+          echo
+
+          # 1. WEBVIEW — eval JavaScript inside the live WKWebView
+          ev=$(call eval_js '{"code":"return 6*7"}'); echo "[1 webview ] eval 6*7        -> $ev"
+          echo "$ev" | grep -q '42' || fail "eval_js failed on macOS"
+
+          # 2. DOM — accessible snapshot with ref handles
+          dom=$(call dom_snapshot '{}'); echo "[2 dom     ] snapshot bytes      -> ${#dom}"
+          echo "$dom" | grep -q 'ref' || fail "dom_snapshot returned no refs on macOS"
+
+          # 3. IPC → RUST BACKEND — invoke a real command (WebDriver CANNOT do this)
+          ipc=$(call invoke_command '{"command":"get_counter","args":{}}'); echo "[3 ipc->rust] get_counter        -> $ipc"
+          echo "$ipc" | grep -q 'result' || fail "invoke_command (IPC→backend) failed on macOS"
+
+          # 4. BACKEND — enumerate the registered command surface (no web API exists)
+          reg=$(call get_registry '{}'); n=$(echo "$reg" | jq '.result | length'); echo "[4 backend ] registry commands   -> $n"
+          [ "${n:-0}" -ge 1 ] || fail "get_registry empty on macOS"
+
+          # 5. NATIVE — same-process OS introspection
+          mem=$(call get_memory_stats '{}'); echo "[5 native  ] process memory      -> $mem"
+          echo "$mem" | grep -qiE 'bytes|resident|working_set' || fail "get_memory_stats failed on macOS"
+
+          echo
+          echo "PROVEN on macOS: webview + DOM + IPC→Rust backend + registry + native,"
+          echo "through one MCP/REST interface — the four layers below the glass that"
+          echo "no macOS Tauri automation tool can reach."
+          echo "======================================================="
+          kill "$APP_PID" 2>/dev/null || true
+
+      - name: Upload demo-app log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-demo-app-log
+          path: /tmp/demo-app.log
+          if-no-files-found: ignore
+
   docs:
     name: Docs
     runs-on: ubuntu-latest
