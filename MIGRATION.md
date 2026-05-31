@@ -1,8 +1,10 @@
 # Migration Guide
 
-## v0.7.x → v0.8.0
+## v0.7.1 → v0.7.2
 
-Additive release — no breaking API changes. Existing code keeps working unchanged.
+Additive release — no breaking API changes, and it stays within the `^0.7`
+range, so `victauri-* = "0.7"` consumers pick it up with no requirement change.
+Existing code keeps working unchanged.
 
 - **New `animation` MCP tool (34 tools total):** motion introspection via the Web
   Animations API (no CDP) — `list` (running animations + timing/easing/keyframes),
