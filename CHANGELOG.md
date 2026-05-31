@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **demo-app** ships a deliberately-miscalibrated, re-triggerable slide-in (`#sweep-toast`/`#sweep-btn`) as a calibration target; agent-eval corpus gains task **T7** (calibrate the sweep).
 - Verified live against the demo-app: `list` read the broken config exactly; `scrub` returned the overshoot curve (tx 420→473→…→−48) + a 2716×1212 filmstrip; `sample` recorded 145 frames over 1199.8ms with 0 jank.
 
+### Added — Per-window introspectability diagnostic
+
+- **`window introspectability`** action — probes every window's JS bridge and reports which ones Victauri can actually see vs. which are **blind**. A window that returns `introspectable:false` while `visible:true` is almost always missing the `victauri:default` capability: Tauri's per-window permission ACL silently blocks the bridge's callback IPC, so `eval_js`/`dom_snapshot`/`animation`/`find_elements` see nothing with no error. The diagnostic turns that silent dead-end into an actionable, up-front message naming the exact capability file to edit. Required per window (not just `main`) — the common multi-window gotcha. Verified live: flags a capability-stripped window correctly and passes a fully-capable one.
+
 ## [0.7.1] - 2026-05-31
 
 ### Changed

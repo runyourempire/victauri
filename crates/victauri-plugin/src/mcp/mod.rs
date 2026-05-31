@@ -1322,7 +1322,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Window management. Actions: get_state (window positions/sizes/visibility), list (all window labels), manage (minimize/maximize/close/focus/show/hide/fullscreen/always_on_top), resize, move_to, set_title.",
+        description = "Window management. Actions: get_state (window positions/sizes/visibility), list (all window labels), manage (minimize/maximize/close/focus/show/hide/fullscreen/always_on_top), resize, move_to, set_title, introspectability (probe every window and report which Victauri can actually see — a visible window that comes back introspectable:false is almost always missing the \"victauri:default\" capability; run this FIRST when eval_js/dom_snapshot/animation return nothing for a multi-window app).",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1350,6 +1350,7 @@ impl VictauriMcpHandler {
                 let labels = self.bridge.list_window_labels();
                 json_result(&labels)
             }
+            WindowAction::Introspectability => self.window_introspectability().await,
             WindowAction::Manage => {
                 if !self.state.privacy.is_tool_enabled("window.manage") {
                     return tool_disabled("window.manage");
@@ -3446,6 +3447,60 @@ impl VictauriMcpHandler {
             return name.starts_with(prefix);
         }
         name == pattern
+    }
+
+    /// Probe every window's JS bridge and report which are introspectable. A
+    /// visible window that fails to respond almost always lacks the
+    /// `victauri:default` capability — Tauri's permission ACL silently blocks
+    /// the bridge's callback IPC, so eval/dom/animation tools see nothing. This
+    /// turns that silent dead-end into an actionable, up-front diagnosis.
+    async fn window_introspectability(&self) -> CallToolResult {
+        let labels = self.bridge.list_window_labels();
+        let states = self.bridge.get_window_states(None);
+        let mut report = Vec::with_capacity(labels.len());
+        let mut blind = 0usize;
+        for label in &labels {
+            let visible = states.iter().find(|s| &s.label == label).map(|s| s.visible);
+            let introspectable = self.probe_bridge(Some(label)).await.is_ok();
+            if !introspectable {
+                blind += 1;
+            }
+            let note = if introspectable {
+                "ok — Victauri JS bridge is responding".to_string()
+            } else if visible == Some(true) {
+                format!(
+                    "NOT introspectable although the window is visible — almost certainly missing \
+                     the Victauri capability. Add \"victauri:default\" to the capability file \
+                     (src-tauri/capabilities/*.json) whose \"windows\" list includes \"{label}\", \
+                     then rebuild. Capabilities are baked at compile time, so a rebuild is required."
+                )
+            } else {
+                "NOT introspectable (window is hidden and/or has no bridge) — show the window to \
+                 confirm, and ensure its capability includes \"victauri:default\", then rebuild."
+                    .to_string()
+            };
+            report.push(serde_json::json!({
+                "label": label,
+                "visible": visible,
+                "introspectable": introspectable,
+                "note": note,
+            }));
+        }
+        let hint = if blind > 0 {
+            "Windows with introspectable:false have no working Victauri JS bridge — eval_js, \
+             dom_snapshot, animation, find_elements, etc. cannot see them. The usual cause is a \
+             missing \"victauri:default\" capability for that window: Tauri's per-window permission \
+             ACL silently blocks the bridge's callback IPC. This capability is required per window, \
+             not just for the main window. (Note: probing a blind window takes ~2s each.)"
+        } else {
+            "All windows are introspectable."
+        };
+        json_result(&serde_json::json!({
+            "windows": report,
+            "introspectable_count": labels.len().saturating_sub(blind),
+            "blind_count": blind,
+            "hint": hint,
+        }))
     }
 
     async fn eval_bridge(&self, code: &str, webview_label: Option<&str>) -> CallToolResult {

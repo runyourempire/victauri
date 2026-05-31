@@ -212,6 +212,10 @@ pub enum WindowAction {
     MoveTo,
     /// Set a window's title.
     SetTitle,
+    /// Probe every window and report which ones Victauri can actually introspect
+    /// (i.e. have a responding JS bridge) vs. which are blind — usually because
+    /// the window's capability is missing `victauri:default`.
+    Introspectability,
 }
 
 impl fmt::Display for WindowAction {
@@ -223,6 +227,7 @@ impl fmt::Display for WindowAction {
             Self::Resize => f.write_str("resize"),
             Self::MoveTo => f.write_str("move_to"),
             Self::SetTitle => f.write_str("set_title"),
+            Self::Introspectability => f.write_str("introspectability"),
         }
     }
 }

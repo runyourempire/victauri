@@ -233,6 +233,15 @@ verified live against the demo-app's deliberately-broken sweep.
   `animation_scrub`, `animation_sample_arm`/`_read`. demo-app has a re-triggerable broken sweep
   (`#sweep-toast`/`#sweep-btn`); agent-eval corpus has task **T7** (calibrate the sweep).
 
+- **`window introspectability`** (new action, same release) — probes every window's bridge and reports
+  introspectable vs blind. A visible window that comes back `introspectable:false` is almost always
+  missing `victauri:default` in its capability file; the note names the exact file to edit + that a
+  rebuild is needed. Motivated by a real 4DA incident: the notification window had no `victauri:default`,
+  so Victauri (and eval_js) were silently blind to it while CDP — which sits below Tauri's ACL at the
+  WebView2 engine layer — could attach. Victauri is capability-gated because it's a Tauri plugin above
+  the IPC boundary; this diagnostic makes that requirement loud + one-line to fix instead of a silent
+  timeout. Verified live (demo-app): flags a capability-stripped `main` correctly, passes a capable one.
+
   Remaining frontier (honest non-goals): JS/rAF (non-WAAPI) animations aren't seekable (scrub errors
   clearly, suggests sample); catching an event-triggered animation at t=0 needs trigger-then-call timing;
   Wayland real-time pixel capture is full-screen via grim; no mp4/h264 export (filmstrip is the
