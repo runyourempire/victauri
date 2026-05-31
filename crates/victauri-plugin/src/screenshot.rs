@@ -25,7 +25,10 @@ pub async fn capture_window_raw(hwnd: isize) -> anyhow::Result<(Vec<u8>, u32, u3
         SRCCOPY, SelectObject,
     };
     use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PW_CLIENTONLY, PrintWindow};
-    use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, PW_RENDERFULLCONTENT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetClientRect, GetWindowLongPtrW, PW_RENDERFULLCONTENT, WS_EX_LAYERED,
+        WS_EX_NOREDIRECTIONBITMAP,
+    };
 
     /// RAII guard that releases GDI handles on drop, preventing leaks when
     /// early returns (`?`) occur after handle acquisition.
@@ -137,10 +140,54 @@ pub async fn capture_window_raw(hwnd: isize) -> anyhow::Result<(Vec<u8>, u32, u3
                 chunk.swap(0, 2);
             }
 
+            // Fail loudly on the silent-blank failure mode instead of returning a
+            // white/empty PNG that looks like a successful capture. Transparent or
+            // GPU-composited windows (e.g. a Tauri `transparent: true` notification
+            // window) have no GDI redirection surface for PrintWindow/BitBlt to copy,
+            // so the capture comes back uniform. This is the exact wall the
+            // `animation scrub` filmstrip path hits — surface it as an actionable
+            // error pointing at the OS-composite workaround.
+            if let Some(reason) = blank_frame_reason(&pixels) {
+                let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+                let composited = ex_style & (WS_EX_LAYERED.0 | WS_EX_NOREDIRECTIONBITMAP.0) != 0;
+                let hint = if composited {
+                    "the window is layered/composited (WS_EX_LAYERED or \
+                     WS_EX_NOREDIRECTIONBITMAP is set — typical of transparent Tauri \
+                     windows)"
+                } else {
+                    "this is typical of transparent or GPU-composited webview content"
+                };
+                anyhow::bail!(
+                    "window capture returned a {reason} {width}x{height} frame; {hint}. \
+                     GDI capture (PrintWindow/BitBlt) cannot see transparent/composited \
+                     windows — use an OS desktop-composite grab (e.g. ffmpeg gdigrab) \
+                     for this window."
+                );
+            }
+
             Ok((pixels, width as u32, height as u32))
         }
     })
     .await?
+}
+
+/// Detects the silent-blank capture failure: GDI capture of a transparent or
+/// GPU-composited window (no DWM redirection surface) copies an empty buffer and
+/// returns a uniform white or empty frame with no error. Returns
+/// `Some(description)` for such a frame so the caller can fail loudly instead of
+/// handing back a blank image. Only RGB is compared — the alpha byte from
+/// `BI_RGB` 32-bpp capture is undefined.
+#[cfg(windows)]
+fn blank_frame_reason(pixels: &[u8]) -> Option<&'static str> {
+    let first = pixels.chunks_exact(4).next()?;
+    if pixels.chunks_exact(4).any(|p| p[..3] != first[..3]) {
+        return None; // colour variation => real content captured
+    }
+    match (first[0], first[1], first[2]) {
+        (0xFF, 0xFF, 0xFF) => Some("blank white"),
+        (0x00, 0x00, 0x00) => Some("blank (empty)"),
+        _ => None,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -679,5 +726,48 @@ mod tests {
         let png = encode_png(100, 100, &rgba).unwrap();
         assert!(png.len() > 100);
         assert_eq!(&png[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    // Blank-frame detection guards against the silent-white capture of a
+    // transparent/composited window (the exact failure the 4DA notification
+    // window hit). Windows-only because the detector is `#[cfg(windows)]`.
+    #[cfg(windows)]
+    #[test]
+    fn uniform_white_reads_as_blank() {
+        let px = vec![0xFFu8; 4 * 16];
+        assert_eq!(blank_frame_reason(&px), Some("blank white"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn uniform_zero_reads_as_blank() {
+        let px = vec![0x00u8; 4 * 16];
+        assert_eq!(blank_frame_reason(&px), Some("blank (empty)"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn varied_content_is_not_blank() {
+        let mut px = vec![0xFFu8; 4 * 16];
+        px[20] = 0x10; // a single differing colour channel => real content
+        assert_eq!(blank_frame_reason(&px), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn uniform_grey_is_not_blank() {
+        // A genuinely solid mid-grey window must not be flagged.
+        let px = vec![0x80u8; 4 * 16];
+        assert_eq!(blank_frame_reason(&px), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn alpha_noise_ignored_for_white() {
+        // RGB uniform white with varying (undefined) alpha still reads blank.
+        let mut px = vec![0xFFu8; 4 * 4];
+        px[3] = 0x00;
+        px[7] = 0x12;
+        assert_eq!(blank_frame_reason(&px), Some("blank white"));
     }
 }

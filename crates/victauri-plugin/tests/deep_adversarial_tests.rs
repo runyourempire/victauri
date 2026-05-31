@@ -360,6 +360,7 @@ async fn rest_list_tools_returns_all_24() {
         "introspect",
         "fault",
         "explain",
+        "animation",
     ];
     for tool in &expected_tools {
         assert!(
