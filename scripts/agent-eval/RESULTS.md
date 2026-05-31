@@ -25,6 +25,7 @@ self-report (the PoC proved self-report unreliable). Runs: PoC `wf_ba647574`
 | **T4** flake | injected fault: `increment` errors first 2 calls | ✅ found the fault rule via `fault list` (5 calls) — but only because it verified through `invoke_command` (the faulted path) | ❌ for the *injected* fault — **but independently found a REAL async last-write-wins race** in the increment handler (99→16 under the onload invoke-storm), 16 calls | **B won the planted bug; A found a *different real bug*.** |
 | **T5** backend state | (intended divergence; **setup collapsed it** — `change` event re-synced backend) | ✅ honest: "UI & backend agree (both dark) — and the value is in-memory only, no persistence layer." read-only, 13 calls | ⚠️ **REVERTED**: "cannot determine backend-persisted value with browser-only tools." read-only, 8 calls | **B (deep honest answer); A reverted.** |
 | **T6** control (DOM) | `pointer-events:none` | ✅ correct, read-only, 8 calls | ✅ correct, read-only, **4 calls** | **TIE.** Control holds — fair, and A is more efficient. |
+| **T7** miscalibrated sweep animation (added 2026-05-31, post-0.7.2) | dur 1200ms (~4x), end translateX(-48px) not 0, overshoot bezier `cubic-bezier(.5,-.6,.9,1.4)` | ✅ **fully correct** via `animation list`+`scrub` — all 3 defects, exact curve, **+ filmstrip** (3620×1816 PNG, 12 frames). 7 calls (also used an `eval_js` CSS dump) | ✅ **fully correct** via `eval_js` only — hand-rolled `pause()`+`currentTime` scrub + `getKeyframes()`, exact arc incl. overshoot. **6 calls, no filmstrip** | **TIE on diagnosis.** Browser-only is **not blind to animation** — WAAPI (`getAnimations`/pause/`currentTime`) reconstructs it fully. B's *only* exclusive: the native-capture **filmstrip** (JS can't rasterize the webview) — a visualization nicety; A's numeric scrub table was arguably more precise. No efficiency edge (A=6 < B=7). |
 
 **Headline metrics:** `reverted` → **A=1 (T5), B=0**. `mutated_state` (safety) →
 **A mutated on T2/T3/T4; B read-only on T1/T2/T5/T6** (B only mutated on T3/T4, via
@@ -50,6 +51,42 @@ the faulted `invoke_command` path). On the DOM control, A was *cheaper*.
      command timings, contract diffing. These are the genuine moat.
    - **Reliability of conclusion.** B reached correct/honest answers across the
      board; A reverted once (T5) and confabulated once (T2 PoC).
+
+## T7 addendum — the animation tool is convenience, not moat (on Windows) (2026-05-31)
+
+Ran the A/B for the freshly-shipped `animation` tool (the v0.7.2 "spearhead"
+differentiator) against the demo-app's deliberately-miscalibrated sweep.
+**Both arms fully solved it** — same three defects (1200ms duration, −48px end,
+overshoot bezier), same exact curve. The honest takeaway mirrors the backend
+finding:
+
+- **Browser-only is NOT blind to animation.** The Web Animations API
+  (`getAnimations()`, `pause()`, `currentTime` scrubbing, `getKeyframes()`) is
+  standard webview JS, so any `eval_js`-capable tool (CDP/Playwright once
+  attached) reconstructs the full motion curve by hand. Agent-A did it in **6
+  calls** — *fewer* than Agent-B's 7. The `animation` tool does **not** grant a
+  monopoly on motion introspection, exactly as `__TAURI_INTERNALS__.invoke`
+  doesn't on the backend.
+- **B's only genuine exclusive: the native-capture filmstrip.** JS cannot
+  rasterize the native webview, so Agent-A literally could not produce the
+  contact-sheet image. But it's a *visualization* nicety — Agent-A's numeric
+  scrub table was arguably more precise for quantifying the arc. Not a
+  diagnostic capability gap.
+- **No efficiency win demonstrated** for a strong model. The tool packages
+  pause-seek-curve into one call, but a capable agent hand-rolls the same about
+  as cheaply. The tool's real value is **reliability under friction / for weaker
+  agents**, and the filmstrip for humans — not raw capability over browser-only.
+
+**Implication:** even the headline animation feature reinforces the refined
+thesis rather than the naive one. On **Windows (where a CDP-class tool can
+attach)**, Victauri's edge on animation is ergonomics + the filmstrip, not
+capability. The capability moat stays: (a) **read-only safety**, (b) the
+**no-`eval_js`-equivalent** tools (`query_db`, registry enumeration, IPC
+history, timings, contracts), and (c) **cross-platform reach** — on macOS
+WKWebView / Linux WebKitGTK, CDP can't attach *at all*, so Victauri's `eval_js`
+(and thus the same WAAPI animation diagnosis) is available where the browser-only
+competitor has *nothing*. That cross-platform case — not the Windows animation
+demo — is the decisive proof, and it's still unrun.
 
 ## Where Victauri falls short (verified — the point of the exercise)
 
