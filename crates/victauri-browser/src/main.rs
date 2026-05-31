@@ -31,12 +31,20 @@ async fn main() -> anyhow::Result<()> {
             let path = installer::install(&binary, extension_id)?;
             println!("Native messaging host registered at: {path}");
             println!("Extension ID: {extension_id}");
-            println!("\nAdd to your .mcp.json:");
+            println!(
+                "\nThe server requires a Bearer token (auth is on by default). Set a fixed token:"
+            );
+            println!("  export VICTAURI_BROWSER_AUTH_TOKEN=<your-secret>");
+            println!(
+                "(otherwise a random token is generated each run and printed to the log at startup)."
+            );
+            println!("\nAdd to your .mcp.json (replace <token>):");
             println!(
                 r#"{{
   "mcpServers": {{
     "victauri-browser": {{
-      "url": "http://127.0.0.1:{DEFAULT_PORT}/mcp"
+      "url": "http://127.0.0.1:{DEFAULT_PORT}/mcp",
+      "headers": {{ "Authorization": "Bearer <token>" }}
     }}
   }}
 }}"#
