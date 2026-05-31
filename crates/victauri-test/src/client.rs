@@ -536,6 +536,70 @@ impl VictauriClient {
             .await
     }
 
+    /// List running CSS animations/transitions (timing, easing, keyframes,
+    /// target). Pass `selector` to scope, or `None` for all running animations.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn animation_list(&mut self, selector: Option<&str>) -> Result<Value, TestError> {
+        let mut args = json!({ "action": "list" });
+        if let Some(s) = selector {
+            args["selector"] = json!(s);
+        }
+        self.call_tool("animation", args).await
+    }
+
+    /// Deterministically scrub the target's animation to `points` evenly-spaced
+    /// steps, returning the geometry curve (and a filmstrip when `capture`).
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn animation_scrub(
+        &mut self,
+        selector: Option<&str>,
+        points: usize,
+        capture: bool,
+    ) -> Result<Value, TestError> {
+        let mut args = json!({ "action": "scrub", "points": points, "capture": capture });
+        if let Some(s) = selector {
+            args["selector"] = json!(s);
+        }
+        self.call_tool("animation", args).await
+    }
+
+    /// Arm the real-time motion recorder. Trigger the animation, then call
+    /// [`VictauriClient::animation_sample_read`] to read the measured curve.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn animation_sample_arm(
+        &mut self,
+        selector: Option<&str>,
+    ) -> Result<Value, TestError> {
+        let mut args = json!({ "action": "sample", "record": true });
+        if let Some(s) = selector {
+            args["selector"] = json!(s);
+        }
+        self.call_tool("animation", args).await
+    }
+
+    /// Read back recorded motion sessions (per-frame curve + jank stats). Pass
+    /// `clear` to reset sessions afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Returns errors from [`VictauriClient::call_tool`].
+    pub async fn animation_sample_read(&mut self, clear: bool) -> Result<Value, TestError> {
+        self.call_tool(
+            "animation",
+            json!({ "action": "sample", "record": false, "clear": clear }),
+        )
+        .await
+    }
+
     /// Click an element by ref handle ID.
     ///
     /// # Errors

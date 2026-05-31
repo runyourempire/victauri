@@ -2107,6 +2107,189 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
+        description = "Animation introspection (no CDP). Reads the Web Animations API to reveal what \
+            the webview's animation engine is actually running — duration, delay, easing, iterations, \
+            keyframes, current progress, and the animating element. Standard DOM, so it works \
+            identically on WebView2/WKWebView/WebKitGTK. Actions:\n\
+            - `list`: return all running CSS animations/transitions (optionally scoped by `selector`), \
+              each with declared `timing`, `computed` progress, `keyframes`, and `target`.\n\
+            - `scrub`: deterministically pause the target's animation and seek it to `points` \
+              evenly-spaced steps (default 20), returning the exact geometry curve (rect + transform \
+              + opacity per step). With `capture=true`, also returns a single contact-sheet filmstrip \
+              PNG (one image of the whole arc) plus a `manifest` mapping each cell to its progress/time. \
+              Frozen frames are jank-free, so this beats real-time capture for fast sweeps. CSS-driven \
+              animations only (JS/rAF animations are not seekable — use `list`/`sample`).\n\
+            - `sample`: real-time motion recorder. `record=true` arms a requestAnimationFrame watcher \
+              on `selector` (or the first animating element); then trigger the animation; then call \
+              with `record=false` to read the measured per-frame curve plus jank stats (dropped frames, \
+              max frame gap) and declared-vs-measured duration. Works for ANY animation including \
+              JS/rAF-driven ones. `clear=true` resets recorded sessions.\n\
+            NOTE: an animation only appears while it is running or pending — trigger it (e.g. show the \
+            notification) just before calling `list`/`scrub`, or arm `sample` before triggering.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn animation(&self, Parameters(params): Parameters<AnimationParams>) -> CallToolResult {
+        self.track_tool_call();
+        if !self.state.privacy.is_tool_enabled("animation") {
+            return tool_disabled("animation");
+        }
+        match params.action {
+            AnimationAction::List => {
+                let sel = params
+                    .selector
+                    .as_deref()
+                    .map_or_else(|| "null".to_string(), js_string);
+                let code = format!(
+                    "return window.__VICTAURI__ && window.__VICTAURI__.listAnimations({sel})"
+                );
+                match self
+                    .eval_with_return(&code, params.webview_label.as_deref())
+                    .await
+                {
+                    Ok(result_str) => {
+                        match serde_json::from_str::<serde_json::Value>(&result_str) {
+                            Ok(v) => json_result(&v),
+                            Err(_) => CallToolResult::success(vec![Content::text(result_str)]),
+                        }
+                    }
+                    Err(e) => tool_error(format!("animation list failed: {e}")),
+                }
+            }
+            AnimationAction::Scrub => self.animation_scrub(params).await,
+            AnimationAction::Sample => {
+                let label = params.webview_label.as_deref();
+                let sel = params
+                    .selector
+                    .as_deref()
+                    .map_or_else(|| "null".to_string(), js_string);
+                let code = if params.record.unwrap_or(false) {
+                    format!("return window.__VICTAURI__.installSweepRecorder({sel})")
+                } else {
+                    let clear = params.clear.unwrap_or(false);
+                    format!("return window.__VICTAURI__.readSweep({clear})")
+                };
+                match self.eval_with_return(&code, label).await {
+                    Ok(result_str) => {
+                        match serde_json::from_str::<serde_json::Value>(&result_str) {
+                            Ok(v) => json_result(&v),
+                            Err(_) => CallToolResult::success(vec![Content::text(result_str)]),
+                        }
+                    }
+                    Err(e) => tool_error(format!("animation sample failed: {e}")),
+                }
+            }
+        }
+    }
+
+    /// Deterministic pause-seek-capture loop for `animation scrub`. Split out to
+    /// keep the `#[tool]` method readable.
+    async fn animation_scrub(&self, params: AnimationParams) -> CallToolResult {
+        let label = params.webview_label.as_deref();
+        let sel = params
+            .selector
+            .as_deref()
+            .map_or_else(|| "null".to_string(), js_string);
+
+        // 1. Prepare: pause the target's animations, learn the timeline length.
+        let prep_code = format!("return await window.__VICTAURI__.scrubPrepare({sel})");
+        let prep_v = match self.eval_with_return(&prep_code, label).await {
+            Ok(s) => {
+                serde_json::from_str::<serde_json::Value>(&s).unwrap_or(serde_json::Value::Null)
+            }
+            Err(e) => return tool_error(format!("scrub prepare failed: {e}")),
+        };
+        if prep_v.get("prepared").and_then(serde_json::Value::as_bool) != Some(true) {
+            // Surface the helpful error/info object (no target, JS-driven, etc.).
+            return json_result(&prep_v);
+        }
+
+        let points = params.points.unwrap_or(20).clamp(2, 120);
+        let capture = params.capture.unwrap_or(false);
+        let mut curve: Vec<serde_json::Value> = Vec::with_capacity(points);
+        let mut frames: Vec<crate::filmstrip::Frame> = Vec::new();
+        let mut manifest: Vec<serde_json::Value> = Vec::new();
+
+        // 2. Seek to each evenly-spaced point; capture the frozen frame if asked.
+        for i in 0..points {
+            #[allow(clippy::cast_precision_loss)]
+            let progress = i as f64 / (points - 1) as f64;
+            let seek_code = format!("return await window.__VICTAURI__.scrubSeek({progress})");
+            match self.eval_with_return(&seek_code, label).await {
+                Ok(s) => {
+                    let v = serde_json::from_str::<serde_json::Value>(&s)
+                        .unwrap_or(serde_json::Value::Null);
+                    if capture
+                        && let Ok(handle) = self.bridge.get_native_handle(label)
+                        && let Ok((rgba, w, h)) =
+                            crate::screenshot::capture_window_raw(handle).await
+                        && let Some(frame) = crate::filmstrip::Frame::new(rgba, w, h)
+                    {
+                        manifest.push(serde_json::json!({
+                            "cell": frames.len(),
+                            "progress": progress,
+                            "t": v.get("t").cloned().unwrap_or(serde_json::Value::Null),
+                        }));
+                        frames.push(frame);
+                    }
+                    curve.push(v);
+                }
+                Err(e) => curve.push(serde_json::json!({ "progress": progress, "error": e })),
+            }
+        }
+
+        // 3. Restore (resume) or leave paused.
+        let resume = params.restore.unwrap_or(true);
+        let restore_code = format!("return window.__VICTAURI__.scrubRestore({resume})");
+        let _ = self.eval_with_return(&restore_code, label).await;
+
+        let mut meta = serde_json::json!({
+            "scrubbed": true,
+            "points": points,
+            "duration_ms": prep_v.get("duration").cloned().unwrap_or(serde_json::Value::Null),
+            "anim_count": prep_v.get("anim_count").cloned().unwrap_or(serde_json::Value::Null),
+            "target": prep_v.get("target").cloned().unwrap_or(serde_json::Value::Null),
+            "captured": capture,
+            "curve": curve,
+        });
+
+        // 4. Compose the filmstrip if we captured frames.
+        if capture && !frames.is_empty() {
+            let cols = params
+                .cols
+                .unwrap_or_else(|| crate::filmstrip::default_cols(frames.len()));
+            if let Some((rgba, w, h)) =
+                crate::filmstrip::compose(&frames, cols, 4, [20, 20, 20, 255])
+            {
+                match crate::screenshot::encode_png(w, h, &rgba) {
+                    Ok(png) => {
+                        use base64::Engine;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+                        meta["filmstrip"] = serde_json::json!({
+                            "cols": cols,
+                            "frame_count": frames.len(),
+                            "width": w,
+                            "height": h,
+                            "manifest": manifest,
+                        });
+                        return CallToolResult::success(vec![
+                            Content::image(b64, "image/png"),
+                            Content::text(meta.to_string()),
+                        ]);
+                    }
+                    Err(e) => return tool_error(format!("filmstrip encode failed: {e}")),
+                }
+            }
+        }
+
+        json_result(&meta)
+    }
+
+    #[tool(
         description = "Application logs and monitoring. Actions: console (captured console.log/warn/error), network (intercepted fetch/XHR), ipc (IPC call log — set wait_for_capture=true to await response capture up to 500ms), navigation (URL change history), dialogs (alert/confirm/prompt events), events (combined event stream), slow_ipc (find slow IPC calls).",
         annotations(
             read_only_hint = true,
@@ -3122,6 +3305,10 @@ impl VictauriMcpHandler {
             "trace" => {
                 let p: TraceParams = Self::parse_args(args)?;
                 self.trace(Parameters(p)).await
+            }
+            "animation" => {
+                let p: AnimationParams = Self::parse_args(args)?;
+                self.animation(Parameters(p)).await
             }
             "logs" => {
                 let p: LogsParams = Self::parse_args(args)?;

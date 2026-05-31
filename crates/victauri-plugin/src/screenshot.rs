@@ -1,6 +1,23 @@
+//! Native window capture. `capture_window_raw` returns straight RGBA bytes plus
+//! dimensions; `capture_window` wraps that into a PNG. The raw form feeds the
+//! `filmstrip` compositor used by the animation `scrub` tool. Raw capture is
+//! available on Windows, macOS, and Linux/X11; the Linux/Wayland fallback can
+//! only produce a full-screen PNG (via `grim`), so `capture_window_raw` errors
+//! there.
+
+/// Capture a window as a PNG (RGBA, 8-bit). Wraps [`capture_window_raw`] except
+/// on Linux, where the Wayland fallback yields a PNG directly.
+#[cfg(windows)]
+#[allow(dead_code)]
+pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
+    let (rgba, w, h) = capture_window_raw(hwnd).await?;
+    tokio::task::spawn_blocking(move || encode_png(w, h, &rgba)).await?
+}
+
+/// Capture a window as straight RGBA bytes + (width, height).
 #[cfg(windows)]
 #[allow(dead_code, unsafe_code)]
-pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
+pub async fn capture_window_raw(hwnd: isize) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
@@ -120,15 +137,22 @@ pub async fn capture_window(hwnd: isize) -> anyhow::Result<Vec<u8>> {
                 chunk.swap(0, 2);
             }
 
-            encode_png(width as u32, height as u32, &pixels)
+            Ok((pixels, width as u32, height as u32))
         }
     })
     .await?
 }
 
 #[cfg(target_os = "macos")]
-#[allow(dead_code, unsafe_code)]
+#[allow(dead_code)]
 pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
+    let (rgba, w, h) = capture_window_raw(window_id).await?;
+    tokio::task::spawn_blocking(move || encode_png(w, h, &rgba)).await?
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code, unsafe_code)]
+pub async fn capture_window_raw(window_id: isize) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     tokio::task::spawn_blocking(move || unsafe {
         // CoreGraphics FFI types and functions
         #[allow(non_camel_case_types)]
@@ -313,7 +337,7 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
             }
         }
 
-        encode_png(width as u32, height as u32, &rgba_pixels)
+        Ok((rgba_pixels, width as u32, height as u32))
     })
     .await?
 }
@@ -322,8 +346,10 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
 #[allow(dead_code)]
 pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
     // Try X11 first (works on X11 and XWayland)
-    match capture_window_x11(window_id).await {
-        Ok(png) => return Ok(png),
+    match capture_window_x11_raw(window_id).await {
+        Ok((rgba, w, h)) => {
+            return tokio::task::spawn_blocking(move || encode_png(w, h, &rgba)).await?;
+        }
         Err(x11_err) => {
             tracing::debug!("X11 screenshot failed, trying Wayland fallback: {x11_err}");
         }
@@ -333,8 +359,21 @@ pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
     capture_window_wayland().await
 }
 
+/// Raw RGBA capture (X11 only). The Wayland fallback cannot produce raw bytes,
+/// so callers needing raw (e.g. the filmstrip compositor) get an error there.
 #[cfg(target_os = "linux")]
-async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
+#[allow(dead_code)]
+pub async fn capture_window_raw(window_id: isize) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+    capture_window_x11_raw(window_id).await.map_err(|e| {
+        anyhow::anyhow!(
+            "raw window capture requires X11 ({e}); not available on pure Wayland — \
+             use animation scrub without capture to get the geometry curve only"
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn capture_window_x11_raw(window_id: isize) -> anyhow::Result<(Vec<u8>, u32, u32)> {
     use x11rb::protocol::xproto::{ConnectionExt, ImageFormat};
 
     tokio::task::spawn_blocking(move || {
@@ -385,7 +424,7 @@ async fn capture_window_x11(window_id: isize) -> anyhow::Result<Vec<u8>> {
             anyhow::bail!("unsupported X11 depth: {depth} (expected 24 or 32)");
         };
 
-        encode_png(width, height, &rgba)
+        Ok((rgba, width, height))
     })
     .await?
 }
@@ -428,6 +467,12 @@ pub async fn capture_window(_window_id: isize) -> anyhow::Result<Vec<u8>> {
     anyhow::bail!("screenshot capture not yet implemented for this platform")
 }
 
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+#[allow(dead_code)]
+pub async fn capture_window_raw(_window_id: isize) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+    anyhow::bail!("raw window capture not yet implemented for this platform")
+}
+
 const PNG_SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 const PNG_BIT_DEPTH: u8 = 8;
 const PNG_COLOR_TYPE_RGBA: u8 = 6;
@@ -439,7 +484,7 @@ const CRC32_POLYNOMIAL: u32 = 0xEDB8_8320;
 const ADLER32_MOD: u32 = 65521;
 
 #[allow(dead_code)]
-fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> anyhow::Result<Vec<u8>> {
     use std::io::Write;
 
     let mut out = Vec::with_capacity(

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Animation-debugging suite (motion introspection, no CDP)
+
+- **New `animation` compound tool (34th MCP tool)** — gives an agent quantitative, deterministic, cross-platform access to the webview's animation engine via the Web Animations API. Works identically on WebView2/WKWebView/WebKitGTK with no CDP. Motion was the last blind spot in agent perception (screenshots are frozen instants); this closes it.
+  - **`list`** — `getAnimations()` introspection: declared timing (duration/delay/easing/iterations), computed progress, keyframes, play state, and the animating target element. (An animation only appears while running/pending — trigger it first.)
+  - **`scrub`** — deterministically pauses the target's animation and seeks it to N evenly-spaced points (`await animation.ready` + double-rAF freezes each frame), returning the exact geometry curve (rect + transform + opacity per point). With `capture=true`, also returns a single contact-sheet **filmstrip PNG** of the whole arc plus a manifest mapping cells to progress/time. Frozen frames are jank-free, so it beats real-time capture for fast animations. CSS-driven animations only (JS/rAF animations are not seekable — errors clearly and suggests `sample`).
+  - **`sample`** — real-time `requestAnimationFrame` motion recorder, decoupled from the blocking eval so event-triggered sweeps are catchable: `record=true` arms a watcher, trigger the animation, then `record=false` reads the measured per-frame curve, jank stats (dropped frames, max frame gap), and declared-vs-measured duration. Works for any animation including JS/rAF-driven ones.
+- **`filmstrip` module** — composes raw RGBA frames into one grid PNG (pure Rust). `screenshot.rs` refactored to expose `capture_window_raw` (raw RGBA + dims) on Windows/macOS/Linux-X11; Wayland (grim, PNG-only) returns a clear error for raw capture.
+- **`VictauriClient` methods** `animation_list`, `animation_scrub`, `animation_sample_arm`/`_read`.
+- **demo-app** ships a deliberately-miscalibrated, re-triggerable slide-in (`#sweep-toast`/`#sweep-btn`) as a calibration target; agent-eval corpus gains task **T7** (calibrate the sweep).
+- Verified live against the demo-app: `list` read the broken config exactly; `scrub` returned the overshoot curve (tx 420→473→…→−48) + a 2716×1212 filmstrip; `sample` recorded 145 frames over 1199.8ms with 0 jank.
+
 ## [0.7.1] - 2026-05-31
 
 ### Changed

@@ -198,6 +198,46 @@ Standalone binary. Monitors the MCP server health endpoint.
 - [x] Accessibility auditing (WCAG checks: alt text, labels, contrast, ARIA, headings)
 - [x] Performance profiling (navigation timing, resource loading, JS heap, long tasks, DOM stats)
 
+## Current State (2026-05-31)
+
+### Animation-debugging suite — motion introspection, no CDP (2026-05-31, branch `feat/animation-introspection`)
+
+Motion was the last blind spot in agent perception: agents get frozen screenshots and cannot perceive
+time-based behaviour. New compound `animation` tool gives an agent quantitative, deterministic,
+cross-platform access to the webview's animation engine via the Web Animations API — works identically
+on WebView2/WKWebView/WebKitGTK, **no CDP**. **34 MCP tools** now (added `animation`). All three actions
+verified live against the demo-app's deliberately-broken sweep.
+
+- **`animation list`** — reads `getAnimations()`: declared `timing` (duration/delay/easing/iterations),
+  `computed` progress, `keyframes`, `play_state`, and the animating `target`. Answers "what is the engine
+  actually running" in one call. An animation only appears while running/pending, so trigger it first.
+- **`animation scrub`** (the differentiator) — pauses the target's WAAPI animation and seeks it to N
+  evenly-spaced points (`scrubPrepare`/`scrubSeek`/`scrubRestore` bridge methods; `await animation.ready`
+  + double-rAF freezes each frame). Returns the exact geometry curve (rect + transform tx/ty/sx + opacity
+  per point); with `capture=true` also returns a single contact-sheet **filmstrip PNG** (one image of the
+  whole arc) + a `manifest` mapping cells to progress/time. Frozen frames are jank-free, so the slow
+  native screenshot has nothing to race — this beats real-time capture for fast sweeps. CSS-driven
+  animations only (JS/rAF animations are not seekable — documented honestly; use `list`/`sample`).
+- **`animation sample`** — real-time rAF motion recorder, decoupled from the blocking eval so
+  event-triggered sweeps are catchable: `record=true` arms a watcher, trigger the animation, then
+  `record=false` reads the measured per-frame curve + jank stats (dropped frames, max frame gap) and
+  declared-vs-measured duration. Works for ANY animation including JS/rAF-driven.
+- **Filmstrip compositor** (`filmstrip.rs`) — composes raw RGBA frames into one grid PNG (pure Rust,
+  7 unit tests). `screenshot.rs` refactored to expose `capture_window_raw` (raw RGBA + dims) on
+  Windows/macOS/Linux-X11; Wayland (grim PNG-only) returns a clear error for raw capture.
+- **Verified live (demo-app, 2026-05-31):** `list` read the broken config exactly (sweepBroken, 1200ms,
+  translateX(420px)→translateX(-48px), overshoot bezier). `scrub` (6 pts, capture) returned the curve
+  tx 420→473(backward overshoot)→…→−48 (48px past target) + a 2716×1212 filmstrip. `sample` recorded 145
+  frames over measured 1199.8ms, 0 jank, 9.3ms max gap. PrintWindow+PW_RENDERFULLCONTENT captured the
+  GPU-composited webview frames correctly. New `VictauriClient` methods: `animation_list`,
+  `animation_scrub`, `animation_sample_arm`/`_read`. demo-app has a re-triggerable broken sweep
+  (`#sweep-toast`/`#sweep-btn`); agent-eval corpus has task **T7** (calibrate the sweep).
+
+  Remaining frontier (honest non-goals): JS/rAF (non-WAAPI) animations aren't seekable (scrub errors
+  clearly, suggests sample); catching an event-triggered animation at t=0 needs trigger-then-call timing;
+  Wayland real-time pixel capture is full-screen via grim; no mp4/h264 export (filmstrip is the
+  agent-friendly output). NOT yet released — version bump + crates.io publish pending.
+
 ## Current State (2026-05-30)
 
 ### Webview Playwright-parity build-out — no CDP (2026-05-30, branch `feat/webview-parity`)
