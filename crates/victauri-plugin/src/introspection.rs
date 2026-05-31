@@ -187,11 +187,25 @@ pub struct FaultConfig {
     pub created_at: Instant,
 }
 
+/// Faults auto-expire this long after creation, so a forgotten fault cannot
+/// silently sabotage or mask a later test run (audit #34). Re-inject to refresh.
+pub const FAULT_TTL: Duration = Duration::from_secs(900); // 15 minutes
+
 impl FaultConfig {
-    /// Check if this fault should still trigger (based on `max_triggers`).
+    /// Whether this fault should still trigger, evaluated at `now`. A fault is
+    /// inert once it is older than [`FAULT_TTL`] or has hit `max_triggers`.
+    #[must_use]
+    pub fn should_trigger_at(&self, now: Instant) -> bool {
+        if now.saturating_duration_since(self.created_at) >= FAULT_TTL {
+            return false;
+        }
+        self.max_triggers == 0 || self.trigger_count < self.max_triggers
+    }
+
+    /// Check if this fault should still trigger right now.
     #[must_use]
     pub fn should_trigger(&self) -> bool {
-        self.max_triggers == 0 || self.trigger_count < self.max_triggers
+        self.should_trigger_at(Instant::now())
     }
 }
 
@@ -1203,6 +1217,22 @@ mod tests {
         for _ in 0..100 {
             assert!(registry.check_and_trigger("always_fail").is_some());
         }
+    }
+
+    #[test]
+    fn fault_expires_after_ttl() {
+        let cfg = FaultConfig {
+            command: "x".to_string(),
+            fault_type: FaultType::Error {
+                message: "e".to_string(),
+            },
+            trigger_count: 0,
+            max_triggers: 0, // unlimited by count...
+            created_at: Instant::now(),
+        };
+        // ...but still inert once older than the TTL (audit #34).
+        assert!(cfg.should_trigger_at(cfg.created_at));
+        assert!(!cfg.should_trigger_at(cfg.created_at + FAULT_TTL + Duration::from_secs(1)));
     }
 
     #[test]

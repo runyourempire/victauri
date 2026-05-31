@@ -194,6 +194,7 @@ pub struct VictauriBuilder {
     disabled_tools: Vec<String>,
     command_allowlist: Option<Vec<String>>,
     command_blocklist: Vec<String>,
+    storage_key_blocklist: Vec<String>,
     redaction_patterns: Vec<String>,
     redaction_enabled: bool,
     strict_privacy: bool,
@@ -219,6 +220,7 @@ impl Default for VictauriBuilder {
             disabled_tools: Vec::new(),
             command_allowlist: None,
             command_blocklist: Vec::new(),
+            storage_key_blocklist: Vec::new(),
             redaction_patterns: Vec::new(),
             redaction_enabled: false,
             strict_privacy: false,
@@ -340,6 +342,16 @@ impl VictauriBuilder {
             .iter()
             .map(std::string::ToString::to_string)
             .collect();
+        self
+    }
+
+    /// Block `storage.set` from writing these `localStorage`/`sessionStorage` keys.
+    /// Use it to protect keys your app trusts for auth/role/tier/feature decisions
+    /// so an agent cannot escalate privilege by poisoning them (audit #33). Default
+    /// is empty (no keys blocked), preserving existing behaviour.
+    #[must_use]
+    pub fn storage_key_blocklist(mut self, keys: &[&str]) -> Self {
+        self.storage_key_blocklist = keys.iter().map(std::string::ToString::to_string).collect();
         self
     }
 
@@ -585,6 +597,7 @@ impl VictauriBuilder {
                 .map(|v| v.iter().cloned().collect::<HashSet<String>>()),
             command_blocklist: self.command_blocklist.iter().cloned().collect(),
             disabled_tools: self.disabled_tools.iter().cloned().collect(),
+            storage_key_blocklist: self.storage_key_blocklist.iter().cloned().collect(),
             redactor: redaction::Redactor::new(&self.redaction_patterns),
             redaction_enabled,
         }

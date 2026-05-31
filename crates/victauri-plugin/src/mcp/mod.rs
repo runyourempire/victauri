@@ -1489,6 +1489,13 @@ impl VictauriMcpHandler {
                 let Some(key) = &params.key else {
                     return missing_param("key", "set");
                 };
+                // Operator-protected keys (auth/role/tier/flags) can't be poisoned
+                // via storage.set (audit #33).
+                if !self.state.privacy.is_storage_key_allowed(key) {
+                    return tool_error(format!(
+                        "storage key '{key}' is protected by privacy configuration"
+                    ));
+                }
                 let value = params
                     .value
                     .as_ref()

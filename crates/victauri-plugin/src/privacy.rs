@@ -52,6 +52,9 @@ pub struct PrivacyConfig {
     pub command_blocklist: HashSet<String>,
     /// MCP tool/action names explicitly disabled (override layer on top of profile).
     pub disabled_tools: HashSet<String>,
+    /// localStorage/sessionStorage keys that `storage.set` must never write
+    /// (operator-configured, since which keys carry app trust is app-specific).
+    pub storage_key_blocklist: HashSet<String>,
     /// Output redactor with regex and JSON-key matching.
     pub redactor: Redactor,
     /// Whether output redaction is active.
@@ -69,6 +72,14 @@ impl PrivacyConfig {
             Some(allow) => allow.contains(command),
             None => true,
         }
+    }
+
+    /// Returns `true` if `storage.set` may write the given storage key (i.e. the
+    /// key is not in the operator's `storage_key_blocklist`). Use this to protect
+    /// keys an app trusts for auth/role/tier/feature-flag decisions (audit #33).
+    #[must_use]
+    pub fn is_storage_key_allowed(&self, key: &str) -> bool {
+        !self.storage_key_blocklist.contains(key)
     }
 
     /// Returns `true` if the given tool or qualified action (e.g. `"window.manage"`)
@@ -245,6 +256,7 @@ pub fn observe_privacy_config() -> PrivacyConfig {
         command_allowlist: None,
         command_blocklist: HashSet::new(),
         disabled_tools: HashSet::new(),
+        storage_key_blocklist: HashSet::new(),
         redactor: Redactor::default(),
         redaction_enabled: true,
     }
@@ -258,6 +270,7 @@ pub fn test_privacy_config() -> PrivacyConfig {
         command_allowlist: None,
         command_blocklist: HashSet::new(),
         disabled_tools: HashSet::new(),
+        storage_key_blocklist: HashSet::new(),
         redactor: Redactor::default(),
         redaction_enabled: true,
     }
@@ -277,6 +290,21 @@ mod tests {
     use super::*;
 
     // ── Command filtering ──────────────────────────────────────────────────
+
+    #[test]
+    fn storage_key_blocklist_protects_keys() {
+        let mut config = PrivacyConfig::default();
+        // Default: every key is writable.
+        assert!(config.is_storage_key_allowed("auth"));
+        // Once blocked, protected keys are rejected; others still allowed.
+        config.storage_key_blocklist = ["auth", "license_tier"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(!config.is_storage_key_allowed("auth"));
+        assert!(!config.is_storage_key_allowed("license_tier"));
+        assert!(config.is_storage_key_allowed("theme"));
+    }
 
     #[test]
     fn default_allows_all_commands() {
