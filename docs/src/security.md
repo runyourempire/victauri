@@ -297,6 +297,19 @@ The browser extension requests a broad permission set (`debugger`, `cookies`, `t
 
 These are **features, not gratuitous grants** — but they are powerful. Install the extension only
 if you need full web inspection, and prefer the embedded Tauri plugin (capability-gated, debug-only)
-for app testing. The MAIN-world bridge is provenance-gated with a per-page nonce so a page cannot
-drive it, but the permission breadth means the extension itself is a privileged component — treat it
-as such.
+for app testing.
+
+**On the MAIN-world bridge and its nonce gate (be precise about what it does and doesn't do):**
+The bridge in the page's MAIN world has a per-page nonce gate, but it is a **speed-bump, not a
+security boundary**. The nonce is transmitted through page-observable `window` CustomEvents, so a
+determined hostile page can recover it (by triggering a handshake re-announce, or by reading the
+nonce from a legitimate command event) and then forge commands. This matters **little in practice**
+because the MAIN-world bridge runs in the page's *own* JS context — driving it grants the page nothing
+it doesn't already have (DOM access, `document.cookie`, `localStorage`, eval-in-self). The genuinely
+privileged capabilities — **httpOnly cookies (`chrome.cookies`), CDP (`chrome.debugger`), and cross-tab
+screenshots** — are handled in the **service worker** and are **not reachable by a forged page event**
+(a page cannot impersonate `chrome.runtime`). The real residual risk is **response forgery**: a hostile
+page can inject fabricated results for the agent's in-flight commands, feeding the agent attacker-
+controlled data (a prompt-injection vector — see [Untrusted Content & Prompt Injection](#untrusted-content--prompt-injection)).
+Treat the extension as a privileged component, do not run it in auto-approve mode against hostile sites,
+and rely on the service-worker gating — not the MAIN nonce — for the capabilities that matter.
