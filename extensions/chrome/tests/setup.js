@@ -64,10 +64,35 @@ export function createBridgeEnv(html = '<html><head><title>Test</title></head><b
     });
   };
 
+  // Capture the MAIN-bridge provenance nonce (audit #2) the way the ISOLATED relay
+  // does. The listener is added BEFORE injection so it catches the handshake the
+  // bridge fires on load.
+  let bridgeNonce = null;
+  window.addEventListener('__victauri_handshake', (e) => {
+    if (bridgeNonce === null && e.detail && e.detail.nonce) bridgeNonce = e.detail.nonce;
+  });
+
   // Inject the bridge script
   const script = window.document.createElement('script');
   script.textContent = bridgeSource;
   window.document.head.appendChild(script);
 
-  return { dom, window, bridge: window.__VICTAURI__ };
+  // Fallback in case the load order missed the initial announcement.
+  if (bridgeNonce === null) {
+    window.dispatchEvent(new window.CustomEvent('__victauri_handshake_req'));
+  }
+
+  // Simulate the ISOLATED relay: stamp the nonce onto nonce-less command events so
+  // existing tests (which dispatch __victauri_command directly) keep working.
+  const origDispatch = window.dispatchEvent.bind(window);
+  window.dispatchEvent = function (ev) {
+    if (ev && ev.type === '__victauri_command' && ev.detail && ev.detail.nonce == null && bridgeNonce) {
+      ev = new window.CustomEvent('__victauri_command', {
+        detail: Object.assign({}, ev.detail, { nonce: bridgeNonce }),
+      });
+    }
+    return origDispatch(ev);
+  };
+
+  return { dom, window, bridge: window.__VICTAURI__, nonce: bridgeNonce };
 }

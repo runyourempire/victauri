@@ -1617,9 +1617,32 @@
 
     var AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 
+    // Provenance gate (audit #2): only honour commands carrying the secret nonce
+    // shared with the ISOLATED relay during a handshake that runs at document_start,
+    // before any page script executes. A page can dispatch __victauri_command but
+    // cannot learn the nonce, so it cannot drive the privileged bridge.
+    var __victauriNonce = (function () {
+        try {
+            var a = new Uint8Array(16);
+            window.crypto.getRandomValues(a);
+            return Array.prototype.map
+                .call(a, function (b) { return ('0' + b.toString(16)).slice(-2); })
+                .join('');
+        } catch (e) {
+            return String(Date.now()) + Math.random().toString(36).slice(2);
+        }
+    })();
+    function __victauriAnnounceNonce() {
+        window.dispatchEvent(new CustomEvent('__victauri_handshake', {
+            detail: { nonce: __victauriNonce }
+        }));
+    }
+    window.addEventListener('__victauri_handshake_req', __victauriAnnounceNonce);
+    __victauriAnnounceNonce();
+
     window.addEventListener('__victauri_command', function(event) {
         var detail = event.detail;
-        if (!detail || !detail.id || !detail.method) return;
+        if (!detail || detail.nonce !== __victauriNonce || !detail.id || !detail.method) return;
 
         var id = detail.id;
         var method = detail.method;

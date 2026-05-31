@@ -4,6 +4,16 @@
 
 const api = typeof browser !== 'undefined' ? browser : chrome;
 
+// Secret nonce shared with the MAIN-world bridge (audit #2), established at
+// document_start before page scripts run. Latched to the first announcement.
+let bridgeNonce = null;
+window.addEventListener('__victauri_handshake', (event) => {
+    if (bridgeNonce === null && event.detail && event.detail.nonce) {
+        bridgeNonce = event.detail.nonce;
+    }
+});
+window.dispatchEvent(new CustomEvent('__victauri_handshake_req'));
+
 api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type !== 'victauri_command') return false;
 
@@ -23,7 +33,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
 
     window.dispatchEvent(new CustomEvent('__victauri_command', {
-        detail: { id: message.id, method: message.method, args: message.args }
+        detail: { id: message.id, method: message.method, args: message.args, nonce: bridgeNonce }
     }));
 
     responsePromise.then(sendResponse);

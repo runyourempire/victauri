@@ -7,6 +7,11 @@ use tokio::sync::{Mutex, oneshot};
 
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Maximum number of concurrently in-flight commands. Bounds memory if a caller
+/// floods the host or the extension stops responding (audit #12); each entry is
+/// reaped on response/timeout/disconnect, so this is only a backpressure ceiling.
+const MAX_PENDING: usize = 1024;
+
 /// Manages in-flight commands sent to the Chrome extension via native messaging.
 ///
 /// Each command gets a UUID, is written to the native messaging stdout, and
@@ -48,6 +53,11 @@ impl BridgeDispatch {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().await;
+            if pending.len() >= MAX_PENDING {
+                return Err(format!(
+                    "too many in-flight commands ({MAX_PENDING}); extension unresponsive"
+                ));
+            }
             pending.insert(id.clone(), tx);
         }
 
@@ -104,6 +114,11 @@ impl BridgeDispatch {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().await;
+            if pending.len() >= MAX_PENDING {
+                return Err(format!(
+                    "too many in-flight commands ({MAX_PENDING}); extension unresponsive"
+                ));
+            }
             pending.insert(id.clone(), tx);
         }
 

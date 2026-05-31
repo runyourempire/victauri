@@ -70,6 +70,9 @@ pub fn install_dir() -> Result<PathBuf, InstallerError> {
 ///
 /// Returns an error if file I/O or registry operations fail.
 pub fn install(binary_path: &str, extension_id: &str) -> Result<String, InstallerError> {
+    if !is_valid_extension_id(extension_id) {
+        return Err(InstallerError::InvalidExtensionId(extension_id.to_string()));
+    }
     let manifest = host_manifest(binary_path, extension_id);
     let json = serde_json::to_string_pretty(&manifest).map_err(InstallerError::Json)?;
 
@@ -218,6 +221,18 @@ pub enum InstallerError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("invalid Chrome extension id: must be 32 chars a-p, got {0:?}")]
+    InvalidExtensionId(String),
+}
+
+/// Chrome/Chromium extension IDs are exactly 32 characters, each in `a`–`p`
+/// (a base-16 mapping of the key hash). Validating this before embedding the id in
+/// a native-host manifest's `allowed_origins` prevents a malformed/placeholder id
+/// (e.g. the literal `"EXTENSION_ID"`) from being registered (audit #13).
+#[must_use]
+pub fn is_valid_extension_id(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| (b'a'..=b'p').contains(&b))
 }
 
 #[cfg(test)]
@@ -229,6 +244,24 @@ mod tests {
         let manifest = host_manifest("/usr/local/bin/victauri-browser-host", "abcdef123456");
         assert_eq!(manifest["name"], HOST_NAME);
         assert_eq!(manifest["type"], "stdio");
+    }
+
+    #[test]
+    fn extension_id_validation() {
+        // Valid: 32 chars, all a-p.
+        assert!(is_valid_extension_id("abcdefghijklmnopabcdefghijklmnop"));
+        // Invalid: placeholder, wrong length, out-of-range chars.
+        assert!(!is_valid_extension_id("EXTENSION_ID"));
+        assert!(!is_valid_extension_id("abcdef123456"));
+        assert!(!is_valid_extension_id("abcdefghijklmnopabcdefghijklmno")); // 31
+        assert!(!is_valid_extension_id("abcdefghijklmnopabcdefghijklmnqz")); // q,z out of range
+        assert!(!is_valid_extension_id(""));
+    }
+
+    #[test]
+    fn install_rejects_invalid_extension_id() {
+        let err = install("/tmp/victauri-browser-host", "EXTENSION_ID").unwrap_err();
+        assert!(matches!(err, InstallerError::InvalidExtensionId(_)));
     }
 
     #[test]

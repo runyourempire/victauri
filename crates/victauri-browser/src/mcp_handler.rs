@@ -468,6 +468,17 @@ impl VictauriBrowserHandler {
                             .get("url")
                             .and_then(serde_json::Value::as_str)
                             .ok_or("missing 'url'")?;
+                        // Only allow http(s) navigation (audit #13): block file:/data:/
+                        // javascript:/chrome: schemes that could read local files or run script.
+                        let scheme_ok = {
+                            let l = url.trim_start().to_ascii_lowercase();
+                            l.starts_with("http://") || l.starts_with("https://")
+                        };
+                        if !scheme_ok {
+                            return Err(
+                                "navigate: only http:// and https:// URLs are allowed".to_string()
+                            );
+                        }
                         self.dispatch
                             .dispatch(tab_id, "navigate", serde_json::json!({"url": url}))
                             .await
