@@ -1008,11 +1008,12 @@ fn enumerate_children_macos(parent_pid: u32) -> Vec<ChildProcessInfo> {
     // and call again. `proc_name` and `proc_pidinfo` read metadata for a given PID.
     unsafe {
         let ppid = parent_pid as i32;
-        // `proc_listchildpids` returns the number of BYTES written (capped by
-        // `buffersize`), NOT a count — and a NULL/zero-size probe call returns 0
-        // rather than the needed size on modern macOS (verified on macOS 26 / arm64),
-        // which made the old count-first pattern always return zero children.
-        // Allocate a generous buffer and call directly, growing if it comes back full.
+        // `proc_listchildpids` returns the COUNT of child PIDs written, not bytes —
+        // verified empirically on macOS 26 / arm64 (1 child → returns 1, pids[0] is
+        // the child). The old code divided the return by `size_of::<i32>()`, so a
+        // single child (1/4 = 0) always enumerated as zero. Allocate a generous
+        // buffer and call directly; if the returned count meets our capacity the list
+        // may be truncated, so grow and retry.
         let mut cap = 256usize;
         let (pids, n) = loop {
             let mut pids = vec![0i32; cap];
@@ -1021,12 +1022,13 @@ fn enumerate_children_macos(parent_pid: u32) -> Vec<ChildProcessInfo> {
             if actual <= 0 {
                 return children;
             }
-            let n = actual as usize / mem::size_of::<i32>();
-            // If the buffer filled exactly, there may be more children — grow + retry.
-            if n < cap || cap >= 16384 {
-                break (pids, n);
+            let count = actual as usize;
+            // `count` is clamped to `cap` for the slice below (stays in bounds even if
+            // the syscall ever reports a total larger than the buffer it filled).
+            if count < cap || cap >= 65536 {
+                break (pids, count.min(cap));
             }
-            cap *= 2;
+            cap = (count + 16).max(cap * 2);
         };
         for &pid in &pids[..n] {
             if pid <= 0 {
