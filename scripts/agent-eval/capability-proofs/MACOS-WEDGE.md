@@ -70,15 +70,22 @@ Screenshot and trusted input are deliberately excluded: they need
 Screen-Recording / Accessibility TCC grants headless CI can't give. The
 same-process introspection that *is* the wedge needs none of that.
 
-**Result: PROVEN GREEN on real Apple hardware** — CI run
-[26690831417](https://github.com/runyourempire/victauri/actions/runs/26690831417)
-(2026-05-30, `macos-latest`, 2m37s). The step runs under `set -euo pipefail` with a
-`fail()` that exits non-zero on any missed assertion, so a green result
-deterministically means: the Tauri app launched on macOS, the embedded MCP server
-came up, and webview-eval (`6*7→42`) + DOM snapshot + IPC→Rust-backend invoke +
-383-style registry enumeration + native `resident_bytes` all succeeded — the four
-layers below the glass, live, on the platform where external automation can't reach
-the webview at all. Re-runs on every push to `main`.
+**Result: PROVEN GREEN on a real 3-platform matrix** — the `fullstack-proof` job
+runs on `macos-latest`, `ubuntu-latest`, and `windows-latest`. All three green
+(run [26701699830](https://github.com/runyourempire/victauri/actions/runs/26701699830);
+macOS first proven solo on run 26690831417 and green on every run since). The step
+runs under `set -euo pipefail` with a `fail()` that exits non-zero on any missed
+assertion, so green deterministically means: the Tauri app launched, the embedded
+MCP server came up, the webview became eval-able, and webview-eval (`6*7→42`) + DOM
+snapshot + IPC→Rust-backend invoke + registry enumeration + native `resident_bytes`
+all succeeded — the four layers below the glass, live, on every desktop platform.
+Re-runs on every push to `main`.
+
+macOS is the strategically decisive cell (no external tool can attach there at all);
+Linux and Windows make it a cross-platform guarantee rather than a one-platform
+claim. (Windows initially failed because the axum server binds before WebView2
+finishes its cold init — fixed with a webview-readiness poll before asserting; it
+was a CI cold-start race, not a capability gap. `eval` works on real Windows.)
 
 ## The honest one-liner
 
