@@ -131,6 +131,36 @@ corpus isn't rigged: on a pure-DOM bug, browser-only is cheaper.
 cause until the agent fell back to raw `eval_js getComputedStyle`. Add
 `pointer-events` (and likely `visibility`/`cursor`) to the key set.
 
+## 4DA capstone — real 339 MB production DB (2026-05-31)
+
+Ran the DB-truth A/B against **live 4DA** (real Tauri app, v0.7.2, 383 commands,
+`../data/4da.db` = **338.81 MB, 150+ tables**, WAL). Task: get exact ground-truth
+row counts of four internal tables + DB size + `integrity_check`, from the DB.
+
+| | Agent-B (full Victauri) | Agent-A (browser-only) |
+|---|---|---|
+| Result | ✅ `source_items`=29,872, `temporal_events`=37,738, `facet_evidence`=13,242, `security_audit_log`=4,272; **338.81 MB; integrity ok** | ❌ **nothing** |
+| Calls | **2, read-only** (`introspect db_health` + a cross-check `query_db` COUNT) | 22 (all failed) |
+| Why | direct `AppHandle`→SQLite, no webview involved | (1) browser JS is sandboxed — no primitive to open a `.db`, run PRAGMA, or `COUNT(*)`; (2) **the live 4DA webview bridge was unresponsive**, so `eval_js`/`dom_snapshot` returned nothing at all |
+
+**Two decisive points:**
+1. **The DB moat is real and self-evident at scale.** `query_db`/`db_health`
+   read exact counts from a 339 MB / 150-table production DB in 2 read-only
+   calls. A browser/JS tool has *no* path to a local SQLite file — full stop.
+2. **Architectural robustness (the surprise):** Victauri's backend/DB tools go
+   through direct `AppHandle` access, **independent of the webview**. On this
+   live 4DA the webview JS bridge was *down* (30s timeouts on both window
+   labels, while `/health` was ok) — so a browser-only tool, AND any
+   `eval_js`-dependent feature, got **zero**, while `query_db`/`db_health`
+   worked perfectly. Full-stack ≠ webview-dependent.
+
+**Honest caveats:** the bridge-down state is partly a launch artifact — I ran
+`fourda.exe` directly (embedded `../dist`, no vite dev server), and 4DA's
+webview/frontend has documented instability; a "proper" dev launch might have a
+live bridge. But even with a healthy bridge, Agent-A remains fundamentally blind
+to the SQLite file (point 1). And point 2 stands as a real resilience property:
+when the webview layer fails, Victauri's backend introspection still answers.
+
 ## Where Victauri falls short (verified — the point of the exercise)
 
 1. **`fault` injection does NOT affect the app's real IPC** — verified in code at
