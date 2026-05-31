@@ -75,6 +75,28 @@ REST helper: `curl -s -X POST http://127.0.0.1:7373/api/tools/<tool> -d '<json>'
   the experiment honest.
 - **Cleanup:** `eval_js {"code":"document.querySelector('[data-testid=reset-btn]').style.pointerEvents=''; return 'restored'"}`
 
+## T7 — Miscalibrated sweep animation (motion is invisible to screenshots)
+- **Setup:** trigger the demo-app's deliberately-broken slide-in:
+  `eval_js {"code":"document.getElementById('sweep-btn').click(); return 'played'"}`
+  (`.sweep-toast` runs `sweepBroken`: `translateX(420px)`→`translateX(-48px)` over 1200ms with an
+  overshooting `cubic-bezier(0.5,-0.6,0.9,1.4)`. Intended: settle flush at `translateX(0)` over
+  ~300ms, gentle ease-out.)
+- **Goal:** "The notification slide-in looks wrong — it overshoots and doesn't land where it
+  should. Quantify exactly what the animation does (start/end position, duration, easing) and
+  state precisely how it diverges from a clean 300ms ease-out that settles at the edge."
+- **Answer key:** duration is 1200ms (4× too long); the easing's negative control point makes it
+  travel *backwards* off-screen early (tx 420→~473 before reversing); it ends at tx **−48** (48px
+  past the target, which should be 0). Three concrete defects: duration, easing overshoot, end offset.
+- **Why B wins:** `animation list` returns the declared duration/easing/keyframes in one call;
+  `animation scrub` returns the exact position-vs-progress curve **and** a single deterministic,
+  jank-free filmstrip image of the whole arc; `animation sample` returns the measured real-time
+  curve. Agent-A (browser-only) can only `eval_js`/`dom_snapshot`/`screenshot`: a screenshot is a
+  single aliased instant (motion blur, race) and **cannot** rasterize a frozen seeked frame, so it
+  cannot produce the curve or the filmstrip. (Honesty caveat: a *very* clever Agent-A could hand-roll
+  `getAnimations()`+a rAF sampler through `eval_js`; B's win here is one-call ergonomics, reliability,
+  and the native-capture filmstrip — which is genuinely B-only, since JS cannot screenshot the webview.)
+- **Cleanup:** none needed (re-triggerable; leaves no persistent state).
+
 ---
 
 ## Scoring rubric (per agent, per task)

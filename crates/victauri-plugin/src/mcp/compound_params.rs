@@ -212,6 +212,10 @@ pub enum WindowAction {
     MoveTo,
     /// Set a window's title.
     SetTitle,
+    /// Probe every window and report which ones Victauri can actually introspect
+    /// (i.e. have a responding JS bridge) vs. which are blind — usually because
+    /// the window's capability is missing `victauri:default`.
+    Introspectability,
 }
 
 impl fmt::Display for WindowAction {
@@ -223,6 +227,7 @@ impl fmt::Display for WindowAction {
             Self::Resize => f.write_str("resize"),
             Self::MoveTo => f.write_str("move_to"),
             Self::SetTitle => f.write_str("set_title"),
+            Self::Introspectability => f.write_str("introspectability"),
         }
     }
 }
@@ -711,6 +716,61 @@ pub struct TraceParams {
     /// Maximum frames to return (for frames). 0 or omitted returns all buffered.
     pub limit: Option<usize>,
     /// Target webview label to capture.
+    pub webview_label: Option<String>,
+}
+
+// ── animation ─────────────────────────────────────────────────────────────
+
+/// Action for the compound `animation` tool (motion introspection / scrubbing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimationAction {
+    /// List running CSS animations/transitions with timing, easing, and keyframes.
+    List,
+    /// Deterministically pause + seek the target's animation to N points,
+    /// returning the geometry curve and (optionally) a contact-sheet filmstrip.
+    Scrub,
+    /// Real-time motion + jank recorder. `record=true` arms a rAF watcher;
+    /// `record=false` reads back the measured curve and dropped-frame stats.
+    Sample,
+}
+
+impl fmt::Display for AnimationAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::List => f.write_str("list"),
+            Self::Scrub => f.write_str("scrub"),
+            Self::Sample => f.write_str("sample"),
+        }
+    }
+}
+
+/// Parameters for the compound `animation` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AnimationParams {
+    /// Action to perform: `list`, `scrub`.
+    pub action: AnimationAction,
+    /// CSS selector for the target element. For `list`, scopes the query (omit
+    /// for all running animations). For `scrub`, selects the element to seek
+    /// (omit to auto-pick the first currently-animating element).
+    pub selector: Option<String>,
+    /// (`scrub`) Number of evenly-spaced progress points to sample. Default 20,
+    /// clamped to 2..=120.
+    pub points: Option<usize>,
+    /// (`scrub`) If true, capture a native screenshot at each point and return a
+    /// single contact-sheet filmstrip PNG. Default false (geometry curve only).
+    pub capture: Option<bool>,
+    /// (`scrub`) If true (default), resume the animation after scrubbing;
+    /// otherwise leave it paused at the final point.
+    pub restore: Option<bool>,
+    /// (`scrub`, with `capture`) Columns in the filmstrip grid. Default ~sqrt(n).
+    pub cols: Option<usize>,
+    /// (`sample`) If true, arm the rAF recorder; if false (default), read back
+    /// recorded sessions.
+    pub record: Option<bool>,
+    /// (`sample`, read) If true, clear recorded sessions after returning them.
+    pub clear: Option<bool>,
+    /// Target webview label.
     pub webview_label: Option<String>,
 }
 

@@ -1296,6 +1296,241 @@ const INIT_SCRIPT_BODY: &str = r#"
 
             return diag;
         },
+
+        // ── Animation Introspection (Web Animations API) ─────────────────────
+        // Reads the running CSS animations/transitions so an agent can see what
+        // the webview's animation engine is actually doing: declared timing,
+        // easing, keyframes, current progress, and the animating element. Pure
+        // standard DOM — works identically on WebView2/WKWebView/WebKitGTK.
+        listAnimations: function(selector) {
+            function rect(el) {
+                if (!el || !el.getBoundingClientRect) return null;
+                var b = el.getBoundingClientRect();
+                return { x: Math.round(b.x), y: Math.round(b.y),
+                         w: Math.round(b.width), h: Math.round(b.height) };
+            }
+            function describe(el) {
+                if (!el) return null;
+                var cls = (el.className && el.className.toString)
+                    ? el.className.toString().substring(0, 60) : null;
+                return { tag: el.tagName ? el.tagName.toLowerCase() : null,
+                         id: el.id || null, cls: cls, rect: rect(el) };
+            }
+            var anims;
+            try {
+                if (selector) {
+                    var scope = document.querySelectorAll(selector);
+                    anims = [];
+                    for (var i = 0; i < scope.length; i++) {
+                        if (scope[i].getAnimations) {
+                            anims = anims.concat(scope[i].getAnimations());
+                        }
+                    }
+                } else {
+                    anims = document.getAnimations ? document.getAnimations() : [];
+                }
+            } catch (e) {
+                return { error: 'getAnimations failed: ' + (e && e.message) };
+            }
+            return anims.map(function(a) {
+                var e = a.effect;
+                var t = (e && e.getTiming) ? e.getTiming() : {};
+                var ct = (e && e.getComputedTiming) ? e.getComputedTiming() : {};
+                var kf = [];
+                try { kf = (e && e.getKeyframes) ? e.getKeyframes() : []; } catch (_) {}
+                return {
+                    type: a.constructor ? a.constructor.name : 'Animation',
+                    id: a.id || null,
+                    animation_name: a.animationName || null,
+                    transition_property: a.transitionProperty || null,
+                    play_state: a.playState,
+                    current_time: a.currentTime,
+                    playback_rate: a.playbackRate,
+                    timing: { duration: t.duration, delay: t.delay, end_delay: t.endDelay,
+                              easing: t.easing, iterations: t.iterations,
+                              direction: t.direction, fill: t.fill },
+                    computed: { active_duration: ct.activeDuration, end_time: ct.endTime,
+                                progress: ct.progress, current_iteration: ct.currentIteration },
+                    target: describe(e && e.target),
+                    keyframes: kf
+                };
+            });
+        },
+
+        // ── Deterministic animation scrubbing ────────────────────────────────
+        // Pause the target's WAAPI animations and hold state across calls so the
+        // Rust side can seek to evenly-spaced progress points and capture a
+        // jank-free frame at each. The paused+seeked frame is frozen, so the
+        // (slow) native screenshot has nothing to race — this is why scrubbing
+        // beats real-time capture for fast animations.
+        scrubPrepare: function(selector) {
+            var el = selector ? document.querySelector(selector) : null;
+            if (!el) {
+                var all = document.getAnimations ? document.getAnimations() : [];
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].effect && all[i].effect.target) { el = all[i].effect.target; break; }
+                }
+            }
+            if (!el) {
+                return Promise.resolve({ error: 'no target: selector matched nothing and no '
+                    + 'animation is currently running. Trigger the animation, then scrub.',
+                    anim_count: 0 });
+            }
+            var anims = (el.getAnimations ? el.getAnimations() : []).filter(function(a) {
+                var ct = (a.effect && a.effect.getComputedTiming) ? a.effect.getComputedTiming() : null;
+                return ct && isFinite(ct.endTime) && ct.endTime > 0;
+            });
+            if (!anims.length) {
+                return Promise.resolve({ error: 'no seekable WAAPI animation on target — it may '
+                    + 'be JS/requestAnimationFrame-driven (not seekable). Use animation sample '
+                    + 'instead.', anim_count: 0 });
+            }
+            var ends = anims.map(function(a) { return a.effect.getComputedTiming().endTime; });
+            var duration = Math.max.apply(null, ends);
+            anims.forEach(function(a) { try { a.pause(); } catch (e) {} });
+            window.__VICTAURI_SCRUB__ = { el: el, anims: anims, ends: ends, duration: duration };
+            return Promise.all(anims.map(function(a) { return a.ready.catch(function(){}); }))
+                .then(function() {
+                    var b = el.getBoundingClientRect();
+                    return { prepared: true, anim_count: anims.length, duration: duration,
+                        target: { tag: el.tagName.toLowerCase(), id: el.id || null,
+                            rect: { x: Math.round(b.x), y: Math.round(b.y),
+                                    w: Math.round(b.width), h: Math.round(b.height) } } };
+                });
+        },
+
+        scrubSeek: function(progress) {
+            var S = window.__VICTAURI_SCRUB__;
+            if (!S) return Promise.resolve({ error: 'not prepared — scrubPrepare first' });
+            var t = progress * S.duration;
+            for (var i = 0; i < S.anims.length; i++) {
+                try { S.anims[i].currentTime = Math.max(0, Math.min(t, S.ends[i])); } catch (e) {}
+            }
+            return Promise.all(S.anims.map(function(a) { return a.ready.catch(function(){}); }))
+                .then(function() {
+                    return new Promise(function(res) {
+                        requestAnimationFrame(function() { requestAnimationFrame(res); });
+                    });
+                })
+                .then(function() {
+                    var el = S.el, b = el.getBoundingClientRect(), cs = window.getComputedStyle(el);
+                    var tf = (function(s) {
+                        if (!s || s.indexOf('matrix') !== 0) return { tx: 0, ty: 0, sx: 1, sy: 1 };
+                        var m = s.match(/-?[\d.eE+]+/g);
+                        if (!m) return { tx: 0, ty: 0, sx: 1, sy: 1 };
+                        m = m.map(Number);
+                        return m.length === 6
+                            ? { tx: m[4], ty: m[5], sx: m[0], sy: m[3] }
+                            : { tx: m[12], ty: m[13], sx: m[0], sy: m[5] };
+                    })(cs.transform);
+                    var r2 = function(n) { return Math.round(n * 100) / 100; };
+                    return { progress: progress, t: r2(t),
+                        rect: { x: r2(b.x), y: r2(b.y), w: Math.round(b.width), h: Math.round(b.height) },
+                        transform: { tx: r2(tf.tx), ty: r2(tf.ty), sx: tf.sx, sy: tf.sy },
+                        opacity: parseFloat(cs.opacity) };
+                });
+        },
+
+        scrubRestore: function(resume) {
+            var S = window.__VICTAURI_SCRUB__;
+            if (!S) return { restored: false };
+            S.anims.forEach(function(a) { try { if (resume) a.play(); } catch (e) {} });
+            window.__VICTAURI_SCRUB__ = null;
+            return { restored: true, resumed: !!resume };
+        },
+
+        // ── Real-time motion + jank recorder ─────────────────────────────────
+        // Arm a requestAnimationFrame watcher that samples the target's geometry
+        // every frame while it animates. Decoupled from the (blocking) eval call
+        // so event-triggered sweeps are catchable: arm it, trigger the sweep,
+        // then read back the measured curve + dropped-frame (jank) stats.
+        installSweepRecorder: function(selector) {
+            var R = (window.__VICTAURI_SWEEP__ = { sel: selector || null,
+                sessions: [], cur: null });
+            var matrix = function(el) {
+                var s = getComputedStyle(el).transform;
+                if (!s || s.indexOf('matrix') !== 0) return { tx: 0, ty: 0, sx: 1 };
+                var m = s.match(/-?[\d.eE+]+/g);
+                if (!m) return { tx: 0, ty: 0, sx: 1 };
+                m = m.map(Number);
+                return m.length === 6 ? { tx: m[4], ty: m[5], sx: m[0] }
+                                      : { tx: m[12], ty: m[13], sx: m[0] };
+            };
+            var pick = function() {
+                if (R.sel) return document.querySelector(R.sel);
+                var list = document.getAnimations ? document.getAnimations() : [];
+                for (var i = 0; i < list.length; i++) {
+                    if (list[i].playState === 'running' && list[i].effect && list[i].effect.target) {
+                        return list[i].effect.target;
+                    }
+                }
+                return null;
+            };
+            var tick = function() {
+                // Stop if a newer recorder superseded this one.
+                if (window.__VICTAURI_SWEEP__ !== R) return;
+                var el = pick();
+                var anims = (el && el.getAnimations) ? el.getAnimations() : [];
+                var running = anims.some(function(a) { return a.playState === 'running'; });
+                if (running && !R.cur) {
+                    var e = anims[0] && anims[0].effect;
+                    R.cur = { t0: performance.now(), samples: [],
+                        timing: (e && e.getTiming) ? e.getTiming() : {},
+                        keyframes: (function() {
+                            try { return (e && e.getKeyframes) ? e.getKeyframes() : []; }
+                            catch (_) { return []; }
+                        })() };
+                }
+                if (R.cur && el) {
+                    var b = el.getBoundingClientRect(), tf = matrix(el);
+                    R.cur.samples.push({ t: performance.now() - R.cur.t0,
+                        x: b.x, y: b.y, w: b.width, h: b.height,
+                        tx: tf.tx, ty: tf.ty, sx: tf.sx,
+                        opacity: parseFloat(getComputedStyle(el).opacity) });
+                    if (R.cur.samples.length > 2000) R.cur.samples.shift();
+                    if (!running) {
+                        R.sessions.push(R.cur);
+                        if (R.sessions.length > 10) R.sessions.shift();
+                        R.cur = null;
+                    }
+                }
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+            return { installed: true, selector: R.sel };
+        },
+
+        readSweep: function(clear) {
+            var R = window.__VICTAURI_SWEEP__;
+            if (!R) {
+                return { error: 'no recorder armed — call sample with record=true first, then '
+                    + 'trigger the animation' };
+            }
+            var r2 = function(n) { return Math.round(n * 100) / 100; };
+            var out = R.sessions.map(function(s) {
+                var f = s.samples, gaps = [];
+                for (var i = 1; i < f.length; i++) gaps.push(f[i].t - f[i - 1].t);
+                var jank = gaps.filter(function(g) { return g > 25; }).length;
+                var maxGap = gaps.length ? Math.max.apply(null, gaps) : 0;
+                return {
+                    measured_duration_ms: f.length ? r2(f[f.length - 1].t) : 0,
+                    declared: { duration: s.timing.duration, easing: s.timing.easing,
+                                delay: s.timing.delay },
+                    frames: f.length, jank_frames: jank, max_frame_gap_ms: r2(maxGap),
+                    start: f.length ? { x: r2(f[0].x), tx: r2(f[0].tx), opacity: f[0].opacity } : null,
+                    end: f.length ? { x: r2(f[f.length - 1].x), tx: r2(f[f.length - 1].tx),
+                                      opacity: f[f.length - 1].opacity } : null,
+                    keyframes: s.keyframes,
+                    curve: f.map(function(p) {
+                        return { t: r2(p.t), x: r2(p.x), tx: r2(p.tx), op: p.opacity };
+                    })
+                };
+            });
+            var active = !!R.cur;
+            if (clear) R.sessions = [];
+            return { armed: true, selector: R.sel, recording_active: active,
+                     session_count: out.length, sessions: out };
+        },
     };
 
     try {

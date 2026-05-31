@@ -151,6 +151,27 @@
       font-family: monospace; font-size: 0.8em; color: #4ade80;
       white-space: pre-wrap; max-height: 200px; overflow-y: auto; display: none;
     }
+    /* ── Sweep animation demo (deliberately miscalibrated) ──────────────────
+       INTENDED: slide in from the right and settle flush at translateX(0) over
+       ~300ms with a gentle ease-out. This BROKEN version overshoots and ends
+       48px PAST the target, over 1200ms — a textbook "calibrate the sweep"
+       target for the `animation` tool (list/scrub/sample). */
+    .sweep-stage {
+      position: relative; height: 64px; overflow: hidden;
+      border: 1px dashed #2a2a3a; border-radius: 8px; background: #0f0f13;
+    }
+    .sweep-toast {
+      position: absolute; top: 12px; left: 12px; width: 220px;
+      padding: 10px 14px; background: #8b5cf6; color: white;
+      border-radius: 8px; font-size: 0.9em; transform: translateX(420px);
+    }
+    @keyframes sweepBroken {
+      from { transform: translateX(420px); }
+      to   { transform: translateX(-48px); }
+    }
+    .sweep-toast.run {
+      animation: sweepBroken 1200ms cubic-bezier(0.5, -0.6, 0.9, 1.4) forwards;
+    }
   </style>
 </head>
 <body>
@@ -269,6 +290,17 @@
         <ul id="notif-list" role="list" aria-label="Notifications" style="list-style:none;"></ul>
         <div id="notif-empty" class="empty-state">No notifications yet</div>
       </div>
+    </div>
+
+    <!-- Sweep Animation (calibration target for the `animation` tool) -->
+    <div class="card">
+      <h2>Sweep Animation</h2>
+      <p class="subtitle" style="margin-bottom:12px;">A miscalibrated slide-in. Use the
+        <code>animation</code> tool to measure and fix it.</p>
+      <div class="sweep-stage">
+        <div id="sweep-toast" data-testid="sweep-toast" class="sweep-toast">Notification</div>
+      </div>
+      <button id="sweep-btn" data-testid="sweep-btn" style="margin-top:12px;">Play sweep</button>
     </div>
 
     <!-- Status + Debug -->
@@ -515,6 +547,15 @@
     });
 
     refreshNotifications();
+
+    // === Sweep Animation (re-triggerable so the `animation` tool can scrub it) ===
+    document.getElementById("sweep-btn").addEventListener("click", () => {
+      const toast = document.getElementById("sweep-toast");
+      toast.classList.remove("run");
+      // Force reflow so removing + re-adding the class restarts the animation.
+      void toast.offsetWidth;
+      toast.classList.add("run");
+    });
 
     // === Debug: Full State ===
     document.getElementById("debug-btn").addEventListener("click", async () => {

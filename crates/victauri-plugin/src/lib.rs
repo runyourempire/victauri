@@ -50,6 +50,8 @@ mod memory;
 /// Privacy controls: command allowlists, blocklists, and tool disabling.
 pub mod privacy;
 
+/// Compose captured frames into a single contact-sheet PNG ("filmstrip").
+pub mod filmstrip;
 /// Output redaction for API keys, tokens, emails, and sensitive JSON keys.
 pub mod redaction;
 pub mod screencast;
