@@ -418,12 +418,7 @@ jobs:
         run: npm install
 
       - name: Build demo app
-        run: |
-          cargo build -p demo-app
-          # Pre-compile the E2E test BEFORE the app starts so the later test step
-          # never relinks the running demo-app binary (on Windows a running .exe
-          # can't be removed → "Access is denied"). See the E2E test step below.
-          cargo test -p demo-app --test integration --no-run
+        run: cargo build -p demo-app
 
       - name: Start demo app (Linux)
         if: runner.os == 'Linux'
@@ -441,7 +436,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $proc = Start-Process -FilePath .\target\debug\demo-app.exe -PassThru
+          # Run a COPY so the later `cargo test` is free to relink
+          # target\debug\demo-app.exe — Windows can't remove a running .exe, which
+          # otherwise fails the E2E step with "Access is denied".
+          Copy-Item .\target\debug\demo-app.exe .\target\debug\demo-app-run.exe -Force
+          $proc = Start-Process -FilePath .\target\debug\demo-app-run.exe -PassThru
           "APP_PID=$($proc.Id)" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
 
       - name: Victauri smoke tests
