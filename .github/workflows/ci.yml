@@ -142,20 +142,30 @@ jobs:
           path: /tmp/demo-app.log
           if-no-files-found: ignore
 
-  # The macOS wedge, proven on real Apple hardware. Tauri's own docs: tauri-driver
-  # supports "only Windows and Linux ... due to macOS not having a WKWebView driver
-  # tool available", and WebDriver's scope is the web DOM only (no Rust backend /
-  # IPC / DB). This job launches a real Tauri app on macOS and exercises the
-  # full stack — webview + DOM + IPC→Rust backend + command registry + native —
-  # which no external automation tool can reach on macOS. (Screenshot and trusted
-  # input are intentionally excluded: they need Screen-Recording/Accessibility TCC
-  # grants that headless CI cannot give; the same-process introspection below does
-  # not.)
-  macos-fullstack-proof:
-    name: macOS Full-Stack Proof (no CDP/WebDriver can do this)
-    runs-on: macos-latest
+  # "Below the glass," proven on every desktop platform. On macOS no external tool can
+  # even attach to the WKWebView (Tauri docs: tauri-driver is "only Windows and Linux
+  # ... due to macOS not having a WKWebView driver tool available"), and WebDriver
+  # everywhere is DOM-only (no Rust backend / IPC / DB). This matrix launches a real
+  # Tauri app on macOS, Linux, and Windows and asserts the full stack live: webview +
+  # DOM + IPC→Rust backend + command registry + native. Screenshot and trusted input
+  # are intentionally excluded — they need display/Screen-Recording/Accessibility
+  # grants headless CI cannot give; the same-process introspection that is the wedge
+  # needs none of that.
+  fullstack-proof:
+    name: Full-Stack Proof (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libgtk-3-dev xvfb
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -164,11 +174,24 @@ jobs:
       - name: Build demo-app (debug → Victauri plugin active)
         run: cargo build -p demo-app --bin demo-app
 
-      - name: Prove full-stack introspection live on macOS WKWebView
+      - name: Prove full-stack introspection live on ${{ matrix.os }}
+        shell: bash
         run: |
           set -euo pipefail
-          # macOS runners have a GUI session — launch the Tauri app directly.
-          ./target/debug/demo-app > /tmp/demo-app.log 2>&1 &
+
+          BIN=./target/debug/demo-app
+          [ "$RUNNER_OS" = "Windows" ] && BIN=./target/debug/demo-app.exe
+
+          # Launch the real Tauri app in the background (Linux needs a virtual display).
+          case "$RUNNER_OS" in
+            Linux)
+              export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1
+              xvfb-run -a --server-args="-screen 0 1280x800x24" "$BIN" > app.log 2>&1 &
+              ;;
+            *)
+              "$BIN" > app.log 2>&1 &
+              ;;
+          esac
           APP_PID=$!
 
           up=false
@@ -176,55 +199,47 @@ jobs:
             if curl -sf http://127.0.0.1:7373/health >/dev/null 2>&1; then
               echo "MCP server up after ${i}s"; up=true; break
             fi
-            if ! kill -0 "$APP_PID" 2>/dev/null; then
-              echo "::error::demo-app exited before the server came up"; cat /tmp/demo-app.log; exit 1
-            fi
+            kill -0 "$APP_PID" 2>/dev/null || { echo "::error::app exited before the server came up"; cat app.log; exit 1; }
             sleep 1
           done
-          [ "$up" = true ] || { echo "::error::MCP server never became reachable"; cat /tmp/demo-app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
+          [ "$up" = true ] || { echo "::error::MCP server never became reachable"; cat app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
 
           B=http://127.0.0.1:7373/api/tools
-          fail() { echo "::error::$1"; echo '--- demo-app.log ---'; cat /tmp/demo-app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
+          fail() { echo "::error::$1"; echo '--- app.log ---'; cat app.log; kill "$APP_PID" 2>/dev/null || true; exit 1; }
           call() { curl -sf -X POST "$B/$1" -H 'content-type: application/json' --data-binary "$2"; }
 
-          echo "================ macOS FULL-STACK PROOF ================"
-          echo "Tauri app running on real macOS (WKWebView). External tools"
-          echo "(tauri-driver/Selenium/CDP/Playwright) cannot attach here at all."
-          echo
+          echo "================ FULL-STACK PROOF on $RUNNER_OS ================"
 
-          # 1. WEBVIEW — eval JavaScript inside the live WKWebView
-          ev=$(call eval_js '{"code":"return 6*7"}'); echo "[1 webview ] eval 6*7        -> $ev"
-          echo "$ev" | grep -q '42' || fail "eval_js failed on macOS"
+          # 1. WEBVIEW — eval JS inside the live webview
+          ev=$(call eval_js '{"code":"return 6*7"}');                       echo "[1 webview ] eval 6*7      -> $ev"
+          echo "$ev"  | grep -q '42'     || fail "eval_js"
 
           # 2. DOM — accessible snapshot with ref handles
-          dom=$(call dom_snapshot '{}'); echo "[2 dom     ] snapshot bytes      -> ${#dom}"
-          echo "$dom" | grep -q 'ref' || fail "dom_snapshot returned no refs on macOS"
+          dom=$(call dom_snapshot '{}');                                    echo "[2 dom     ] snapshot bytes -> ${#dom}"
+          echo "$dom" | grep -q 'ref'    || fail "dom_snapshot"
 
           # 3. IPC → RUST BACKEND — invoke a real command (WebDriver CANNOT do this)
-          ipc=$(call invoke_command '{"command":"get_counter","args":{}}'); echo "[3 ipc->rust] get_counter        -> $ipc"
-          echo "$ipc" | grep -q 'result' || fail "invoke_command (IPC→backend) failed on macOS"
+          ipc=$(call invoke_command '{"command":"get_counter","args":{}}'); echo "[3 ipc->rust] get_counter  -> $ipc"
+          echo "$ipc" | grep -q 'result' || fail "invoke_command (IPC→backend)"
 
           # 4. BACKEND — enumerate the registered command surface (no web API exists)
-          reg=$(call get_registry '{}'); n=$(echo "$reg" | jq '.result | length'); echo "[4 backend ] registry commands   -> $n"
-          [ "${n:-0}" -ge 1 ] || fail "get_registry empty on macOS"
+          reg=$(call get_registry '{}'); n=$(echo "$reg" | jq '.result | length'); echo "[4 backend ] registry      -> $n"
+          [ "${n:-0}" -ge 1 ]           || fail "get_registry"
 
           # 5. NATIVE — same-process OS introspection
-          mem=$(call get_memory_stats '{}'); echo "[5 native  ] process memory      -> $mem"
-          echo "$mem" | grep -qiE 'bytes|resident|working_set' || fail "get_memory_stats failed on macOS"
+          mem=$(call get_memory_stats '{}');                                echo "[5 native  ] memory        -> $mem"
+          echo "$mem" | grep -qiE 'bytes|resident|working_set' || fail "get_memory_stats"
 
-          echo
-          echo "PROVEN on macOS: webview + DOM + IPC→Rust backend + registry + native,"
-          echo "through one MCP/REST interface — the four layers below the glass that"
-          echo "no macOS Tauri automation tool can reach."
-          echo "======================================================="
+          echo "PROVEN on $RUNNER_OS: webview + DOM + IPC→Rust backend + registry + native."
+          echo "=============================================================="
           kill "$APP_PID" 2>/dev/null || true
 
-      - name: Upload demo-app log on failure
+      - name: Upload app log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: macos-demo-app-log
-          path: /tmp/demo-app.log
+          name: fullstack-proof-log-${{ matrix.os }}
+          path: app.log
           if-no-files-found: ignore
 
   docs:
