@@ -1008,19 +1008,26 @@ fn enumerate_children_macos(parent_pid: u32) -> Vec<ChildProcessInfo> {
     // and call again. `proc_name` and `proc_pidinfo` read metadata for a given PID.
     unsafe {
         let ppid = parent_pid as i32;
-        let count = proc_listchildpids(ppid, std::ptr::null_mut(), 0);
-        if count <= 0 {
-            return children;
-        }
-
-        let mut pids = vec![0i32; count as usize];
-        let buf_size = (count as usize * mem::size_of::<i32>()) as i32;
-        let actual = proc_listchildpids(ppid, pids.as_mut_ptr(), buf_size);
-        if actual <= 0 {
-            return children;
-        }
-
-        let n = actual as usize / mem::size_of::<i32>();
+        // `proc_listchildpids` returns the number of BYTES written (capped by
+        // `buffersize`), NOT a count — and a NULL/zero-size probe call returns 0
+        // rather than the needed size on modern macOS (verified on macOS 26 / arm64),
+        // which made the old count-first pattern always return zero children.
+        // Allocate a generous buffer and call directly, growing if it comes back full.
+        let mut cap = 256usize;
+        let (pids, n) = loop {
+            let mut pids = vec![0i32; cap];
+            let buf_size = (cap * mem::size_of::<i32>()) as i32;
+            let actual = proc_listchildpids(ppid, pids.as_mut_ptr(), buf_size);
+            if actual <= 0 {
+                return children;
+            }
+            let n = actual as usize / mem::size_of::<i32>();
+            // If the buffer filled exactly, there may be more children — grow + retry.
+            if n < cap || cap >= 16384 {
+                break (pids, n);
+            }
+            cap *= 2;
+        };
         for &pid in &pids[..n] {
             if pid <= 0 {
                 continue;
