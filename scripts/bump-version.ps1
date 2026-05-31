@@ -7,14 +7,8 @@
 #
 # What it updates:
 #   - Cargo.toml [workspace.package] version
+#   - Cargo.toml [workspace.dependencies] victauri-* pins
 #   - Cargo.lock (via cargo check)
-#   - extensions/chrome/manifest.json
-#   - extensions/firefox/manifest.json
-#   - extensions/chrome/popup/popup.html
-#   - extensions/firefox/popup/popup.html
-#   - extensions/npm/package.json
-#   - editors/vscode/package.json
-#   - editors/vscode/package-lock.json
 #   - crates/victauri-plugin/src/js_bridge.rs (bridge version constant)
 #   - crates/victauri-plugin/tests/bridge_tests.rs (version assertions)
 #   - docs/src/getting-started.md (example output)
@@ -109,42 +103,12 @@ if ($cargoContent -match $pinPattern) {
     }
 }
 
-# 2. Chrome extension manifest
-Update-File "extensions\chrome\manifest.json" "`"version`": `"$OldVersion`"" "`"version`": `"$NewVersion`"" "Chrome extension manifest"
-
-# 3. Firefox extension manifest
-Update-File "extensions\firefox\manifest.json" "`"version`": `"$OldVersion`"" "`"version`": `"$NewVersion`"" "Firefox extension manifest"
-
-# 4. Chrome popup
-Update-File "extensions\chrome\popup\popup.html" "v$OldVersion" "v$NewVersion" "Chrome popup version"
-
-# 5. Firefox popup
-Update-File "extensions\firefox\popup\popup.html" "v$OldVersion" "v$NewVersion" "Firefox popup version"
-
-# 6. npm package
-Update-File "extensions\npm\package.json" "`"version`": `"$OldVersion`"" "`"version`": `"$NewVersion`"" "npm package version"
-
-# 7. VS Code extension
-Update-File "editors\vscode\package.json" "`"version`": `"$OldVersion`"" "`"version`": `"$NewVersion`"" "VS Code package.json"
-
-# 8. VS Code package-lock (both occurrences)
-$lockPath = Join-Path $root "editors\vscode\package-lock.json"
-if (Test-Path $lockPath) {
-    $lockContent = Get-Content $lockPath -Raw
-    $oldPattern = "`"version`": `"$OldVersion`""
-    $newPattern = "`"version`": `"$NewVersion`""
-    if ($lockContent -match [regex]::Escape($oldPattern)) {
-        if ($DryRun) {
-            Write-Host "  WOULD VS Code package-lock.json" -ForegroundColor DarkGray
-        } else {
-            $lockContent = $lockContent -replace [regex]::Escape($oldPattern), $newPattern
-            Set-Content $lockPath $lockContent -NoNewline
-            Write-Host "  OK    VS Code package-lock.json" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "  SKIP  VS Code package-lock.json (pattern not found)" -ForegroundColor Yellow
-    }
-}
+# NOTE: the browser extensions (chrome/firefox/npm) and the VS Code extension are
+# DECOUPLED from the core workspace version. They ship on their own cadence and are
+# versioned independently — bump them in their own package.json/manifest only when
+# they actually change. Force-bumping them on every core release made them rot
+# (a release tag with no extension changes). When an extension genuinely changes,
+# bump the top-level "version" field in its own package.json / manifest.json.
 
 # 9. JS bridge version (hardcoded in bridge init script)
 Update-File "crates\victauri-plugin\src\js_bridge.rs" "version: '$OldVersion'" "version: '$NewVersion'" "JS bridge version"

@@ -75,20 +75,12 @@ else
     echo "  OK    Cargo.toml [workspace.dependencies] victauri-* pins"
 fi
 
-# 2-3. Extension manifests
-replace_in_file "extensions/chrome/manifest.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "Chrome manifest"
-replace_in_file "extensions/firefox/manifest.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "Firefox manifest"
-
-# 4-5. Extension popups
-replace_in_file "extensions/chrome/popup/popup.html" "v$OLD_VERSION" "v$NEW_VERSION" "Chrome popup"
-replace_in_file "extensions/firefox/popup/popup.html" "v$OLD_VERSION" "v$NEW_VERSION" "Firefox popup"
-
-# 6. npm package
-replace_in_file "extensions/npm/package.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "npm package"
-
-# 7-8. VS Code extension
-replace_in_file "editors/vscode/package.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "VS Code package.json"
-replace_in_file "editors/vscode/package-lock.json" "\"version\": \"$OLD_VERSION\"" "\"version\": \"$NEW_VERSION\"" "VS Code package-lock.json"
+# NOTE: the browser extensions (chrome/firefox/npm) and the VS Code extension are
+# DECOUPLED from the core workspace version — they ship on their own cadence and are
+# versioned independently (bump them in their own package.json/manifest when you
+# actually change them). Force-bumping them on every core release made them rot
+# (e.g. a release tag with no extension changes). When an extension genuinely
+# changes, bump the top-level "version" field in its own package.json / manifest.json.
 
 # 9. JS bridge version
 replace_in_file "crates/victauri-plugin/src/js_bridge.rs" "version: '$OLD_VERSION'" "version: '$NEW_VERSION'" "JS bridge version"
