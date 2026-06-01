@@ -5151,6 +5151,7 @@ name = "victauri-cli"
 version = "0.7.3"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "ctrlc",
  "notify",

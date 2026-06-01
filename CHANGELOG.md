@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — agents could bind the WRONG app / wedge on restart (CDP-fallback root cause)
+
+- **`victauri bridge` now guarantees the agent reaches the RIGHT app, dynamically.** A static
+  `.mcp.json` `url:` hardcodes a port; when several Victauri apps run (or one falls back off a
+  busy 7373) that port can point at a *different* app, so every `mcp__victauri__*` call fails
+  with 404/422 and agents give up and use CDP. The bridge now resolves the backend **by app
+  identity**: discovery records the Tauri `identifier` + `product_name`, and
+  `victauri bridge --app <identifier>` (or `VICTAURI_APP`) binds that exact app regardless of
+  which port it landed on. With no selector it uses the single running app, or errors clearly
+  listing the running apps — never a silent wrong-app binding.
+- **Transparent restart recovery.** Every dev rebuild/relaunch invalidates the MCP session. The
+  bridge now caches the `initialize` handshake and re-establishes a fresh session
+  (re-discovering the port) on a stale session (404/409/422) or connection drop — the previous
+  code cleared the session then replayed the tool call with no session, which the server 422'd.
+  Verified by an E2E test that drives the real binary through a simulated restart.
+- **First-contact verification.** `/info` and `get_plugin_info` now report `app.identifier`, so
+  an agent can confirm it reached the intended app.
+- **`victauri init` bakes `--app <identifier>`** into `.mcp.json` (read from `tauri.conf.json`)
+  for zero-config multi-app correctness; the generated CLAUDE.md teaches agents to verify
+  identity, pin `--app`, and use the sessionless REST API — not CDP — on any wedge.
+
 ## [0.7.3] - 2026-06-01
 
 ### Security — red-team / audit hardening (release blockers)
