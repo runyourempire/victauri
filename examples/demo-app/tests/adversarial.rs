@@ -167,17 +167,20 @@ adv!(eval_oversized_output_is_capped, base, {
 
 // ── B. Resilience: recover cleanly after an eval timeout ────────────────────
 
-adv!(eval_recovers_after_timeout, base, {
-    // A syntax error surfaces only as the (30s) timeout. The NEXT eval must
-    // succeed quickly (the bridge is alive) — proves the re-probe doesn't
-    // false-fail. (Slow: ~30s.)
+adv!(eval_recovers_after_failed_eval, base, {
+    // A syntax error now fails FAST via the parse watchdog (~0.75s) instead of hanging for
+    // the full eval timeout. The NEXT eval must still succeed — proving the bridge recovers
+    // cleanly after a failed eval.
     let e = error(&eval(&base, "return 1 +").await);
-    assert!(e.contains("timed out"), "expected timeout, got: {e}");
+    assert!(
+        e.contains("syntax") || e.contains("did not begin executing") || e.contains("timed out"),
+        "expected a parse failure (or timeout) for a syntax error, got: {e}"
+    );
     let r = eval(&base, "return 42").await;
     assert_eq!(
         result(&r),
         &json!(42),
-        "eval did not recover after a timeout"
+        "eval did not recover after a failed eval"
     );
 });
 

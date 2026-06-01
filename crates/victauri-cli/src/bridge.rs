@@ -489,7 +489,16 @@ fn is_process_alive(pid: u32) -> bool {
 
 #[cfg(not(windows))]
 fn is_process_alive(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{pid}")).exists()
+    // Portable POSIX liveness check. `/proc` is Linux-only — on macOS it does not exist,
+    // so the old `/proc/{pid}` test always returned false and the bridge filtered out every
+    // discovery entry (it could find NO server on macOS). `kill -0` sends no signal but
+    // succeeds iff the process exists and is signalable by us — and discovery entries are
+    // our own user's processes. Works identically on macOS and Linux.
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 #[cfg(test)]
