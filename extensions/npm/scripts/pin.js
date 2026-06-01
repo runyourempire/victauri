@@ -36,6 +36,16 @@ const SHA256 = {
     "victauri-browser-host-windows-x86_64.exe":
       "5dd5ae673f1972dd6fc754da88916562467fb82dd844b95fc682ed7b87b2fd0a",
   },
+  "0.7.4": {
+    "victauri-browser-host-linux-x86_64":
+      "1243584677f48ff7aac30d01d203c0e0de7b547d9d46834c534febf80c0282d7",
+    "victauri-browser-host-macos-x86_64":
+      "ac5d45b03b1e9f62a1f23207be4c2a9114c0762af2cf98bddb71fcf8c5f1669e",
+    "victauri-browser-host-macos-aarch64":
+      "ff7a73d74e5f3bedbc29961cbcb1f10acfa0eec529a7dd0ac0ddc6acf4d55fb7",
+    "victauri-browser-host-windows-x86_64.exe":
+      "9dc44b9fcb4d7b70a80f6911b4b31794c89fd4c22a1392a3da8d12da816afc15",
+  },
 };
 
 // Map Node platform/arch -> the published release asset name. Returns null on an
