@@ -238,13 +238,17 @@ jobs:
         run: |
           publish() {
             echo "Publishing $1..."
-            if cargo publish -p "$1" 2>&1 | tee /tmp/pub.log; then
+            # NB: capture cargo's exit via PIPESTATUS, NOT the pipeline's (which is
+            # tee's and is always 0) — otherwise an auth/publish failure is masked
+            # and the job false-greens without anything reaching crates.io.
+            cargo publish -p "$1" 2>&1 | tee /tmp/pub.log
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -eq 0 ]; then
               echo "$1 published successfully"
-            elif grep -q "already exists" /tmp/pub.log; then
+            elif grep -qiE "already exists|already uploaded|crate version .* is already" /tmp/pub.log; then
               echo "$1 already published, skipping"
             else
-              echo "Failed to publish $1"
-              cat /tmp/pub.log
+              echo "::error::Failed to publish $1 (cargo exit $rc)"
               exit 1
             fi
             sleep 30
