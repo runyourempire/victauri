@@ -44,7 +44,7 @@ function runBinary(args) {
   const binPath = getBinaryPath();
   if (!binPath) {
     console.error("Error: victauri-browser-host binary not found.");
-    console.error("Run 'npm install' or 'npx victauri-browser install' to download it.");
+    console.error("Run 'npm install' or 'npx @4da-systems/victauri-browser install' to download it.");
     process.exit(1);
   }
 
