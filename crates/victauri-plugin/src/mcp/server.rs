@@ -562,6 +562,9 @@ mod tests {
                 .unwrap();
         assert_eq!(meta["port"], 7777);
         assert_eq!(meta["pid"], std::process::id());
+        // App identity must be recorded so a discovery client can select the RIGHT app.
+        assert_eq!(meta["identifier"], "com.example.app");
+        assert_eq!(meta["product_name"], "Example");
         remove_port_file();
         assert!(!dir.exists());
     }

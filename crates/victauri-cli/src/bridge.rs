@@ -555,4 +555,38 @@ mod tests {
             _ => panic!("substring of product/identifier should match"),
         }
     }
+
+    // End-to-end against REAL discovery files: the plugin writes port/token/metadata.json
+    // under `<temp>/victauri/<pid>/`; this proves the bridge parses those real files and can
+    // select the right app by identity — even amid the many stale dirs left by dead processes.
+    #[test]
+    fn discover_servers_reads_real_metadata_and_selects() {
+        let pid = std::process::id(); // alive → passes is_process_alive
+        let dir = std::env::temp_dir().join("victauri").join(pid.to_string());
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("port"), "61999").unwrap();
+        std::fs::write(dir.join("token"), "tok-xyz").unwrap();
+        std::fs::write(
+            dir.join("metadata.json"),
+            r#"{"pid":1,"port":61999,"identifier":"com.test.discover","product_name":"DiscoverTest"}"#,
+        )
+        .unwrap();
+
+        let servers = discover_servers();
+        let mine = servers
+            .iter()
+            .find(|s| s.identifier.as_deref() == Some("com.test.discover"))
+            .expect("bridge should discover the entry written for the live current pid");
+        assert_eq!(mine.port, 61999);
+        assert_eq!(mine.token.as_deref(), Some("tok-xyz"));
+        assert_eq!(mine.product_name.as_deref(), Some("DiscoverTest"));
+
+        // And selection by identity picks it out.
+        assert!(matches!(
+            select(std::slice::from_ref(mine), Some("com.test.discover")),
+            Selection::One(_)
+        ));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
