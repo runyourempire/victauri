@@ -37,3 +37,6 @@ editors/vscode/*.vsix
 # Security audit (triaged status + private working copy) — local only
 SECURITY-AUDIT.md
 AUDIT_WORK.md
+
+# npm pack artifacts
+extensions/npm/*.tgz
