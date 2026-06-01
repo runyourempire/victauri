@@ -51,7 +51,7 @@ victauri/
 ├── extensions/
 │   ├── chrome/              # Chrome/Edge/Brave extension (MV3) + 163 vitest tests
 │   ├── firefox/             # Firefox extension (MV3) — browser.* namespace port
-│   └── npm/                 # npm package: @anthropic/victauri-browser (binary installer)
+│   └── npm/                 # npm package: @4da-systems/victauri-browser (binary installer)
 ├── docs/                    # mdbook documentation site (10 pages)
 └── examples/
     └── demo-app/            # Multi-window Tauri app with comprehensive test suite
@@ -87,7 +87,7 @@ Native messaging host binary + Chrome extension for browser MCP inspection.
 - `installer.rs` — Cross-platform native host manifest registration (Chrome/Edge/Brave/Arc on Win/Mac/Linux)
 - Chrome extension: MV3 service worker (native messaging + tab lifecycle + CDP + screenshot), ISOLATED world relay, MAIN world JS bridge (1700+ lines — DOM, interactions, a11y, perf, CSS, recording), dark popup UI
 - Firefox extension: Full MV3 port using `browser.*` namespace, background scripts (not service workers), no CDP
-- npm package: `@anthropic/victauri-browser` with postinstall binary download from GitHub releases
+- npm package: `@4da-systems/victauri-browser` with postinstall binary download from GitHub releases
 - 99 Rust tests (5 native_messaging + 4 bridge_dispatch + 6 mcp_handler + 6 mcp_server + 12 server integration + 5 tab_state + 4 installer + 3 auth + 2 router + 52 E2E pipeline)
 - 163 JS tests (vitest + jsdom): find-elements (28), interactions (20), helpers (16), dom-snapshot (14), logs (13), css-inspect (12), storage (10), eval (10), performance (9), recording (8), service-worker (8), content-isolated (8), waitfor (7)
 

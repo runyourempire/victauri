@@ -323,7 +323,7 @@ VictauriBuilder::new()
 
 - **Browser extension ecosystem** — `victauri-browser` crate with native messaging host for Chrome/Edge/Brave/Arc/Firefox. MCP inspection for any website, not just Tauri apps.
 - **Firefox extension** — full MV3 port using `browser.*` namespace in `extensions/firefox/`
-- **npm package** — `@anthropic/victauri-browser` with postinstall binary download from GitHub releases
+- **npm package** — `@4da-systems/victauri-browser` with postinstall binary download from GitHub releases
 - **163 JavaScript tests** — vitest + jsdom test suite for the Chrome extension JS bridge
 - **52 E2E Rust tests** — full pipeline integration tests for victauri-browser
 - **mdbook documentation site** — 10-page docs site in `docs/`

@@ -1,7 +1,10 @@
 {
-  "name": "victauri-browser",
+  "name": "@4da-systems/victauri-browser",
   "version": "0.7.3",
   "description": "Native messaging host for the Victauri Chrome/Firefox extension — MCP bridge for any website",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "victauri-browser": "./bin/victauri-browser.js"
   },
