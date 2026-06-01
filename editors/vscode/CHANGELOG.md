@@ -2,6 +2,12 @@
 
 All notable changes to the Victauri VS Code extension will be documented in this file.
 
+## 0.7.3 (2026-06-01)
+
+- Version-synced with the Victauri 0.7.3 release (security-audit hardening: npm RCE
+  pin, browser-bridge nonce fix, debugger/CDP permission dropped, command-filter
+  enforcement, core DoS bounds, and MCP client 422 stale-session auto-recovery).
+
 ## 0.7.2 (2026-05-31)
 
 - Version-synced with the Victauri workspace 0.7.2 release (animation-debugging suite, per-window introspectability diagnostic, loud-fail on blank window capture).
