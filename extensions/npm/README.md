@@ -1,17 +1,17 @@
-# @4da-systems/victauri-browser
+# @4da/victauri-browser
 
 Native messaging host for the Victauri Chrome/Firefox/Edge extension. Provides an MCP (Model Context Protocol) bridge that gives AI agents full access to any website through the browser.
 
 ## Installation
 
 ```bash
-npm install -g @4da-systems/victauri-browser
+npm install -g @4da/victauri-browser
 ```
 
 Or run directly without installing:
 
 ```bash
-npx @4da-systems/victauri-browser install
+npx @4da/victauri-browser install
 ```
 
 This will:
@@ -119,7 +119,7 @@ The MCP server exposes 20 tools for browser interaction:
 ## Uninstalling
 
 ```bash
-npm uninstall -g @4da-systems/victauri-browser
+npm uninstall -g @4da/victauri-browser
 ```
 
 This automatically unregisters the native messaging host before removing the package.

@@ -16,7 +16,7 @@
   <a href="https://github.com/runyourempire/victauri/actions/workflows/ci.yml"><img src="https://github.com/runyourempire/victauri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://crates.io/crates/victauri-plugin"><img src="https://img.shields.io/crates/v/victauri-plugin.svg" alt="crates.io"></a>
   <a href="https://docs.rs/victauri-plugin"><img src="https://docs.rs/victauri-plugin/badge.svg" alt="docs.rs"></a>
-  <a href="https://www.npmjs.com/package/@4da-systems/victauri-browser"><img src="https://img.shields.io/npm/v/@4da-systems/victauri-browser.svg" alt="npm: @4da-systems/victauri-browser"></a>
+  <a href="https://www.npmjs.com/package/@4da/victauri-browser"><img src="https://img.shields.io/npm/v/@4da/victauri-browser.svg" alt="npm: @4da/victauri-browser"></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0"></a>
   <a href="https://doc.rust-lang.org/edition-guide/rust-2024/index.html"><img src="https://img.shields.io/badge/MSRV-1.88+-informational" alt="MSRV: 1.88+"></a>
 </p>
@@ -338,7 +338,7 @@ victauri/
 ├── extensions/
 │   ├── chrome/              # Chrome/Edge/Brave extension (MV3) + 163 vitest tests
 │   ├── firefox/             # Firefox extension (MV3)
-│   └── npm/                 # @4da-systems/victauri-browser npm package
+│   └── npm/                 # @4da/victauri-browser npm package
 ├── docs/                    # mdbook documentation site
 └── examples/
     └── demo-app/            # Multi-window Tauri app with 19 instrumented commands
