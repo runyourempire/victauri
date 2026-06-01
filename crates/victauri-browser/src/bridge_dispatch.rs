@@ -97,67 +97,6 @@ impl BridgeDispatch {
         }
     }
 
-    /// Send a CDP command to the extension.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error on write failure, disconnect, or timeout.
-    #[allow(dead_code)]
-    pub async fn dispatch_cdp(
-        &self,
-        tab_id: u32,
-        domain_method: &str,
-        params: Option<Value>,
-    ) -> Result<Value, String> {
-        let id = uuid::Uuid::new_v4().to_string();
-
-        let (tx, rx) = oneshot::channel();
-        {
-            let mut pending = self.pending.lock().await;
-            if pending.len() >= MAX_PENDING {
-                return Err(format!(
-                    "too many in-flight commands ({MAX_PENDING}); extension unresponsive"
-                ));
-            }
-            pending.insert(id.clone(), tx);
-        }
-
-        let msg = serde_json::json!({
-            "id": id,
-            "type": "cdp",
-            "tab_id": tab_id,
-            "domain_method": domain_method,
-            "params": params.unwrap_or(Value::Null),
-        });
-
-        {
-            let mut writer = self.writer.lock().await;
-            crate::native_messaging::write_message(&mut *writer, &msg)
-                .await
-                .map_err(|e| format!("native messaging write failed: {e}"))?;
-        }
-
-        match tokio::time::timeout(DISPATCH_TIMEOUT, rx).await {
-            Ok(Ok(result)) => {
-                if let Some(err) = result.error {
-                    Err(err)
-                } else {
-                    Ok(result.data.unwrap_or(Value::Null))
-                }
-            }
-            Ok(Err(_)) => {
-                self.cleanup_pending(&id).await;
-                Err("extension disconnected during CDP call".to_string())
-            }
-            Err(_) => {
-                self.cleanup_pending(&id).await;
-                Err(format!(
-                    "timeout ({DISPATCH_TIMEOUT:?}) waiting for CDP {domain_method}"
-                ))
-            }
-        }
-    }
-
     /// Called by the native messaging read loop when a response arrives.
     pub async fn on_response(&self, id: &str, data: Option<Value>, error: Option<String>) {
         let mut pending = self.pending.lock().await;

@@ -43,14 +43,20 @@ describe('service worker module structure', () => {
     expect(source).toContain('onUpdated');
   });
 
-  it('contains CDP management', async () => {
+  it('does NOT use the debugger/CDP permission (audit #7)', async () => {
     const { readFileSync } = await import('fs');
     const { resolve, dirname } = await import('path');
     const { fileURLToPath } = await import('url');
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(resolve(__dirname, '..', 'service-worker.js'), 'utf8');
-    expect(source).toContain('debugger');
-    expect(source).toContain('attach');
+    // CDP/debugger was dropped — screenshots use captureVisibleTab instead.
+    expect(source).not.toContain('chrome.debugger');
+    expect(source).toContain('captureVisibleTab');
+    // The manifest must not request the `debugger` permission either.
+    const manifest = JSON.parse(
+      readFileSync(resolve(__dirname, '..', 'manifest.json'), 'utf8')
+    );
+    expect(manifest.permissions).not.toContain('debugger');
   });
 
   it('contains screenshot capture logic', async () => {

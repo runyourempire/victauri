@@ -10,7 +10,6 @@
         "nativeMessaging",
         "storage",
         "cookies",
-        "debugger",
         "alarms"
     ],
     "host_permissions": [

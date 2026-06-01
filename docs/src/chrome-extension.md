@@ -101,7 +101,7 @@ Web Page
 - Manages native messaging connection lifecycle
 - Routes commands to the correct tab's content script
 - Handles tab lifecycle (creation, removal, navigation)
-- Manages CDP sessions for advanced features
+- Captures screenshots via `captureVisibleTab` (no `debugger`/CDP permission)
 
 **Content Script** (ISOLATED world)
 - Relay between service worker and MAIN world bridge

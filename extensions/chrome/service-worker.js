@@ -4,9 +4,6 @@ const COMMAND_TIMEOUT_MS = 30000;
 let nativePort = null;
 let pendingCommands = new Map();
 let tabStates = new Map();
-let cdpAttached = new Map();
-let cdpDetachTimers = new Map();
-const CDP_DETACH_DELAY = 5000;
 
 function connectNative() {
     if (nativePort) return;
@@ -45,13 +42,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 function onNativeMessage(message) {
-    if (message.type === 'execute' || message.type === 'cdp') {
+    if (message.type === 'execute') {
         handleHostCommand(message);
     }
 }
 
 async function handleHostCommand(command) {
-    const { id, type: cmdType, tab_id, method, args, domain_method, params } = command;
+    const { id, tab_id, method, args } = command;
 
     try {
         let tabId = tab_id;
@@ -70,10 +67,7 @@ async function handleHostCommand(command) {
             return;
         }
 
-        if (cmdType === 'cdp') {
-            const result = await executeCdp(tabId, domain_method, params);
-            sendToHost({ id, type: 'response', data: result });
-        } else if (method === 'screenshot') {
+        if (method === 'screenshot') {
             const data = await captureScreenshot(tabId, args || {});
             sendToHost({ id, type: 'response', data });
         } else if (method === 'getCookies') {
@@ -134,59 +128,13 @@ async function sendToContentScript(tabId, commandId, method, args) {
     });
 }
 
-async function captureScreenshot(tabId, options) {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!options.fullPage && activeTab && activeTab.id === tabId) {
-        const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
-        return dataUrl.split(',')[1];
-    }
-
-    await ensureCdpAttached(tabId);
-    const result = await chrome.debugger.sendCommand(
-        { tabId },
-        'Page.captureScreenshot',
-        { format: 'png', captureBeyondViewport: options.fullPage ?? false }
-    );
-    scheduleCdpDetach(tabId);
-    return result.data;
-}
-
-async function executeCdp(tabId, domainMethod, params) {
-    await ensureCdpAttached(tabId);
-    const result = await chrome.debugger.sendCommand({ tabId }, domainMethod, params || {});
-    scheduleCdpDetach(tabId);
-    return result;
-}
-
-async function ensureCdpAttached(tabId) {
-    if (cdpAttached.has(tabId)) {
-        const timer = cdpDetachTimers.get(tabId);
-        if (timer) {
-            clearTimeout(timer);
-            cdpDetachTimers.delete(tabId);
-        }
-        return;
-    }
-
-    await chrome.debugger.attach({ tabId }, '1.3');
-    cdpAttached.set(tabId, true);
-}
-
-function scheduleCdpDetach(tabId) {
-    const existing = cdpDetachTimers.get(tabId);
-    if (existing) clearTimeout(existing);
-
-    const timer = setTimeout(async () => {
-        cdpDetachTimers.delete(tabId);
-        cdpAttached.delete(tabId);
-        try {
-            await chrome.debugger.detach({ tabId });
-        } catch (e) {
-            // Tab may have been closed
-        }
-    }, CDP_DETACH_DELAY);
-
-    cdpDetachTimers.set(tabId, timer);
+// Screenshot via captureVisibleTab only — no `debugger`/CDP permission (audit #7).
+// Captures the visible viewport of the active tab in the target tab's window;
+// full-page capture is not available without CDP (documented limitation).
+async function captureScreenshot(tabId, _options) {
+    const tab = await chrome.tabs.get(tabId);
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    return dataUrl.split(',')[1];
 }
 
 // Tab lifecycle tracking
@@ -197,12 +145,6 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     tabStates.delete(tabId);
-    cdpAttached.delete(tabId);
-    const timer = cdpDetachTimers.get(tabId);
-    if (timer) {
-        clearTimeout(timer);
-        cdpDetachTimers.delete(tabId);
-    }
     sendToHost({ type: 'tab_closed', tab_id: tabId });
 });
 

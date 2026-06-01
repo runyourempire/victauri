@@ -287,13 +287,17 @@ possibly-hostile websites.
 
 ## Browser Extension Permissions
 
-The browser extension requests a broad permission set (`debugger`, `cookies`, `tabs`,
-`scripting`, `<all_urls>`) because it is a general-purpose web inspector:
+The browser extension requests `cookies`, `tabs`, `scripting`, and `<all_urls>` because it is a
+general-purpose web inspector:
 
-- `debugger` powers the raw **CDP passthrough tool** and CDP screenshots (a non-debugger
-  `captureVisibleTab` path also exists);
 - `cookies` powers httpOnly cookie inspection;
 - `<all_urls>` + `tabs` allow inspecting any site/tab.
+
+> **The `debugger`/CDP permission was removed (audit #7).** It triggered a persistent
+> "started debugging this browser" banner and granted full CDP — a large attack surface for a
+> niche passthrough tool. Screenshots now use `chrome.tabs.captureVisibleTab` exclusively
+> (viewport only; full-page capture is no longer available). Chrome and Firefox now request the
+> same, narrower permission set.
 
 These are **features, not gratuitous grants** — but they are powerful. Install the extension only
 if you need full web inspection, and prefer the embedded Tauri plugin (capability-gated, debug-only)
@@ -306,9 +310,9 @@ determined hostile page can recover it (by triggering a handshake re-announce, o
 nonce from a legitimate command event) and then forge commands. This matters **little in practice**
 because the MAIN-world bridge runs in the page's *own* JS context — driving it grants the page nothing
 it doesn't already have (DOM access, `document.cookie`, `localStorage`, eval-in-self). The genuinely
-privileged capabilities — **httpOnly cookies (`chrome.cookies`), CDP (`chrome.debugger`), and cross-tab
-screenshots** — are handled in the **service worker** and are **not reachable by a forged page event**
-(a page cannot impersonate `chrome.runtime`). The real residual risk is **response forgery**: a hostile
+privileged capabilities — **httpOnly cookies (`chrome.cookies`) and screenshots** — are handled in the
+**service worker** and are **not reachable by a forged page event** (a page cannot impersonate
+`chrome.runtime`). The real residual risk is **response forgery**: a hostile
 page can inject fabricated results for the agent's in-flight commands, feeding the agent attacker-
 controlled data (a prompt-injection vector — see [Untrusted Content & Prompt Injection](#untrusted-content--prompt-injection)).
 Treat the extension as a privileged component, do not run it in auto-approve mode against hostile sites,
