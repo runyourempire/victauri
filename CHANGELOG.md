@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`VictauriClient` auto-recovers from a stale MCP session (HTTP 422).** When a tool call returns
+  HTTP 422 "expected initialized request" — the session went stale because the in-app server
+  restarted, the client reconnected, or `notifications/initialized` was missed — the client now
+  re-runs the handshake once and retries transparently (bounded, no re-init loop). If the session is
+  still stale, the error names the cause and points to the sessionless REST endpoint
+  (`POST /api/tools/{name}`). Closes #2.
 - **`eval_js` fails fast on malformed syntax instead of hanging for the full timeout.** A syntax
   error in the submitted code previously broke the parse of the whole injected wrapper, so the
   callback never fired and the call blocked for the entire (30s) eval timeout. A CSP-safe parse
