@@ -1,5 +1,21 @@
 # Migration Guide
 
+## v0.7.4 → v0.7.5 (red-team hardening — no breaking changes)
+
+All changes are additive or strictly more permissive; no action required. Two
+behavioural notes:
+
+- **`resolve_command` ranking improved.** A query that exactly matches a command's
+  `intent` now receives a strong exact-match bonus, so it ranks above commands whose
+  *name* merely contains one of the query words (e.g. `"increase counter"` now resolves
+  to `increment`, not `get_counter`). If you asserted on exact `resolve_command`
+  *ordering*, re-check those expectations — relevance is now more correct.
+- **`assert_semantic` `label` and `recording.checkpoint` `checkpoint_id` are now
+  optional.** Calls that previously failed with a missing-parameter error now succeed
+  (`label` defaults to empty; an omitted `checkpoint_id` is auto-generated as
+  `cp-<uuid>` and returned in the response). Existing callers that pass these are
+  unaffected.
+
 ## v0.7.3 → v0.7.4 (agent connection reliability)
 
 Recommended (not required): **connect agents through `victauri bridge`, not a fixed `url:`.**

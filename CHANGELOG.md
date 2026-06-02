@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — red-team audit (pre-0.7.5)
+## [0.7.5] - 2026-06-02
+
+Two adversarial red-team passes (cross-model) before release. The first pass found
+9 issues; the second confirmed all 9 fixed and surfaced a real intent-ranking bug
+plus three UX footguns. All fixed below.
+
+### Fixed — red-team audit (first pass)
 
 - **macOS bridge discovery** — `victauri bridge` used a Linux-only `/proc/{pid}` liveness check, so on
   macOS it found *no* running server (the feature was non-functional on macOS). Replaced with a portable
@@ -35,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer advertises an unbuilt Linux-aarch64 binary; `examples/demo-app/test_deep.sh` no longer asserts the
   ancient `0.2.1` version (now version-agnostic) and uses the default port 7373.
 
-### Fixed — second red-team pass (pre-0.7.5)
+### Fixed — red-team audit (second pass)
 
 - **Intent resolution ranked the wrong command** — `resolve("increase counter")` returned `get_counter`
   (whose *name* contains "counter") above `increment` (whose *intent* is literally "increase counter"),

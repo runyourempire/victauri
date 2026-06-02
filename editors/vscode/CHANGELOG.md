@@ -2,6 +2,13 @@
 
 All notable changes to the Victauri VS Code extension will be documented in this file.
 
+## 0.7.5 (2026-06-02)
+
+- Version-synced with the Victauri 0.7.5 release (two cross-model red-team passes:
+  intent-resolution exact-match ranking fix, `assert_semantic`/`recording.checkpoint`
+  UX footgun fixes, bridge-version self-check, ghost-command report split, directory
+  traversal guard, and a Chrome-test dependency CVE bump).
+
 ## 0.7.3 (2026-06-01)
 
 - Version-synced with the Victauri 0.7.3 release (security-audit hardening: npm RCE
