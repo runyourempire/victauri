@@ -172,11 +172,19 @@ fn classify_severity(
 
 // ── Ghost command detection ─────────────────────────────────────────────────
 
-/// Report of ghost commands -- commands that exist on only one side of the IPC boundary.
+/// Report of commands that exist on only one side of the IPC boundary.
+///
+/// The two sides are kept in separate fields because they mean very different
+/// things: `frontend_only` is the set of *true ghost commands* (invoked from the
+/// frontend but with no backend handler — likely bugs or typos), while
+/// `registry_only` is purely informational (registered handlers that were never
+/// invoked during the observation window).
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GhostCommandReport {
-    /// Commands found on only the frontend or only the backend.
-    pub ghost_commands: Vec<GhostCommand>,
+    /// True ghost commands: invoked from the frontend but not registered in the backend.
+    pub frontend_only: Vec<GhostCommand>,
+    /// Informational: registered in the backend but never invoked from the frontend.
+    pub registry_only: Vec<GhostCommand>,
     /// Total unique commands observed from the frontend.
     pub total_frontend_commands: usize,
     /// Total commands registered in the backend registry.
@@ -226,13 +234,14 @@ impl fmt::Display for GhostCommand {
 /// use victauri_core::{GhostCommandReport, GhostCommand, GhostSource};
 ///
 /// let report = GhostCommandReport {
-///     ghost_commands: vec![
+///     frontend_only: vec![
 ///         GhostCommand {
 ///             name: "delete".to_string(),
 ///             source: GhostSource::FrontendOnly,
 ///             description: None,
 ///         },
 ///     ],
+///     registry_only: vec![],
 ///     total_frontend_commands: 3,
 ///     total_registry_commands: 2,
 /// };
@@ -243,7 +252,7 @@ impl fmt::Display for GhostCommand {
 /// ```
 impl fmt::Display for GhostCommandReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let n = self.ghost_commands.len();
+        let n = self.frontend_only.len();
         write!(
             f,
             "{n} ghost command(s) ({} frontend, {} registry)",
@@ -317,7 +326,7 @@ impl fmt::Display for IpcIntegrityReport {
 ///
 /// let frontend_cmds = vec!["save".to_string(), "delete".to_string()];
 /// let report = detect_ghost_commands(&frontend_cmds, &registry);
-/// assert_eq!(report.ghost_commands.len(), 1); // "delete" is frontend-only
+/// assert_eq!(report.frontend_only.len(), 1); // "delete" is frontend-only (a true ghost)
 /// ```
 #[must_use]
 pub fn detect_ghost_commands(
@@ -332,11 +341,12 @@ pub fn detect_ghost_commands(
         .map(std::string::String::as_str)
         .collect();
 
-    let mut ghost_commands = Vec::new();
+    let mut frontend_only = Vec::new();
+    let mut registry_only = Vec::new();
 
     for name in &frontend_set {
         if !registry_names.contains(name) {
-            ghost_commands.push(GhostCommand {
+            frontend_only.push(GhostCommand {
                 name: name.to_string(),
                 source: GhostSource::FrontendOnly,
                 description: Some(
@@ -348,7 +358,7 @@ pub fn detect_ghost_commands(
 
     for cmd in &registry_list {
         if !frontend_set.contains(cmd.name.as_str()) {
-            ghost_commands.push(GhostCommand {
+            registry_only.push(GhostCommand {
                 name: cmd.name.clone(),
                 source: GhostSource::RegistryOnly,
                 description: cmd.description.clone(),
@@ -356,10 +366,12 @@ pub fn detect_ghost_commands(
         }
     }
 
-    ghost_commands.sort_by(|a, b| a.name.cmp(&b.name));
+    frontend_only.sort_by(|a, b| a.name.cmp(&b.name));
+    registry_only.sort_by(|a, b| a.name.cmp(&b.name));
 
     GhostCommandReport {
-        ghost_commands,
+        frontend_only,
+        registry_only,
         total_frontend_commands: frontend_set.len(),
         total_registry_commands: registry_list.len(),
     }

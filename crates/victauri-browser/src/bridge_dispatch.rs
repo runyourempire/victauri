@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
+use tokio::io::AsyncWrite;
 use tokio::sync::{Mutex, oneshot};
 
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -18,7 +19,13 @@ const MAX_PENDING: usize = 1024;
 /// a oneshot receiver awaits the response from the extension.
 pub struct BridgeDispatch {
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<DispatchResult>>>>,
-    writer: Arc<Mutex<tokio::io::Stdout>>,
+    /// Boxed trait object so the writer can be the live process stdout in
+    /// production or a discarding sink in tests, without making the struct
+    /// generic (which would ripple a type param into every `Arc<BridgeDispatch>`
+    /// field across handlers/TabManager). `Box<dyn AsyncWrite + Send + Unpin>`
+    /// is itself `AsyncWrite + Unpin`, so it plugs straight into
+    /// `native_messaging::write_message`.
+    writer: Arc<Mutex<Box<dyn AsyncWrite + Send + Unpin>>>,
 }
 
 #[derive(Debug)]
@@ -29,11 +36,20 @@ pub struct DispatchResult {
 
 impl BridgeDispatch {
     #[must_use]
-    pub fn new(writer: tokio::io::Stdout) -> Self {
+    pub fn new<W: AsyncWrite + Send + Unpin + 'static>(writer: W) -> Self {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
-            writer: Arc::new(Mutex::new(writer)),
+            writer: Arc::new(Mutex::new(Box::new(writer))),
         }
+    }
+
+    /// Construct a dispatch whose frames are written to a discarding sink.
+    ///
+    /// Use this in tests so dispatched native-messaging frames are not emitted
+    /// into `cargo test` stdout (which would corrupt the test output stream).
+    #[must_use]
+    pub fn new_sink() -> Self {
+        Self::new(tokio::io::sink())
     }
 
     /// Send a command to the extension and await the response.
@@ -146,8 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_resolves_pending() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {
@@ -166,8 +181,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_with_error() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {
@@ -185,8 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_all_resolves_pending() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {
@@ -203,8 +216,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_response_id_ignored() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         dispatch
             .on_response("nonexistent", Some(serde_json::json!({})), None)
@@ -215,8 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_count_tracks_insertions() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         assert_eq!(dispatch.pending_count().await, 0);
 
@@ -237,8 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_with_null_data_and_no_error() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {
@@ -255,8 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_all_with_multiple_pending() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx1, rx1) = oneshot::channel();
         let (tx2, rx2) = oneshot::channel();
@@ -280,8 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_all_on_empty_is_noop() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
         dispatch.cancel_all().await;
         assert_eq!(dispatch.pending_count().await, 0);
     }
@@ -290,8 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_100_pending_insertions_and_resolutions() {
-        let stdout = tokio::io::stdout();
-        let dispatch = Arc::new(BridgeDispatch::new(stdout));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
 
         let mut receivers = vec![];
         for i in 0..100 {
@@ -330,8 +337,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_after_cancel_all_is_noop() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, _rx) = oneshot::channel();
         {
@@ -350,8 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn duplicate_id_response_only_resolves_once() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {
@@ -373,8 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_all_then_insert_new() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx1, rx1) = oneshot::channel();
         {
@@ -403,8 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_cancel_and_resolve_race() {
-        let stdout = tokio::io::stdout();
-        let dispatch = Arc::new(BridgeDispatch::new(stdout));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
 
         for i in 0..50 {
             let (tx, _rx) = oneshot::channel();
@@ -434,8 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn on_response_with_both_data_and_error() {
-        let stdout = tokio::io::stdout();
-        let dispatch = BridgeDispatch::new(stdout);
+        let dispatch = BridgeDispatch::new_sink();
 
         let (tx, rx) = oneshot::channel();
         {

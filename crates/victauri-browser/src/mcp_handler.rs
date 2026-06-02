@@ -718,7 +718,7 @@ mod tests {
 
     fn make_handler() -> VictauriBrowserHandler {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         VictauriBrowserHandler::new(tab_mgr, dispatch)
     }
 
@@ -1149,7 +1149,7 @@ mod tests {
 
     fn make_handler_with_dispatch() -> (VictauriBrowserHandler, std::sync::Arc<BridgeDispatch>) {
         let tab_mgr = std::sync::Arc::new(TabManager::new());
-        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch.clone());
         (handler, dispatch)
     }
@@ -1319,7 +1319,7 @@ mod tests {
 
     #[tokio::test]
     async fn assert_semantic_unknown_condition() {
-        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new_sink());
         let h =
             VictauriBrowserHandler::new(std::sync::Arc::new(TabManager::new()), dispatch.clone());
 
@@ -1363,7 +1363,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_invocation_counter_correctness() {
         let tab_mgr = std::sync::Arc::new(TabManager::new());
-        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
 
         let mut handles = vec![];
@@ -1394,7 +1394,7 @@ mod tests {
         tab_mgr.on_tab_created(2, "https://two.com", "Two").await;
         tab_mgr.on_tab_activated(2).await;
 
-        let dispatch = std::sync::Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = std::sync::Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
 
         let result = handler
@@ -1907,7 +1907,7 @@ mod tests {
     #[tokio::test]
     async fn tabs_with_populated_manager_shows_count() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
 
         tab_mgr.on_tab_created(1, "https://a.com", "A").await;
         tab_mgr.on_tab_created(2, "https://b.com", "B").await;
@@ -1923,7 +1923,7 @@ mod tests {
     #[tokio::test]
     async fn tabs_list_with_active_tab_marked() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
 
         tab_mgr.on_tab_created(10, "https://a.com", "A").await;
         tab_mgr.on_tab_created(20, "https://b.com", "B").await;
@@ -1993,7 +1993,7 @@ mod tests {
         // Verify every tool that dispatches to the bridge is recognized (not "unknown tool").
         // Uses a spawned task to resolve the pending command immediately with mock data.
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
 
         let bridge_tools: Vec<(&str, serde_json::Value)> = vec![

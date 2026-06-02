@@ -9,11 +9,11 @@
 #   - Multi-window management
 #   - Full interaction pipelines (click → state change → verify)
 #
-# Usage: PORT=7374 bash test_deep.sh
+# Usage: PORT=7373 bash test_deep.sh   (the plugin's default port; override if it fell back)
 
 set -uo pipefail
 
-PORT="${PORT:-7374}"
+PORT="${PORT:-7373}"
 BASE="http://127.0.0.1:$PORT"
 PASS=0
 FAIL=0
@@ -75,7 +75,7 @@ check "1.1 health endpoint" "$R" '"status".*"ok"'
 R=$(curl -s "$BASE/info")
 check "1.2 info shows 19 commands" "$R" '"commands_registered":19'
 check "1.3 info auth disabled" "$R" '"auth_required":false'
-check "1.4 info version 0.2.1" "$R" '"version":"0.2.1"'
+check "1.4 info version is semver" "$R" '"version":"[0-9]+\.[0-9]+\.[0-9]+"'
 check "1.5 info port correct" "$R" "\"port\":$PORT"
 
 R=$(call_tool "get_plugin_info" '{}')

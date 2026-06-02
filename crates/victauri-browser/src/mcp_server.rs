@@ -335,7 +335,7 @@ mod tests {
 
     fn make_handler() -> VictauriBrowserHandler {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         VictauriBrowserHandler::new(tab_mgr, dispatch)
     }
 
@@ -676,7 +676,7 @@ mod tests {
         use std::sync::Arc;
 
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
 
         let schema_tools = build_tool_definitions();
@@ -714,7 +714,7 @@ mod tests {
         use std::sync::Arc;
 
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
 
         // Spawn a responder to resolve any bridge commands immediately

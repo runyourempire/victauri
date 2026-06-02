@@ -121,7 +121,7 @@ mod tests {
 
     fn make_app(auth: Option<String>) -> axum::Router {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
         build_app(handler, auth)
     }
@@ -309,7 +309,7 @@ mod tests {
 
     fn make_app_with_rate_limit(budget: u64) -> axum::Router {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
         let limiter = Arc::new(crate::auth::RateLimiterState::new(budget));
         build_app_full(handler, None, Some(limiter))

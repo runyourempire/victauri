@@ -1304,18 +1304,16 @@ fn window_state_extreme_values() {
 #[test]
 fn ghost_command_report_serde_roundtrip() {
     let report = GhostCommandReport {
-        ghost_commands: vec![
-            GhostCommand {
-                name: "phantom_cmd".to_string(),
-                source: GhostSource::FrontendOnly,
-                description: Some("A ghost".to_string()),
-            },
-            GhostCommand {
-                name: "unused_backend".to_string(),
-                source: GhostSource::RegistryOnly,
-                description: None,
-            },
-        ],
+        frontend_only: vec![GhostCommand {
+            name: "phantom_cmd".to_string(),
+            source: GhostSource::FrontendOnly,
+            description: Some("A ghost".to_string()),
+        }],
+        registry_only: vec![GhostCommand {
+            name: "unused_backend".to_string(),
+            source: GhostSource::RegistryOnly,
+            description: None,
+        }],
         total_frontend_commands: 5,
         total_registry_commands: 3,
     };
@@ -1728,11 +1726,12 @@ fn display_verification_result_failed() {
 #[test]
 fn display_ghost_command_report() {
     let report = GhostCommandReport {
-        ghost_commands: vec![GhostCommand {
+        frontend_only: vec![GhostCommand {
             name: "phantom".to_string(),
             source: GhostSource::FrontendOnly,
             description: None,
         }],
+        registry_only: vec![],
         total_frontend_commands: 2,
         total_registry_commands: 1,
     };
@@ -1903,10 +1902,11 @@ fn ghost_commands_many_frontend_only() {
     let reg = CommandRegistry::new();
     let frontend: Vec<String> = (0..100).map(|i| format!("cmd_{i}")).collect();
     let report = detect_ghost_commands(&frontend, &reg);
-    assert_eq!(report.ghost_commands.len(), 100);
+    assert_eq!(report.frontend_only.len(), 100);
+    assert!(report.registry_only.is_empty());
     assert!(
         report
-            .ghost_commands
+            .frontend_only
             .iter()
             .all(|g| g.source == GhostSource::FrontendOnly)
     );
@@ -1919,10 +1919,11 @@ fn ghost_commands_many_registry_only() {
         reg.register(CommandInfo::new(format!("cmd_{i}")));
     }
     let report = detect_ghost_commands(&[], &reg);
-    assert_eq!(report.ghost_commands.len(), 100);
+    assert_eq!(report.registry_only.len(), 100);
+    assert!(report.frontend_only.is_empty());
     assert!(
         report
-            .ghost_commands
+            .registry_only
             .iter()
             .all(|g| g.source == GhostSource::RegistryOnly)
     );
@@ -1935,14 +1936,12 @@ fn ghost_commands_sorted_by_name() {
     reg.register(CommandInfo::new("alpha"));
     let frontend = vec!["mango".to_string(), "banana".to_string()];
     let report = detect_ghost_commands(&frontend, &reg);
-    let names: Vec<&str> = report
-        .ghost_commands
-        .iter()
-        .map(|g| g.name.as_str())
-        .collect();
-    let mut sorted = names.clone();
-    sorted.sort();
-    assert_eq!(names, sorted);
+    for list in [&report.frontend_only, &report.registry_only] {
+        let names: Vec<&str> = list.iter().map(|g| g.name.as_str()).collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+    }
 }
 
 // ── Group: Error type coverage ───────────────────────────────────────────

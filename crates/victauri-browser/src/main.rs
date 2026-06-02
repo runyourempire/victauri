@@ -215,7 +215,7 @@ mod integration_tests {
     use serde_json::json;
 
     fn make_test_infra() -> (Arc<BridgeDispatch>, Arc<TabManager>) {
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let tab_manager = Arc::new(TabManager::new());
         (dispatch, tab_manager)
     }
@@ -516,7 +516,7 @@ mod integration_tests {
     #[tokio::test]
     async fn end_to_end_tool_call_with_response() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
 
         // Set up a tab
@@ -552,7 +552,7 @@ mod integration_tests {
     #[tokio::test]
     async fn tabs_list_reflects_message_state() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
 
         process_message(
@@ -877,7 +877,7 @@ mod integration_tests {
         use tower::ServiceExt;
 
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
         let app = victauri_browser::server::build_app(handler, None);
 
@@ -929,7 +929,7 @@ mod integration_tests {
     #[tokio::test]
     async fn full_pipeline_concurrent_tool_calls_with_responses() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = Arc::new(VictauriBrowserHandler::new(
             Arc::clone(&tab_mgr),
             Arc::clone(&dispatch),
@@ -975,7 +975,7 @@ mod integration_tests {
     #[tokio::test]
     async fn full_pipeline_error_propagation() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
 
         tab_mgr.on_tab_created(1, "https://app.com", "App").await;
@@ -1009,7 +1009,7 @@ mod integration_tests {
     #[tokio::test]
     async fn stress_mixed_messages_and_tool_calls() {
         let tab_mgr = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = Arc::new(VictauriBrowserHandler::new(
             Arc::clone(&tab_mgr),
             Arc::clone(&dispatch),

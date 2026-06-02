@@ -368,7 +368,8 @@ fn ghost_commands_all_matched() {
     let frontend = vec!["save".to_string(), "load".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
 
-    assert!(report.ghost_commands.is_empty());
+    assert!(report.frontend_only.is_empty());
+    assert!(report.registry_only.is_empty());
     assert_eq!(report.total_frontend_commands, 2);
     assert_eq!(report.total_registry_commands, 2);
 }
@@ -381,10 +382,10 @@ fn ghost_commands_frontend_only() {
     let frontend = vec!["save".to_string(), "unknown_cmd".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
 
-    assert_eq!(report.ghost_commands.len(), 1);
-    assert_eq!(report.ghost_commands[0].name, "unknown_cmd");
+    assert_eq!(report.frontend_only.len(), 1);
+    assert_eq!(report.frontend_only[0].name, "unknown_cmd");
     assert!(matches!(
-        report.ghost_commands[0].source,
+        report.frontend_only[0].source,
         victauri_core::GhostSource::FrontendOnly
     ));
 }
@@ -398,10 +399,11 @@ fn ghost_commands_registry_only() {
     let frontend = vec!["save".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
 
-    assert_eq!(report.ghost_commands.len(), 1);
-    assert_eq!(report.ghost_commands[0].name, "unused_cmd");
+    assert!(report.frontend_only.is_empty());
+    assert_eq!(report.registry_only.len(), 1);
+    assert_eq!(report.registry_only[0].name, "unused_cmd");
     assert!(matches!(
-        report.ghost_commands[0].source,
+        report.registry_only[0].source,
         victauri_core::GhostSource::RegistryOnly
     ));
 }
@@ -415,14 +417,20 @@ fn ghost_commands_bidirectional() {
     let frontend = vec!["shared".to_string(), "frontend_only".to_string()];
     let report = victauri_core::detect_ghost_commands(&frontend, &registry);
 
-    assert_eq!(report.ghost_commands.len(), 2);
-    let names: Vec<&str> = report
-        .ghost_commands
+    assert_eq!(report.frontend_only.len(), 1);
+    assert_eq!(report.registry_only.len(), 1);
+    let frontend_names: Vec<&str> = report
+        .frontend_only
         .iter()
         .map(|g| g.name.as_str())
         .collect();
-    assert!(names.contains(&"backend_only"));
-    assert!(names.contains(&"frontend_only"));
+    let registry_names: Vec<&str> = report
+        .registry_only
+        .iter()
+        .map(|g| g.name.as_str())
+        .collect();
+    assert!(registry_names.contains(&"backend_only"));
+    assert!(frontend_names.contains(&"frontend_only"));
 }
 
 // ── Phase 2: IPC round-trip integrity ───────────────────────────────────────
@@ -1355,7 +1363,8 @@ mod adversarial {
     fn ghost_commands_empty_both_sides() {
         let registry = CommandRegistry::new();
         let report = detect_ghost_commands(&[], &registry);
-        assert!(report.ghost_commands.is_empty());
+        assert!(report.frontend_only.is_empty());
+        assert!(report.registry_only.is_empty());
         assert_eq!(report.total_frontend_commands, 0);
         assert_eq!(report.total_registry_commands, 0);
     }
@@ -1366,7 +1375,8 @@ mod adversarial {
         registry.register(registry::CommandInfo::new("get_settings"));
         let frontend = vec!["get_settings".to_string()];
         let report = detect_ghost_commands(&frontend, &registry);
-        assert!(report.ghost_commands.is_empty());
+        assert!(report.frontend_only.is_empty());
+        assert!(report.registry_only.is_empty());
     }
 
     #[test]
@@ -1379,7 +1389,8 @@ mod adversarial {
             "get_settings".to_string(),
         ];
         let report = detect_ghost_commands(&frontend, &registry);
-        assert!(report.ghost_commands.is_empty());
+        assert!(report.frontend_only.is_empty());
+        assert!(report.registry_only.is_empty());
         assert_eq!(report.total_frontend_commands, 1);
     }
 

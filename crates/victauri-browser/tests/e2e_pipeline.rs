@@ -40,7 +40,7 @@ impl TestServer {
         rate_limiter: Option<Arc<RateLimiterState>>,
     ) -> Self {
         let tab_manager = Arc::new(TabManager::new());
-        let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+        let dispatch = Arc::new(BridgeDispatch::new_sink());
         let handler = VictauriBrowserHandler::new(Arc::clone(&tab_manager), Arc::clone(&dispatch));
 
         let app = match rate_limiter {
@@ -692,7 +692,7 @@ async fn bridge_dispatch_timeout_on_unresolved_command() {
     // Create a dispatch that writes to a Vec (we won't read from it).
     // The dispatch uses a 30s timeout internally, but we can test via the
     // register_test_pending mechanism + manual timeout.
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
 
     // Register a pending command that will never get resolved
     let rx = dispatch.register_test_pending("will-timeout").await;
@@ -709,7 +709,7 @@ async fn bridge_dispatch_timeout_on_unresolved_command() {
 
 #[tokio::test]
 async fn bridge_dispatch_cancel_all_resolves_pending_with_error() {
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
 
     let rx1 = dispatch.register_test_pending("cmd-1").await;
     let rx2 = dispatch.register_test_pending("cmd-2").await;
@@ -735,7 +735,7 @@ async fn bridge_dispatch_cancel_all_resolves_pending_with_error() {
 
 #[tokio::test]
 async fn bridge_dispatch_response_resolves_correctly() {
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
 
     let rx = dispatch.register_test_pending("my-cmd").await;
 
@@ -754,7 +754,7 @@ async fn bridge_dispatch_response_resolves_correctly() {
 
 #[tokio::test]
 async fn bridge_dispatch_error_response_propagates() {
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
 
     let rx = dispatch.register_test_pending("err-cmd").await;
 

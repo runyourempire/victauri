@@ -23,7 +23,7 @@ This will:
 
 | Platform | Architecture |
 |----------|-------------|
-| Linux    | x86_64, aarch64 |
+| Linux    | x86_64 |
 | macOS    | x86_64 (Intel), aarch64 (Apple Silicon) |
 | Windows  | x86_64 |
 

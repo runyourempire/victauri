@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — red-team audit (pre-0.7.5)
+
+- **macOS bridge discovery** — `victauri bridge` used a Linux-only `/proc/{pid}` liveness check, so on
+  macOS it found *no* running server (the feature was non-functional on macOS). Replaced with a portable
+  POSIX `kill -0` check that works on macOS + Linux. (Caught by CI after 0.7.4 — see the new
+  `require-ci-green` release gate.)
+- **`eval_js` recovery test** — a demo-app adversarial test asserted the old 30s-timeout behavior for a
+  syntax error; updated to the fast parse-failure + clean-recovery behavior introduced in 0.7.3.
+- **Stale `BRIDGE_VERSION`** — the const was frozen at `"0.5.0"` (the bump script never touched it), so
+  `get_plugin_info` reported the wrong bridge version and the runtime self-check logged a false mismatch
+  on every startup. Now derives from `env!("CARGO_PKG_VERSION")` so it can never drift.
+- **`detect_ghost_commands` output clarified** — the report now has separate `frontend_only` (true ghosts:
+  frontend-invoked with no backend handler) and `registry_only` (registered-but-unused) fields, instead of
+  dumping both into one misleading `ghost_commands` list.
+- **`list_app_dir` no longer hard-errors on a missing dir** — returns a structured `{ exists:false,
+  entries:[], count:0 }` (a fresh app with no data dir is queryable state, not a failure). Both
+  `list_app_dir` and `read_app_file` now run a lexical traversal guard *before* the existence check (so a
+  traversal attempt is rejected as traversal, not reported as "not found").
+- **Chrome test dependency CVE** — bumped `vitest` `^3.2.1` → `^4.1.8` (GHSA-5xrq-8626-4rwp, critical);
+  `npm audit` is clean and all 169 bridge tests still pass.
+- **Native-messaging tests** no longer write binary protocol frames to `cargo test` stdout (the dispatcher's
+  writer is now injectable; tests use a sink), so real failures aren't buried in noise.
+- **Demo-app accessibility** — primary buttons / tab badges failed Victauri's own WCAG-AA contrast check
+  (white on `#8b5cf6` = 4.23:1); darkened to pass; low-contrast muted text raised too.
+- **Metadata/doc fixes** — VS Code `package-lock.json` synced to its `package.json` version; npm README no
+  longer advertises an unbuilt Linux-aarch64 binary; `examples/demo-app/test_deep.sh` no longer asserts the
+  ancient `0.2.1` version (now version-agnostic) and uses the default port 7373.
+
 ## [0.7.4] - 2026-06-02
 
 ### Fixed — agents could bind the WRONG app / wedge on restart (CDP-fallback root cause)

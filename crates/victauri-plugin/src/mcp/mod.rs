@@ -87,7 +87,7 @@ const RESOURCE_URI_IPC_LOG: &str = "victauri://ipc-log";
 const RESOURCE_URI_WINDOWS: &str = "victauri://windows";
 const RESOURCE_URI_STATE: &str = "victauri://state";
 
-const BRIDGE_VERSION: &str = "0.5.0";
+const BRIDGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const SAFE_ENV_PREFIXES: &[&str] = &[
     "HOME",
@@ -504,7 +504,7 @@ impl VictauriMcpHandler {
     }
 
     #[tool(
-        description = "Detect ghost commands — commands invoked from the frontend that have no backend handler, or registered backend commands never called. Reads the JS-side IPC interception log, which ACCUMULATES every command seen this session (including earlier test/probe traffic) — so a 'FrontendOnly' result reflects what was invoked at runtime, not necessarily a real frontend bug. For a clean signal, call `logs {action:'clear'}` first, then exercise the app, then run this.",
+        description = "Detect ghost commands. Returns TWO separate lists: `frontend_only` = the true ghosts (commands invoked from the frontend that have NO backend handler — likely typos/bugs), and `registry_only` = informational (commands registered in the backend but never invoked from the frontend this session). Reads the JS-side IPC interception log, which ACCUMULATES every command seen this session (including earlier test/probe traffic) — so a `frontend_only` result reflects what was invoked at runtime, not necessarily a real frontend bug. For a clean signal, call `logs {action:'clear'}` first, then exercise the app, then run this.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -908,9 +908,23 @@ impl VictauriMcpHandler {
         };
 
         let target = if let Some(ref sub) = params.path {
+            // Lexical traversal guard BEFORE the existence check: `safe_within`
+            // canonicalizes (which errors on non-existent paths), so a `..` or
+            // absolute sub-path must be rejected as traversal up front rather
+            // than falling through to a misleading "does not exist" result.
+            if let Err(e) = Self::lexical_safe(std::path::Path::new(sub)) {
+                return tool_error(e);
+            }
             let resolved = base.join(sub);
+            // A missing directory is a normal, non-error result.
             if !resolved.exists() {
-                return tool_error(format!("directory does not exist: {}", resolved.display()));
+                return json_result(&serde_json::json!({
+                    "base": base.to_string_lossy(),
+                    "path": sub,
+                    "exists": false,
+                    "entries": [],
+                    "count": 0,
+                }));
             }
             if let Err(e) = Self::safe_within(&base, &resolved) {
                 return tool_error(e);
@@ -920,8 +934,15 @@ impl VictauriMcpHandler {
             base.clone()
         };
 
+        // A missing base directory is a normal, non-error result.
         if !target.exists() {
-            return tool_error(format!("directory does not exist: {}", target.display()));
+            return json_result(&serde_json::json!({
+                "base": base.to_string_lossy(),
+                "path": params.path.unwrap_or_default(),
+                "exists": false,
+                "entries": [],
+                "count": 0,
+            }));
         }
 
         let max_depth = params.max_depth.unwrap_or(1).min(5);
@@ -933,6 +954,7 @@ impl VictauriMcpHandler {
         json_result(&serde_json::json!({
             "base": base.to_string_lossy(),
             "path": params.path.unwrap_or_default(),
+            "exists": true,
             "entries": entries,
             "count": entries.len(),
         }))
@@ -957,6 +979,14 @@ impl VictauriMcpHandler {
             Err(e) => return tool_error(e),
         };
 
+        // Lexical traversal guard FIRST — before the existence check — so a
+        // traversal attempt (`..` / absolute) is rejected as traversal rather
+        // than leaking whether the out-of-tree target exists via "file not
+        // found". `safe_within` (which canonicalizes) stays below as
+        // defense-in-depth for real files.
+        if let Err(e) = Self::lexical_safe(std::path::Path::new(&params.path)) {
+            return tool_error(e);
+        }
         let target = base.join(&params.path);
         if !target.exists() {
             return tool_error(format!("file not found: {}", params.path));
@@ -3488,6 +3518,34 @@ impl VictauriMcpHandler {
             AppDir::Log => self.bridge.app_log_dir(),
             AppDir::LocalData => self.bridge.app_local_data_dir(),
         }
+    }
+
+    /// Lexical (pre-existence) traversal guard for a user-supplied sub-path.
+    ///
+    /// Rejects absolute paths and any component that is `..` BEFORE the path is
+    /// canonicalized. This is necessary because [`Self::safe_within`] relies on
+    /// `canonicalize`, which errors on non-existent paths — so a traversal
+    /// attempt against a missing target would otherwise be reported as
+    /// "not found" (an info-leak oracle) rather than as traversal.
+    fn lexical_safe(sub: &std::path::Path) -> Result<(), String> {
+        use std::path::Component;
+        if sub.is_absolute() {
+            return Err("path traversal not allowed: absolute paths are rejected".to_string());
+        }
+        for component in sub.components() {
+            match component {
+                Component::ParentDir => {
+                    return Err("path traversal not allowed: '..' is rejected".to_string());
+                }
+                Component::Prefix(_) | Component::RootDir => {
+                    return Err(
+                        "path traversal not allowed: absolute paths are rejected".to_string()
+                    );
+                }
+                Component::CurDir | Component::Normal(_) => {}
+            }
+        }
+        Ok(())
     }
 
     fn safe_within(base: &std::path::Path, target: &std::path::Path) -> Result<(), String> {

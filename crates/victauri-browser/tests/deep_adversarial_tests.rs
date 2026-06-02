@@ -26,7 +26,7 @@ use victauri_browser::tab_state::TabManager;
 
 fn test_app(auth_token: Option<String>) -> (axum::Router, Arc<TabManager>, Arc<BridgeDispatch>) {
     let tab_mgr = Arc::new(TabManager::new());
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
     let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
     let app = build_app(handler, auth_token);
     (app, tab_mgr, dispatch)
@@ -34,7 +34,7 @@ fn test_app(auth_token: Option<String>) -> (axum::Router, Arc<TabManager>, Arc<B
 
 fn test_app_rate_limited(budget: u64) -> (axum::Router, Arc<TabManager>, Arc<BridgeDispatch>) {
     let tab_mgr = Arc::new(TabManager::new());
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
     let handler = VictauriBrowserHandler::new(Arc::clone(&tab_mgr), Arc::clone(&dispatch));
     let limiter = Arc::new(RateLimiterState::new(budget));
     let app = build_app_full(handler, None, Some(limiter));
@@ -1352,7 +1352,7 @@ async fn state_info_reflects_live_tab_count() {
 
 #[tokio::test]
 async fn state_dispatch_pending_after_cancel_all() {
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
 
     // Register a pending command and cancel
     let rx = dispatch.register_test_pending("test-cmd").await;
@@ -1468,7 +1468,7 @@ async fn rate_limit_on_tool_execution() {
 #[tokio::test]
 async fn rate_limit_with_auth_failures_still_counts() {
     let tab_mgr = Arc::new(TabManager::new());
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
     let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
     let limiter = Arc::new(RateLimiterState::new(3));
     let app = build_app_full(handler, Some("correct-token".into()), Some(limiter));
@@ -1755,7 +1755,7 @@ async fn integration_auth_plus_origin_guard_stacked() {
 #[tokio::test]
 async fn integration_rate_limit_plus_auth() {
     let tab_mgr = Arc::new(TabManager::new());
-    let dispatch = Arc::new(BridgeDispatch::new(tokio::io::stdout()));
+    let dispatch = Arc::new(BridgeDispatch::new_sink());
     let handler = VictauriBrowserHandler::new(tab_mgr, dispatch);
     let limiter = Arc::new(RateLimiterState::new(2));
     let app = build_app_full(handler, Some("tok".into()), Some(limiter));
