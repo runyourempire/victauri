@@ -469,7 +469,12 @@ adv!(trace_captures_frames_and_events, base, {
     // Do something while tracing.
     let inc = ref_by_testid(&base, "increment-btn").await;
     call(&base, "interact", json!({"action":"click","ref_id":inc})).await;
-    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+    // The event-drain loop polls getEventStream once per second (server.rs), and
+    // its tick boundary is independent of when the trace starts. A sub-second
+    // window only catches a drain cycle by luck (~90%), which flaked CI. Hold for
+    // > 2 full drain cycles so at least one tick deterministically captures the
+    // click's events.
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
     let stop = call(&base, "trace", json!({"action":"stop"})).await;
     let s = result(&stop);
     assert_eq!(s["stopped"], json!(true), "trace did not stop: {s}");
