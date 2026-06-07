@@ -74,7 +74,6 @@ pub fn build_app_full(
 /// `422` and generic MCP clients wedge for the whole run. Opt into stateful only when you need
 /// server-initiated push to subscribers; request/response tools do not.
 #[doc(hidden)]
-#[must_use]
 pub fn build_app_stateful(
     state: Arc<VictauriState>,
     bridge: Arc<dyn WebviewBridge>,
