@@ -61,14 +61,14 @@ impl OwnedSid {
     }
 }
 
-/// The current process user's SID, copied into an owned buffer.
+/// Copy the SID from a token-information class into an owned buffer. Used for `TokenUser`
+/// (the account SID) and `TokenOwner` (the SID owning objects this process creates). Both
+/// `TOKEN_USER` (`.User.Sid`) and `TOKEN_OWNER` (`.Owner`) lead with the `PSID` at offset 0.
 #[cfg(windows)]
 #[allow(unsafe_code)]
-fn current_user_sid() -> Option<OwnedSid> {
+fn token_sid(class: windows::Win32::Security::TOKEN_INFORMATION_CLASS) -> Option<OwnedSid> {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
-    use windows::Win32::Security::{
-        GetLengthSid, GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser,
-    };
+    use windows::Win32::Security::{GetLengthSid, GetTokenInformation, PSID, TOKEN_QUERY};
     use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     struct TokenGuard(HANDLE);
@@ -90,28 +90,27 @@ fn current_user_sid() -> Option<OwnedSid> {
     let mut len = 0_u32;
     // SAFETY: size probe; null buffer makes the call report the required size in `len`.
     unsafe {
-        let _ = GetTokenInformation(token, TokenUser, None, 0, &raw mut len);
+        let _ = GetTokenInformation(token, class, None, 0, &raw mut len);
     }
     if len == 0 {
         return None;
     }
     let mut buf = vec![0_u8; len as usize];
-    // SAFETY: `buf` is writable for `len` bytes; on success it holds a `TOKEN_USER`.
+    // SAFETY: `buf` is writable for `len` bytes; on success it holds the requested struct.
     unsafe {
         GetTokenInformation(
             token,
-            TokenUser,
+            class,
             Some(buf.as_mut_ptr().cast::<core::ffi::c_void>()),
             len,
             &raw mut len,
         )
         .ok()?;
     }
-    // SAFETY: `buf` holds a valid `TOKEN_USER`; `.User.Sid` is a valid PSID within it.
-    let (sid_ptr, sid_len) = unsafe {
-        let token_user = &*buf.as_ptr().cast::<TOKEN_USER>();
-        (token_user.User.Sid, GetLengthSid(token_user.User.Sid))
-    };
+    // SAFETY: both `TOKEN_USER` and `TOKEN_OWNER` lead with the `PSID` at offset 0.
+    let sid_ptr = unsafe { *buf.as_ptr().cast::<PSID>() };
+    // SAFETY: `sid_ptr` points to a valid SID within `buf`.
+    let sid_len = unsafe { GetLengthSid(sid_ptr) };
     if sid_len == 0 {
         return None;
     }
@@ -123,8 +122,22 @@ fn current_user_sid() -> Option<OwnedSid> {
     Some(OwnedSid(sid))
 }
 
-/// True iff `path` exists and its owner SID equals the current process user's SID
-/// (the Windows counterpart to the Unix uid check — refuses an attacker-pre-planted dir).
+/// SIDs that legitimately own a directory this process creates: the token USER and the
+/// token's default OWNER. Identical for a normal user; an **elevated** admin token's default
+/// owner is `BUILTIN\Administrators`, so objects it creates are owned by that group — accept
+/// either, or the ownership check would reject every directory we create under elevation.
+#[cfg(windows)]
+fn acceptable_owner_sids() -> Vec<OwnedSid> {
+    use windows::Win32::Security::{TokenOwner, TokenUser};
+    [TokenUser, TokenOwner]
+        .into_iter()
+        .filter_map(token_sid)
+        .collect()
+}
+
+/// True iff `path` exists and its owner SID is one this process would create objects as
+/// (its token user, or — under elevation — its token's default owner group). The Windows
+/// counterpart to the Unix uid check — refuses an attacker-pre-planted dir.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 fn dir_owned_by_current_user(path: &Path) -> bool {
@@ -135,9 +148,10 @@ fn dir_owned_by_current_user(path: &Path) -> bool {
     };
     use windows::core::PCWSTR;
 
-    let Some(me) = current_user_sid() else {
+    let acceptable = acceptable_owner_sids();
+    if acceptable.is_empty() {
         return false;
-    };
+    }
     let wide = to_wide(path);
     let mut owner = PSID::default();
     let mut psd = PSECURITY_DESCRIPTOR::default();
@@ -157,13 +171,15 @@ fn dir_owned_by_current_user(path: &Path) -> bool {
     if rc != ERROR_SUCCESS {
         return false;
     }
-    // SAFETY: `owner` and `me` are both valid SIDs for the comparison.
-    let equal = unsafe { EqualSid(owner, me.as_psid()).is_ok() };
+    // SAFETY: `owner` and each `sid` are valid SIDs for the comparison.
+    let owned = acceptable
+        .iter()
+        .any(|sid| unsafe { EqualSid(owner, sid.as_psid()).is_ok() });
     // SAFETY: `psd` was allocated by `GetNamedSecurityInfoW`; freed exactly once.
     unsafe {
         let _ = LocalFree(Some(HLOCAL(psd.0)));
     }
-    equal
+    owned
 }
 
 /// Replace `path`'s DACL with a PROTECTED, owner-only DACL so NO inherited or pre-planted
@@ -181,10 +197,14 @@ fn apply_owner_only_dacl(path: &Path) -> bool {
     };
     use windows::core::PWSTR;
 
+    use windows::Win32::Security::TokenUser;
+
     const GENERIC_ALL_RIGHTS: u32 = 0x1000_0000;
     const SUB_CONTAINERS_AND_OBJECTS_INHERIT: u32 = 0x3;
 
-    let Some(me) = current_user_sid() else {
+    // Grant the token USER full control (retained even when the dir is owned by the
+    // Administrators group under elevation).
+    let Some(me) = token_sid(TokenUser) else {
         return false;
     };
 
@@ -522,7 +542,7 @@ mod tests {
 
         assert!(
             dir_owned_by_current_user(&dir),
-            "a freshly created dir must be owned by the current user"
+            "a freshly created dir must be recognized as owned by this process"
         );
 
         let path_str = dir.to_string_lossy().to_string();
