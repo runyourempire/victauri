@@ -453,14 +453,25 @@ fn write_private_file(path: &std::path::Path, contents: &str) {
             .open(path)
             .and_then(|mut f| f.write_all(contents.as_bytes()))
     };
+    // Report a write failure; on Windows additionally lock the new file down to the
+    // current user and remove it if the ACL cannot be applied (never leave a discovery
+    // file world-readable). Split per-platform so neither config trips `-D warnings`:
+    // the Windows-only post-step would otherwise make an early `return` needless on Unix.
+    #[cfg(windows)]
+    match result {
+        Ok(()) => {
+            if !restrict_to_current_user(path) {
+                let _ = std::fs::remove_file(path);
+                tracing::warn!("could not restrict discovery file {}", path.display());
+            }
+        }
+        Err(e) => {
+            tracing::debug!("could not write discovery file {}: {e}", path.display());
+        }
+    }
+    #[cfg(not(windows))]
     if let Err(e) = result {
         tracing::debug!("could not write discovery file {}: {e}", path.display());
-        return;
-    }
-    #[cfg(windows)]
-    if !restrict_to_current_user(path) {
-        let _ = std::fs::remove_file(path);
-        tracing::warn!("could not restrict discovery file {}", path.display());
     }
 }
 
