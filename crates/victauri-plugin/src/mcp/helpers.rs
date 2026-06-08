@@ -95,9 +95,11 @@ pub fn ghost_ipc_outcomes_js(since_ms: Option<i64>) -> String {
          \n    var c = log[i]; if (!c || !c.command) continue;\
          \n    var e = byCmd[c.command] || {{ command: c.command, ok: false, err: null }};\
          \n    if (c.status === 'ok') {{ e.ok = true; }}\
-         \n    else if (!e.err && c.status === 'error') {{\
+         \n    else if (c.status === 'error') {{\
          \n      var body = ((c.result != null ? String(c.result) : '') + ' ' + (c.error != null ? String(c.error) : ''));\
-         \n      e.err = body.slice(0, 160).toLowerCase();\
+         \n      var sample = body.slice(0, 160).toLowerCase();\
+         \n      /* keep the most diagnostic sample: a 'not found' error always wins over a generic one */\
+         \n      if (!e.err || sample.indexOf('not found') !== -1) {{ e.err = sample; }}\
          \n    }}\
          \n    byCmd[c.command] = e;\
          \n  }}\
@@ -130,12 +132,20 @@ fn is_framework_builtin(name: &str) -> bool {
     name.starts_with("plugin:")
 }
 
-/// Does an error sample indicate the command has no backend handler (a true ghost)? Tauri
-/// rejects an unregistered command with a "not found"-class message. A permission failure
-/// ("not allowed"/"forbidden") is deliberately NOT matched — the handler exists, it is just
-/// blocked, so that is not a ghost.
-fn error_means_not_found(err: &str) -> bool {
-    err.contains("not found") || err.contains("unknown command") || err.contains("not registered")
+/// Does an error sample indicate the COMMAND has no backend handler (a true ghost)? Tauri
+/// rejects an unregistered command with a "command `<name>` not found"-class message.
+///
+/// A bare "not found" is deliberately NOT enough — it also matches ordinary application errors
+/// (e.g. a real `get_user` handler returning "user not found"), which would be a false ghost. So
+/// "not found" only counts when the message also references the command (the word "command" or
+/// the command name itself), matching Tauri's actual not-found format. "unknown command" /
+/// "not registered" are unambiguous and match on their own. A permission failure
+/// ("not allowed"/"forbidden") is intentionally NOT matched — the handler exists, it is blocked.
+fn error_means_not_found(err: &str, command: &str) -> bool {
+    err.contains("unknown command")
+        || err.contains("not registered")
+        || (err.contains("not found")
+            && (err.contains("command") || err.contains(&command.to_lowercase())))
 }
 
 /// Build the enriched ghost-command report from observed IPC OUTCOMES (VIC-1).
@@ -176,7 +186,7 @@ pub fn build_ghost_report(
         if !o.ok
             && !is_framework_builtin(&o.command)
             && let Some(err) = o.err.as_deref()
-            && error_means_not_found(err)
+            && error_means_not_found(err, &o.command)
         {
             confirmed.push((o.command.as_str(), err));
         }
@@ -791,6 +801,24 @@ mod ghost_report_tests {
         assert_eq!(confirmed.len(), 1);
         assert_eq!(confirmed[0]["name"], "get_widgetz");
         assert!(v["frontend_only"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn app_level_not_found_is_not_a_confirmed_ghost() {
+        // A real command returning an application "X not found" error (here `get_user` →
+        // "user not found") must NOT be mistaken for a missing-handler ghost: the message does
+        // not reference the command/handler. It falls to the weak candidate tier instead.
+        let registry = CommandRegistry::new();
+        let v = build_ghost_report(
+            &[outcome("get_user", false, Some("user not found"))],
+            &registry,
+        );
+        assert!(
+            v["confirmed_ghosts"].as_array().unwrap().is_empty(),
+            "an app-level 'not found' must not be a confirmed ghost: {}",
+            v["confirmed_ghosts"]
+        );
+        assert_eq!(v["frontend_only"].as_array().unwrap().len(), 1);
     }
 
     #[test]

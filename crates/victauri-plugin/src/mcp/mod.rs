@@ -3216,7 +3216,16 @@ impl VictauriMcpHandler {
                 let tauri_matched_count = tauri_matched.len();
                 let tauri_events: Vec<_> = tauri_matched.into_iter().rev().take(limit).collect();
 
-                let all_app = self.state.event_log.snapshot();
+                // Exclude Victauri's own infrastructure events (plugin:victauri|* IPC etc.) —
+                // noise in a diagnostic timeline; the `explain` tools already filter them via
+                // `is_internal()`.
+                let all_app: Vec<_> = self
+                    .state
+                    .event_log
+                    .snapshot()
+                    .into_iter()
+                    .filter(|e| !e.is_internal())
+                    .collect();
                 let app_total = all_app.len();
                 let app_matched: Vec<_> = match cutoff {
                     Some(cut) => all_app
