@@ -501,3 +501,87 @@ e2e_test!(pipeline_state_via_probe, |client| async move {
         "pipeline should report processed work (cumulative across runs): {state}"
     );
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Thread-safety regression — webview access must stay on the main (UI) thread
+// ────────────────────────────────────────────────────────────────────────────
+
+e2e_test!(
+    webview_access_main_thread_safe_under_ipc_load,
+    |client| async move {
+        // REGRESSION for the Victauri 0.8.0 host-app crash. The MCP server touched the webview
+        // `Rc` from its background (axum/tokio) thread — `webview_windows()` / `eval()` — racing
+        // the main thread's own non-atomic `Rc` refcounting while the app handled its real IPC
+        // (`tauri::ipc::protocol::get`). Concurrent `Rc` mutation corrupts the count → use-after-
+        // free (`STATUS_*_BUFFER_OVERRUN`, caught by Rust's debug `assert_unchecked` on
+        // `Rc::inc_strong`; "GTK may only be used from the main thread" on Linux). The fix routes
+        // ALL webview access through `run_on_main_thread`. This reproduces the race: flood the
+        // page with real Tauri IPC (main-thread `Rc` access) while many concurrent clients hammer
+        // the webview-touching introspection paths (background-thread `Rc` access), then assert
+        // the host app survived. On the pre-fix code the app crashes mid-loop and the final probe
+        // fails with a connection error. See Tauri issue #10001 for the identical crash class.
+        use std::time::{Duration, Instant};
+
+        const TASKS: usize = 6;
+        const LOAD: Duration = Duration::from_secs(10);
+
+        // 1. Sustained real-IPC flood from the page plus Victauri's legacy async plugin commands.
+        //    Before the fix those commands also cloned the webview map from a background thread.
+        client
+            .eval_js(
+                "(() => { if (!window.__vicLoad) { const invoke = window.__TAURI_INTERNALS__.invoke; \
+                window.__vicLoad = setInterval(() => { \
+                void invoke('increment').catch(() => {}); \
+                void invoke('plugin:victauri|victauri_list_windows').catch(() => {}); \
+                void invoke('plugin:victauri|victauri_get_window_state', { label: null }).catch(() => {}); \
+                }, 2); } \
+                return true; })()",
+            )
+            .await
+            .unwrap();
+
+        // 2. Hammer the webview-touching paths from many concurrent clients (each method takes
+        //    `&mut self`, so concurrency needs one client per task). Before the fix, every call
+        //    below ran `webview_windows()` on the server's background thread; the fixed path
+        //    marshals that access onto the main thread.
+        let mut handles = Vec::with_capacity(TASKS);
+        for _ in 0..TASKS {
+            handles.push(tokio::spawn(async move {
+                let mut c = victauri_test::connect()
+                    .await
+                    .expect("stress task should connect to the running app");
+                let start = Instant::now();
+                let mut ops: u64 = 0;
+                while start.elapsed() < LOAD {
+                    let _ = c.eval_js("document.title").await;
+                    let _ = c.get_window_state(None).await;
+                    let _ = c.list_windows().await;
+                    ops += 1;
+                }
+                ops
+            }));
+        }
+        let mut ops = 0u64;
+        for h in handles {
+            ops += h.await.unwrap_or(0);
+        }
+
+        // 3. Stop the flood and prove the host app is still alive. A failure here (connection
+        //    refused / error) means the process crashed — the regression is back.
+        let _ = client
+            .eval_js("clearInterval(window.__vicLoad); window.__vicLoad = null; true")
+            .await;
+        let title = client.eval_js("document.title").await.expect(
+            "host app must still respond after concurrent introspection under IPC load — a failure \
+         here is the 0.8.0 webview-Rc use-after-free crash (background-thread webview access)",
+        );
+        assert!(
+            title.is_string(),
+            "expected document.title string, got {title:?}"
+        );
+        assert!(
+            ops > 0,
+            "introspection stress loop should have executed at least one cycle"
+        );
+    }
+);
