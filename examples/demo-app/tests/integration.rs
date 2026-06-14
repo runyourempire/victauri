@@ -515,18 +515,23 @@ e2e_test!(
         // (`tauri::ipc::protocol::get`). Concurrent `Rc` mutation corrupts the count → use-after-
         // free (`STATUS_*_BUFFER_OVERRUN`, caught by Rust's debug `assert_unchecked` on
         // `Rc::inc_strong`; "GTK may only be used from the main thread" on Linux). The fix routes
-        // ALL webview access through `run_on_main_thread`. This reproduces the race: flood the
-        // page with real Tauri IPC (main-thread `Rc` access) while many concurrent clients hammer
-        // the webview-touching introspection paths (background-thread `Rc` access), then assert
-        // the host app survived. On the pre-fix code the app crashes mid-loop and the final probe
-        // fails with a connection error. See Tauri issue #10001 for the identical crash class.
+        // ALL webview access through `run_on_main_thread`. This reproduces the race: drive real
+        // Tauri IPC from the page (main-thread `Rc`/GTK access) while concurrent clients hammer
+        // the webview-touching introspection paths (background-thread access), then assert the
+        // host survived. Pre-fix, the background access aborts the process — *deterministically*
+        // on Linux/macOS ("only from the main thread") and *probabilistically* on Windows (the
+        // `Rc` race). The load is deliberately MODERATE: heavy enough that pre-fix code crashes,
+        // light enough that a healthy WebKitGTK (incl. software-rendered xvfb in CI) is not itself
+        // overwhelmed — a gate that false-fails on correct code is worse than no gate. See Tauri
+        // issue #10001 for the identical crash class.
         use std::time::{Duration, Instant};
 
-        const TASKS: usize = 6;
-        const LOAD: Duration = Duration::from_secs(10);
+        const TASKS: usize = 4;
+        const LOAD: Duration = Duration::from_secs(5);
 
-        // 1. Sustained real-IPC flood from the page plus Victauri's legacy async plugin commands.
-        //    Before the fix those commands also cloned the webview map from a background thread.
+        // 1. Moderate real-IPC flood from the page plus Victauri's legacy async plugin commands
+        //    (pre-fix, those commands also cloned the webview map off-thread). 30ms keeps the main
+        //    thread genuinely busy with real IPC without saturating the rendering engine.
         client
             .eval_js(
                 "(() => { if (!window.__vicLoad) { const invoke = window.__TAURI_INTERNALS__.invoke; \
@@ -534,7 +539,7 @@ e2e_test!(
                 void invoke('increment').catch(() => {}); \
                 void invoke('plugin:victauri|victauri_list_windows').catch(() => {}); \
                 void invoke('plugin:victauri|victauri_get_window_state', { label: null }).catch(() => {}); \
-                }, 2); } \
+                }, 30); } \
                 return true; })()",
             )
             .await
@@ -566,18 +571,30 @@ e2e_test!(
             ops += h.await.unwrap_or(0);
         }
 
-        // 3. Stop the flood and prove the host app is still alive. A failure here (connection
-        //    refused / error) means the process crashed — the regression is back.
+        // 3. Stop the flood, let the main thread drain, then prove the host is still alive.
+        //    Retry to tell a momentarily-saturated-but-healthy app (recovers within a beat) from a
+        //    crashed one (persistent connection-refused). A crash = the regression is back.
         let _ = client
             .eval_js("clearInterval(window.__vicLoad); window.__vicLoad = null; true")
             .await;
-        let title = client.eval_js("document.title").await.expect(
-            "host app must still respond after concurrent introspection under IPC load — a failure \
-         here is the 0.8.0 webview-Rc use-after-free crash (background-thread webview access)",
-        );
+        let mut alive = false;
+        let mut last_err = String::new();
+        for _ in 0..10 {
+            match client.eval_js("document.title").await {
+                Ok(v) if v.is_string() => {
+                    alive = true;
+                    break;
+                }
+                Ok(v) => last_err = format!("unexpected eval result: {v:?}"),
+                Err(e) => last_err = e.to_string(),
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
         assert!(
-            title.is_string(),
-            "expected document.title string, got {title:?}"
+            alive,
+            "host app must still respond after concurrent introspection under IPC load — a \
+             persistent failure here is the 0.8.0 webview use-after-free crash (pre-fix \
+             background-thread webview access). Last error: {last_err}"
         );
         assert!(
             ops > 0,

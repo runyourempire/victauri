@@ -393,9 +393,7 @@ pub async fn capture_window_raw(window_id: isize) -> anyhow::Result<(Vec<u8>, u3
 pub async fn capture_window(window_id: isize) -> anyhow::Result<Vec<u8>> {
     // Try X11 first (works on X11 and XWayland)
     match capture_window_x11_raw(window_id).await {
-        Ok((rgba, w, h)) => {
-            return tokio::task::spawn_blocking(move || encode_png(w, h, &rgba)).await?;
-        }
+        Ok((rgba, w, h)) => tokio::task::spawn_blocking(move || encode_png(w, h, &rgba)).await?,
         Err(x11_err) => {
             anyhow::bail!(
                 "window screenshot requires X11/XWayland on Linux ({x11_err}); \
