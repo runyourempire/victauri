@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access to `AppHandle::webview_windows()` could race Tauri's non-atomic webview handle storage and
   crash the host process under concurrent real IPC. A shared main-thread dispatcher now covers
   eval, state/list, native handles, and window-management operations, with a live stress regression.
+  The dispatcher also runs its closure under `catch_unwind`, so a panic on the UI thread becomes an
+  error instead of aborting the host process (and the caller fails fast rather than waiting out the
+  timeout).
 - **Pure Wayland screenshots fail safely instead of capturing the full desktop.** Linux X11 and
   XWayland retain per-window capture; when that path is unavailable Victauri now returns an
   actionable error rather than leaking unrelated windows through the old `grim` fallback.

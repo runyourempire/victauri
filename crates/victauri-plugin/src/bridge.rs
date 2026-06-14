@@ -172,6 +172,13 @@ fn find_window<'a, R: Runtime>(
 /// over a oneshot `std::sync::mpsc` channel; the bounded `recv` is a safety net against a
 /// wedged event loop and never blocks the main thread (the closure runs *there*, the wait
 /// happens on the calling background thread).
+///
+/// The closure runs ON the UI/event-loop thread, so a panic in it would unwind into tao/winit
+/// and **abort the whole process** — strictly worse than the use-after-free this dispatcher
+/// exists to prevent — and would skip the result send, hanging the caller the full timeout. So
+/// the closure is run under `catch_unwind` and a panic is converted into an error that is always
+/// sent back. (Today every closure is panic-free by construction, but the helper must not let a
+/// future one take the app down.)
 fn on_main<R, T, F>(app: &tauri::AppHandle<R>, what: &str, f: F) -> Result<T, String>
 where
     R: Runtime,
@@ -181,12 +188,16 @@ where
     let (tx, rx) = std::sync::mpsc::channel();
     let app_for_closure = app.clone();
     app.run_on_main_thread(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&app_for_closure)));
         // Send only fails if the caller already timed out and dropped the receiver — ignore.
-        let _ = tx.send(f(&app_for_closure));
+        let _ = tx.send(result);
     })
     .map_err(|e| format!("failed to dispatch {what} to the main thread: {e}"))?;
-    rx.recv_timeout(std::time::Duration::from_secs(10))
-        .map_err(|e| format!("{what} did not complete on the main thread: {e}"))
+    match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_panic)) => Err(format!("{what} panicked on the main thread")),
+        Err(e) => Err(format!("{what} did not complete on the main thread: {e}")),
+    }
 }
 
 impl<R: Runtime> WebviewBridge for tauri::AppHandle<R> {
